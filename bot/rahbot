@@ -499,7 +499,31 @@ def write_json_backed_up(path: Path, obj, backup=True):
 
 
 def content_hash(data) -> str:
-    return hashlib.sha256(json.dumps({k: v for k, v in data.items() if k != "generated"}, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({k: v for k, v in data.items() if k not in ("generated", "recent")},
+                                     sort_keys=True).encode()).hexdigest()
+
+
+RECENT_MAX = 20000   # most modules listed in data.json "recent" (the page replays them; more would just be noise)
+
+
+def recent_since(prev: dict, data: dict):
+    """Modules that gained a builder since the previously published data.json, for the page to replay one by one:
+    {"since": prev generated, "gaps": [first index, then differences]} (sorted, delta-coded), or None."""
+    try:
+        old = gzip.decompress(base64.b64decode(prev["builders_b64"]))
+        new = gzip.decompress(base64.b64decode(data["builders_b64"]))
+    except (KeyError, ValueError, OSError, TypeError):
+        return None
+    if len(old) != len(new):
+        return None
+    idx = [i for i in range(len(new)) if new[i] > old[i]]
+    if len(idx) > RECENT_MAX:                      # keep an even sample across the proof
+        step = len(idx) / RECENT_MAX
+        idx = [idx[int(k * step)] for k in range(RECENT_MAX)]
+    gaps, last = [], 0
+    for i in idx:
+        gaps.append(i - last); last = i
+    return {"since": prev.get("generated"), "gaps": gaps}
 
 
 # ---- poll ---------------------------------------------------------------------------------------------------
@@ -827,6 +851,12 @@ def cmd_poll(a):
         print(f"data.json: changed, publish deferred (last publish {last}, at most every {PUBLISH_EVERY.total_seconds() / 60:g} min)")
     else:
         site = repo / "docs"                                           # GitHub Pages serves main:/docs
+        try:                                                           # what's new since the last publish (replayed)
+            rec = recent_since(json.loads(on_disk.read_text()), data)
+        except (OSError, ValueError):
+            rec = None
+        if rec:
+            data["recent"] = rec
         write_json_backed_up(site / "data.json", data, backup=False)   # git keeps history
         shutil.copyfile(MODULES_TXT, site / "modules.txt")             # CONTRACT: published next to index.html
         src.commit_files(["docs/data.json", "docs/modules.txt"], f"data.json: {data['summary']['people']} people")

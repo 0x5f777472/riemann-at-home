@@ -80,6 +80,9 @@ by whoever publishes data.json (the bot), unchanged from the reference list.
   `.olean`, in module-index order.
 - Speed: new modules ÷ wall-clock hours since the previous accepted record (first record: since `started`), with the
   gap counted as at least 10 minutes, so frequent updates aren't judged on a few seconds of bursty finishes.
+- `recent` (optional, data.json): modules whose builder count went up since the previously published data.json,
+  `{"since": <previous generated>, "gaps": [first index, then differences]}`, at most 20,000 (evenly sampled). The page
+  replays them one by one until the next update. Ignored when deciding whether data.json changed.
 - The digest reference is a frozen hash table (`rahbot reference-snapshot`), not the live build folder, which changes
   while a build runs. Kept by the bot; can be published.
 
