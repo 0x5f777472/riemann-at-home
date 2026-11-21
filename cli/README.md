@@ -10,16 +10,23 @@ and this README (`sign` prints the joint statement from it).
    `9631b4f0…c7fc`, unpacks into the fixed folder (macOS `/Users/Shared/riemann-at-home/lean`, Linux
    `/opt/riemann-at-home/lean`), installs elan + Lean 4.33.1, runs `lake exe cache get Mathlib`, and makes this
    computer's random `build_id`. Running it again skips whatever is already done.
-2. `riemann-at-home build [--gentle|--full] [--submit-repo DIR]`: the official `lake build Main`, unchanged, in the
+2. `riemann-at-home build [--gentle|--full] [--submit]`: the official `lake build Main`, unchanged, in the
    background at nice 19 (gentle = macOS background policy / Linux SCHED_IDLE). `pause`, `resume`, `stop`, `status`.
    The build stops by itself when the build disk gets down to 20 GB free, so your computer always keeps room (a whole build needs about 150 GB free). Everything
    compiled so far is kept, and `record` / `submit` still work for the partial build.
-3. While it builds, about every 10 minutes the tool writes a record and updates this computer's one pull request
-   (branch `rah/<build_id>`, file `submissions/<login>/<build_id>.json`). In this version that step is a dry run and
-   is only logged to `~/.riemann-at-home/logs/autosubmit.log`.
-4. `riemann-at-home submit --repo DIR --dry-run`: shows how it would open the PR the first time, or update it later.
-5. `riemann-at-home finish [--repo DIR]`: done on this computer. Stops the build, writes a record with
-   `"final": true`; the bot then merges the PR.
+3. `riemann-at-home submit`: sends the latest record to this computer's one pull request on
+   `riemann-at-home/riemann-at-home` (`--upstream OWNER/REPO` to change). The tool keeps its own clone in
+   `~/.riemann-at-home/repo` (never your checkouts). Branch `rah/<build_id>` is upstream `main` plus one commit
+   ("update: N modules") that writes only `submissions/<login>/<build_id>.json`, force-pushed on each update. If you
+   can push to the repo, the branch goes there; otherwise to your fork (`gh repo fork`). The first submit opens the
+   PR; later ones update it. Commits use your git name and a GitHub noreply email only. `--dry-run` shows the plan.
+4. Automatic updates: `build --submit`, or `submit --enable-auto` for a build that is already running (no restart).
+   Every interval (default 600 s; `submit --interval SECONDS`, minimum 30) the build writes a record and updates its
+   PR: right away when the module count changed, at most every 5 minutes when only the times changed. Errors
+   (network, `gh` missing or logged out) go to `~/.riemann-at-home/logs/autosubmit.log` and never stop the build.
+   `submit --disable-auto` turns it off.
+5. `riemann-at-home finish [--submit]`: done on this computer. Stops the build, writes a record with
+   `"final": true` and submits it (always when auto-submit is on); the bot then merges the PR.
 6. `riemann-at-home name "Display Name"` / `name --anonymous` / `name --clear`: what the page shows instead of your
    GitHub login (1 to 32 characters, no control characters). Records then carry `"display_name"` or
    `"anonymous": true`. Your pull request is still public on GitHub under your account.
@@ -52,7 +59,7 @@ reads, or stores a token.
 
 ## Files
 
-`~/.riemann-at-home/`: `build_id`, `config.json` (submit repo, display name, levels), `logs/` (build.log,
+`~/.riemann-at-home/`: `build_id`, `config.json` (submit settings, PR state, display name, levels), `repo/` (the tool's clone), `logs/` (build.log,
 status.txt, samples.txt, axioms.log, autosubmit.log, export.log, recheck-*.log), `tools/` (lean4export), `records/`
 (the last 50 records), `olean-hashes.json` (hash cache).
 

@@ -6,8 +6,9 @@
   riemann-at-home pause | resume | stop    control the running build (resumable: nothing compiled is lost)
   riemann-at-home status                   modules compiled, running or not, speed
   riemann-at-home record                   write a build record (rah/build/1) to ~/.riemann-at-home/records/
-  riemann-at-home submit --repo DIR --dry-run   show how it opens / updates this computer's one PR (`gh`)
-  riemann-at-home finish [--repo DIR]      done here: final record ("final": true), the bot merges the PR
+  riemann-at-home submit [--dry-run]       open / update this computer's one PR with the latest record (`gh`)
+  riemann-at-home submit --enable-auto [--interval S]   the running build updates its PR every S s (default 600)
+  riemann-at-home finish [--submit]        done here: final record ("final": true), the bot merges the PR
   riemann-at-home name "NAME" | --anonymous | --clear   what the page shows instead of your GitHub login
   riemann-at-home page [--once] [--port N]  this computer's page at http://localhost:8642/
   riemann-at-home export                   Level 2: hash the proof export (lean4export) and compare with the reference
@@ -54,9 +55,12 @@ SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
 MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "20"))          # stop the build below this much free disk
 WHOLE_BUILD_GB = 150                                                   # plan for this much free for a whole build
 DISK_CHECK_SECONDS = float(os.environ.get("RAH_DISK_CHECK_SECONDS", "30"))
-AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # update the build's PR ~every 10 min
+AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # default; `submit --interval` overrides
+MIN_INTERVAL = 30                 # shortest auto-submit interval (seconds)
+TIMES_ONLY_SECONDS = 300          # an update that only changes `recorded`/`busy_seconds` is pushed at most this often
 AUTOSUBMIT = os.environ.get("RAH_AUTOSUBMIT", "dry-run")   # dry-run | off. Real PRs are not enabled in this build.
 USER_AGENT = TOOL.replace(" ", "/")
+UPSTREAM = "riemann-at-home/riemann-at-home"   # where build records go (one PR per computer)
 AUDIT_LEAN = """import Main
 
 #print axioms riemannHypothesis
@@ -651,6 +655,11 @@ def stored_mode(ctx: Ctx) -> str:
 def cmd_build(ctx: Ctx, a):
     mode = "full" if a.full else "gentle" if a.gentle else stored_mode(ctx)
     ctx.logs.mkdir(parents=True, exist_ok=True)
+    if getattr(a, "submit", False):           # auto-submit on; a running build picks it up on its next cycle
+        check_gh(True)
+        sc = ctx.conf().get("submit") or {}
+        ctx.set_conf(submit={**sc, "auto": True, "upstream": sc.get("upstream") or UPSTREAM})
+        print(f"auto-submit on: this build's pull request on {ctx.conf()['submit']['upstream']} is updated about every 10 min")
     sup = supervisor(ctx)
     if sup:
         if mode != stored_mode(ctx) or a.full or a.gentle:
@@ -672,7 +681,7 @@ def cmd_build(ctx: Ctx, a):
     if free_gb(ctx.folder) < MIN_FREE_GB:
         raise Fail(disk_message(ctx))
     disk_heads_up(ctx)
-    if a.submit_repo:
+    if a.submit_repo:                         # older, dry-run-only setting
         ctx.set_conf(repo=str(Path(a.submit_repo).expanduser().resolve()))
     ctx.mode_file.write_text(mode)
     cmd = [sys.executable, "-I", str(Path(__file__).resolve()), "_run", "--folder", str(ctx.folder),
@@ -740,8 +749,10 @@ def cmd_run(ctx: Ctx, a):
                 return
     threading.Thread(target=disk_guard, daemon=True).start()
 
-    def progress():                           # refresh the record on this build's one PR about every 10 minutes
-        while not stopping.wait(AUTOSUBMIT_SECONDS):
+    (ctx.logs / "supervisor.features").write_text(f"{os.getpid()} autosubmit-v2\n")   # rereads interval/config
+
+    def progress():                           # refresh the record on this build's one PR (interval reread each cycle)
+        while not stopping.wait(autosubmit_interval(ctx)):
             autosubmit(ctx, a, "progress")
     threading.Thread(target=progress, daemon=True).start()
     if mode == "gentle":                      # new lean processes inherit lake's policy
@@ -773,9 +784,8 @@ def cmd_run(ctx: Ctx, a):
 
 
 def autosubmit(ctx: Ctx, a, why: str):
-    """Write a record and push it to this build's one PR (dry run only in this build), using the repo given
-    with `build --submit-repo`.
-    Output goes to logs/autosubmit.log. Never raises: the build goes on whatever happens here."""
+    """Write a record and, if auto-submit is on, update this build's one PR: runs `_autosubmit` from the script on
+    disk, which rereads config.json each time. Output goes to logs/autosubmit.log. Never raises."""
     if AUTOSUBMIT == "off":
         return
     me = [sys.executable, "-I", str(Path(__file__).resolve())]
@@ -785,14 +795,8 @@ def autosubmit(ctx: Ctx, a, why: str):
         f.flush()
         try:
             extra = ["--test-unofficial-folder"] if getattr(a, "test_unofficial_folder", False) else []
-            r = subprocess.run(me + ["record"] + loc + extra, stdout=f, stderr=subprocess.STDOUT,
-                               env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=6 * 3600)
-            repo = ctx.conf().get("repo")
-            if r.returncode == 0 and repo:
-                subprocess.run(me + ["submit", "--repo", repo, "--dry-run"] + loc, stdout=f, stderr=subprocess.STDOUT,
-                               env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=600)
-            elif r.returncode == 0:
-                f.write("no repo to submit to (set one with: riemann-at-home build --submit-repo DIR)\n")
+            subprocess.run(me + ["_autosubmit"] + loc + extra, stdout=f, stderr=subprocess.STDOUT,
+                           env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=6 * 3600)
         except Exception as e:
             f.write(f"autosubmit failed: {e}\n")
 
@@ -1029,6 +1033,9 @@ def cmd_record(ctx: Ctx, a):
     out = write_record(ctx, rec)
     print(f"{rec['modules_compiled']:,} / {N_MODULES:,} modules, busy {rec['busy_seconds'] / 3600:.1f} h"
           f"{', WHOLE PROOF' if rec['whole_proof'] else ''}\n{out}")
+    if called_by_supervisor(ctx) and (ctx.conf().get("submit") or {}).get("auto"):
+        cmd_autosubmit(ctx, a)                    # a supervisor started before `_autosubmit` existed
+        ensure_companion(ctx)
     return 0
 
 
@@ -1040,10 +1047,10 @@ def cmd_finish(ctx: Ctx, a):
     rec = make_record(ctx, a, final=True)
     out = write_record(ctx, rec)
     print(f"final record: {rec['modules_compiled']:,} / {N_MODULES:,} modules\n{out}")
-    if not a.repo:
-        print("submit it with: riemann-at-home submit --repo DIR")
+    if not (a.submit or a.dry_run or (ctx.conf().get("submit") or {}).get("auto")):
+        print("submit it with: riemann-at-home submit")
         return 0
-    a.record = str(out)
+    a.record, a.enable_auto, a.disable_auto, a.interval = str(out), False, False, None
     return cmd_submit(ctx, a)
 
 
@@ -1192,12 +1199,12 @@ def check_gh(dry_run: bool):
                 if run(["brew", "install", "gh"]).returncode == 0 and shutil.which("gh"):
                     return check_gh(dry_run)
         raise Fail(f"GitHub's `gh` tool is not installed. Install it ({how}), then run `gh auth login` yourself.")
-    if subprocess.run(["gh", "auth", "status"], capture_output=True, text=True).returncode != 0:
+    if subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=GH_TIMEOUT).returncode != 0:
         raise Fail("`gh` is not logged in to GitHub. Please run `gh auth login` yourself, then submit again.")
 
 
 def gh_login() -> str:
-    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True, timeout=GH_TIMEOUT)
     if r.returncode != 0 or not r.stdout.strip():
         raise Fail("could not get your GitHub login from `gh` (run `gh auth login`, or pass --login)")
     return r.stdout.strip()
@@ -1211,40 +1218,191 @@ def pr_state(ctx: Ctx, repo: Path, upstream: str, rel: str, bid: str, check_gith
     st = ctx.conf().get("pr") or {}
     if st.get("build_id") != bid:
         st = {}
-    out = {"state": st.get("state"), "done": "a final record was already sent from this computer"
-           if st.get("final_sent") else None}
+    out = {"state": st.get("state"), "number": st.get("number"), "url": st.get("url"),
+           "done": "a final record was already sent from this computer" if st.get("final_sent") else None}
     if check_github:
         r = subprocess.run(["gh", "pr", "list", "--repo", upstream, "--head", f"rah/{bid}", "--state", "all",
-                            "--json", "state"], capture_output=True, text=True)
+                            "--json", "number,url,state"], capture_output=True, text=True, timeout=GH_TIMEOUT)
         try:
-            states = {p.get("state") for p in json.loads(r.stdout)}
-            out["state"] = "open" if "OPEN" in states else None
-            if "MERGED" in states:
+            prs = json.loads(r.stdout)
+            op = [p for p in prs if p.get("state") == "OPEN"]
+            out["state"] = "open" if op else None
+            if op:
+                out["number"], out["url"] = op[0].get("number"), op[0].get("url")
+            if any(p.get("state") == "MERGED" for p in prs):
                 out["done"] = "its pull request was merged"
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             pass
-    shown = subprocess.run(["git", "-C", str(repo), "show", f"origin/main:{rel}"], capture_output=True, text=True)
-    if shown.returncode == 0:
-        try:
-            d = json.loads(shown.stdout)
-            out["done"] = "its final record is merged" if d.get("final") else \
-                "its whole-proof record is merged" if d.get("whole_proof") else "its record is merged"
-        except ValueError:
-            out["done"] = "its record is merged"
+    if (repo / ".git").exists():
+        shown = subprocess.run(["git", "-C", str(repo), "show", f"origin/main:{rel}"], capture_output=True, text=True)
+        if shown.returncode == 0:
+            try:
+                d = json.loads(shown.stdout)
+                out["done"] = "its final record is merged" if d.get("final") else \
+                    "its whole-proof record is merged" if d.get("whole_proof") else "its record is merged"
+            except ValueError:
+                out["done"] = "its record is merged"
     return out
 
 
-def cmd_submit(ctx: Ctx, a):
-    repo = Path(a.repo).expanduser().resolve()
+def git_identity(repo: Path, login: str) -> tuple:
+    """(name, email) for commits: the volunteer's git name if set, and an email only in GitHub's noreply form
+    (their own noreply address if configured, else <login>@users.noreply.github.com). No other email ever."""
+    get = lambda k: subprocess.run(["git", "-C", str(repo), "config", "--get", k], capture_output=True,
+                                   text=True).stdout.strip()
+    name, email = get("user.name"), get("user.email")
+    if not re.fullmatch(r"(?:\d+\+)?[A-Za-z0-9-]+@users\.noreply\.github\.com", email or ""):
+        email = f"{login}@users.noreply.github.com"
+    return (name or login), email
+
+
+def comparable(rec: dict) -> dict:
+    """A record minus what changes every time (`recorded`, `busy_seconds`): equal means nothing new to push."""
+    return {k: v for k, v in rec.items() if k not in ("recorded", "busy_seconds")}
+
+
+
+
+def submit_real(ctx: Ctx, a, src: Path, rec: dict, login: str, upstream: str) -> int:
+    """This build's one PR: branch rah/<build_id> = upstream main + one commit that writes
+    submissions/<login>/<build_id>.json, force-pushed on every update. Opens the PR the first time."""
+    repo = ctx.home / "repo"                     # the tool's own clone; never the volunteer's checkouts
+    bid = rec["build_id"]
+    rel = f"submissions/{login}/{bid}.json"
+    branch = f"rah/{bid}"
+    sc = ctx.conf().get("submit") or {}
     if not (repo / ".git").exists():
-        raise Fail(f"{repo} is not a git clone of the Riemann@home repo")
-    if a.record:
-        src = Path(a.record)
+        repo.parent.mkdir(parents=True, exist_ok=True)
+        gh(["repo", "clone", upstream, str(repo), "--", "-q"], "clone the Riemann@home repo")
+        ctx.set_conf(submit={**sc, "clone_of": upstream})
+    elif sc.get("clone_of", upstream) != upstream:
+        raise Fail(f"{repo} is a clone of {sc.get('clone_of')}, not {upstream}; move it aside to switch")
+    g = lambda *x, **k: git(repo, *x, **k)
+    g("fetch", "-q", "origin", "main")
+    pr = pr_state(ctx, repo, upstream, rel, bid, check_github=True)
+    if pr["done"]:
+        raise Fail(f"build {bid} is finished ({pr['done']}); nothing more is submitted for it. "
+                   "A new build on another computer gets its own build_id from `riemann-at-home setup`.")
+    last = ctx.conf().get("pr") or {}
+    last = last if last.get("build_id") == bid else {}
+    if (pr["state"] == "open" and last.get("pushed") == hashlib.sha256(json.dumps(comparable(rec), sort_keys=True)
+                                                                         .encode()).hexdigest()
+            and time.time() - last.get("pushed_at", 0) < TIMES_ONLY_SECONDS and not rec["final"]):
+        print(f"nothing new since the last push ({rec['modules_compiled']:,} modules; only times changed, pushed at "
+              f"most every {TIMES_ONLY_SECONDS // 60} min); PR {pr['url']} unchanged")
+        return 0
+    # push straight to upstream if allowed, else to the volunteer's fork
+    perm = gh(["api", f"repos/{upstream}", "--jq", ".permissions.push"], "check push access").strip()
+    if perm == "true":
+        remote, owner = "origin", upstream.split("/")[0]
     else:
-        recs = sorted(ctx.records.glob("*.json"))
-        if not recs:
-            raise Fail("no build record yet; run: riemann-at-home record")
-        src = recs[-1]
+        if git(repo, "remote", "get-url", "fork", check=False).returncode != 0:
+            gh(["repo", "fork", "--remote", "--remote-name", "fork"], "fork the Riemann@home repo", cwd=repo)
+        remote, owner = "fork", login
+    g("checkout", "-q", "-B", branch, "origin/main")          # reset the branch onto upstream main
+    g("reset", "-q", "--hard", "origin/main")
+    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, repo / rel)
+    g("add", "--", rel)
+    changed = g("diff", "--cached", "--name-only", "origin/main", capture_output=True, text=True).stdout.split()
+    if changed != [rel]:
+        raise Fail(f"refusing to push: the commit would touch {changed}, expected only {rel}")
+    name, email = git_identity(repo, login)
+    env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email,
+           "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
+    g("-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "--no-verify", "--no-gpg-sign",
+      "-m", f"update: {rec['modules_compiled']} modules", env=env)
+    g("push", "-q", "--force", remote, f"HEAD:refs/heads/{branch}")
+    if pr["state"] != "open":
+        title = f"Riemann@home build {bid} ({login})"
+        m = rec["machine"]
+        body = (f"Riemann@home build record for one computer (build `{bid}`). The tool updates this pull request "
+                f"while the build runs; the bot checks each version.\n\n"
+                f"- modules compiled: {rec['modules_compiled']:,} / {N_MODULES:,}\n"
+                f"- machine: {m.get('cpu')}, {m.get('cores')} cores, {m.get('os')} ({m.get('arch')})\n")
+        url = gh(["pr", "create", "--repo", upstream, "--head", f"{owner}:{branch}", "--base", "main",
+                  "--title", title, "--body", body], "open the pull request").strip().splitlines()[-1]
+        mm = re.search(r"/pull/(\d+)", url)
+        pr.update(state="open", url=url, number=int(mm[1]) if mm else None)
+        print(f"opened {url}")
+    else:
+        print(f"updated {pr['url']}")
+    ctx.set_conf(pr={"build_id": bid, "number": pr["number"], "url": pr["url"], "state": "open",
+                     "final_sent": bool(rec["final"]), "remote": remote, "upstream": upstream,
+                     "pushed": hashlib.sha256(json.dumps(comparable(rec), sort_keys=True).encode()).hexdigest(),
+                     "pushed_at": int(time.time())})
+    print(f"{rec['modules_compiled']:,} modules -> {rel} on {owner}:{branch}")
+    return 0
+
+
+GH_TIMEOUT = 300
+
+
+def gh(args: list, what: str, cwd=None) -> str:
+    try:
+        r = subprocess.run(["gh"] + args, capture_output=True, text=True, cwd=cwd, timeout=GH_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Fail(f"could not {what}: {e}")
+    if r.returncode != 0:
+        raise Fail(f"could not {what}: {(r.stderr or r.stdout).strip()[:500]}")
+    return r.stdout
+
+
+def git(repo: Path, *args, check=True, **kw):
+    kw.setdefault("timeout", GH_TIMEOUT)
+    if "capture_output" not in kw and "stdout" not in kw:
+        kw.update(capture_output=True, text=True)
+    try:
+        r = subprocess.run(["git", "-C", str(repo), *args], **kw)
+    except subprocess.TimeoutExpired as e:
+        raise Fail(f"git {args[0]} timed out: {e}")
+    if check and r.returncode != 0:
+        raise Fail(f"git {' '.join(args[:2])} failed: {(r.stderr or r.stdout or '').strip()[:500]}")
+    return r
+
+
+def latest_record(ctx: Ctx) -> Path:
+    recs = sorted(ctx.records.glob("*.json"))
+    if not recs:
+        raise Fail("no build record yet; run: riemann-at-home record")
+    return recs[-1]
+
+
+def submit_lock(ctx: Ctx):
+    """One submit at a time (the build's auto-submit and a manual one could overlap)."""
+    import fcntl
+    ctx.home.mkdir(parents=True, exist_ok=True)
+    f = open(ctx.home / "submit.lock", "w")
+    fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
+def cmd_submit(ctx: Ctx, a):
+    if a.interval is not None:
+        if a.interval < MIN_INTERVAL:
+            raise Fail(f"--interval must be at least {MIN_INTERVAL} seconds")
+        sc = ctx.conf().get("submit") or {}
+        ctx.set_conf(submit={**sc, "interval": int(a.interval)})
+        print(f"auto-submit interval: {int(a.interval)} s (a running build uses it from its next cycle)")
+        if not (a.enable_auto or a.disable_auto):
+            if sc.get("auto"):
+                ensure_companion(ctx)
+            return 0
+    if a.enable_auto or a.disable_auto:
+        sc = ctx.conf().get("submit") or {}
+        if a.enable_auto:
+            check_gh(True)
+            ctx.set_conf(submit={**sc, "auto": True, "upstream": a.upstream or sc.get("upstream") or UPSTREAM})
+            print(f"auto-submit on: a running build updates its pull request on {a.upstream or sc.get('upstream') or UPSTREAM} "
+                  f"every {autosubmit_interval(ctx):g} s (no restart needed). Turn off: riemann-at-home submit --disable-auto")
+            ensure_companion(ctx)
+        else:
+            ctx.set_conf(submit={**sc, "auto": False})
+            print("auto-submit off")
+        return 0
+    if a.repo and not a.dry_run:
+        raise Fail(f"--repo is only for --dry-run; real submits use the tool's own clone at {ctx.home / 'repo'}")
+    src = Path(a.record) if a.record else latest_record(ctx)
     rec = json.loads(src.read_text())
     errs = validate_record(rec)
     if errs:
@@ -1254,45 +1412,125 @@ def cmd_submit(ctx: Ctx, a):
     login = a.login or gh_login()
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})", login):
         raise Fail(f"{login!r} does not look like a GitHub login")
-    bid = rec["build_id"]
-    rel = f"submissions/{login}/{bid}.json"      # one file per build, overwritten on each update
-    upstream = a.upstream
-    if not upstream:
+    repo = Path(a.repo).expanduser().resolve() if a.repo else ctx.home / "repo"
+    upstream = a.upstream or (ctx.conf().get("submit") or {}).get("upstream")
+    if not upstream and a.repo:
         url = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True,
                              text=True).stdout.strip()
         m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-        upstream = m[1] if m else "<owner>/<repo>"
+        upstream = m[1] if m else None
+    upstream = upstream or UPSTREAM
+    if not a.dry_run:
+        with submit_lock(ctx):
+            return submit_real(ctx, a, src, rec, login, upstream)
+    bid = rec["build_id"]
+    rel = f"submissions/{login}/{bid}.json"      # one file per build, overwritten on each update
     pr = pr_state(ctx, repo, upstream, rel, bid, check_github=not a.no_gh_check)
     if pr["done"]:
         raise Fail(f"build {bid} is finished ({pr['done']}); nothing more is submitted for it. "
                    "A new build on another computer gets its own build_id from `riemann-at-home setup`.")
-    n = f"{rec['modules_compiled']:,}"
-    what = "final" if rec["final"] else "WHOLE PROOF" if rec["whole_proof"] else "progress"
-    msg = f"Build {bid}: {n} modules ({what})"
-    g = ["git", "-C", str(repo)]
-    copy = [["mkdir", "-p", str(repo / "submissions" / login)], ["cp", str(src), str(repo / rel)], g + ["add", rel],
-            g + ["commit", "-m", msg]]
     branch = f"rah/{bid}"                         # one branch and one PR for the build's whole life
+    g = ["git", "-C", str(repo)]
+    plan = ([] if (repo / ".git").exists() else [["gh", "repo", "clone", upstream, str(repo)]]) + [
+        g + ["fetch", "origin", "main"], ["gh", "api", f"repos/{upstream}", "--jq", ".permissions.push"],
+        ["# if that is not true:", "gh", "repo", "fork", "--remote", "--remote-name", "fork"],
+        g + ["checkout", "-B", branch, "origin/main"], ["cp", str(src), str(repo / rel)], g + ["add", rel],
+        g + ["commit", "-m", f"update: {rec['modules_compiled']} modules"],
+        g + ["push", "--force", "origin (or fork)", f"HEAD:refs/heads/{branch}"]]
     if pr["state"] == "open":
-        plan = [g + ["switch", branch]] + copy + [g + ["push", "fork", branch]]
         head = "update the open PR (quiet: no new PR)"
     else:
-        title = f"Riemann@home build {bid} ({login})"
-        body = (f"One {FORMAT} record for build `{bid}`, updated in place while it builds.\n\n"
-                f"modules compiled: {n} / {N_MODULES:,}\nmachine: {rec['machine'].get('cpu')}, {rec['machine'].get('os')}\n")
-        plan = ([g + ["fetch", "origin"], g + ["switch", "-c", branch, "origin/main"]] + copy +
-                [["gh", "repo", "fork", upstream, "--remote", "--remote-name", "fork"],
-                 g + ["push", "-u", "fork", branch],
-                 ["gh", "pr", "create", "--repo", upstream, "--head", f"{login}:{branch}", "--base", "main",
-                  "--title", title, "--body", body]])
+        plan.append(["gh", "pr", "create", "--repo", upstream, "--head", f"<{upstream.split('/')[0]} or {login}>:{branch}",
+                     "--base", "main", "--title", f"Riemann@home build {bid} ({login})", "--body", "..."])
         head = "open this build's one PR"
-    if not a.dry_run:
-        raise Fail("submit without --dry-run is not enabled in this build. Use --dry-run to see what it would do.")
     print(f"DRY RUN: nothing is written, committed, pushed or opened.\nrecord: {src}\nas:     {rel} on branch {branch}\n"
           f"step:   {head} -> {upstream}\nwould run:")
     for c in plan:
         print("  " + shlex.join(c))
     return 0
+
+
+def autosubmit_interval(ctx: Ctx) -> float:
+    """Seconds between auto-submits: `submit --interval` (config.json), else 600 (or RAH_AUTOSUBMIT_SECONDS)."""
+    v = (ctx.conf().get("submit") or {}).get("interval")
+    return max(MIN_INTERVAL, float(v)) if isinstance(v, (int, float)) else AUTOSUBMIT_SECONDS
+
+
+def old_supervisor(ctx: Ctx):
+    """pid of a running supervisor started before this version (fixed 10-minute cycle, calls `record`), else None."""
+    sup = supervisor(ctx)
+    if not sup:
+        return None
+    return None if read(ctx.logs / "supervisor.features").split()[:1] == [str(sup)] else sup
+
+
+def ensure_companion(ctx: Ctx):
+    """For a build whose supervisor predates the configurable interval: a small background loop that runs
+    `_autosubmit` at the configured interval while that build runs and auto-submit is on. The build itself is not
+    touched or restarted."""
+    sup = old_supervisor(ctx)
+    pidf = ctx.logs / "autosubmit-loop.pid"
+    pid = read_pid(pidf)
+    if not sup or (pid and pid_alive(pid, "_autosubmit_loop")):
+        return
+    with open(ctx.logs / "autosubmit.log", "ab") as lf:
+        p = subprocess.Popen([sys.executable, "-I", str(Path(__file__).resolve()), "_autosubmit_loop", "--folder",
+                              str(ctx.folder), "--logs", str(ctx.logs)], stdin=subprocess.DEVNULL, stdout=lf,
+                             stderr=lf, start_new_session=True, env={**os.environ, "RAH_HOME": str(ctx.home)})
+    pidf.write_text(str(p.pid))
+
+
+def cmd_autosubmit_loop(ctx: Ctx, a):
+    """The companion loop (see ensure_companion). Ends when the build stops or auto-submit is turned off."""
+    sup = old_supervisor(ctx)
+    me = [sys.executable, "-I", str(Path(__file__).resolve()), "_autosubmit", "--folder", str(ctx.folder),
+          "--logs", str(ctx.logs)]
+    while sup and supervisor(ctx) == sup and (ctx.conf().get("submit") or {}).get("auto"):
+        time.sleep(autosubmit_interval(ctx))
+        if supervisor(ctx) != sup or not (ctx.conf().get("submit") or {}).get("auto"):
+            break
+        with open(ctx.logs / "autosubmit.log", "a") as f:
+            f.write(f"--- autosubmit (progress, every {autosubmit_interval(ctx):g} s) {iso(time.time())}\n")
+            f.flush()
+            try:
+                subprocess.run(me, stdout=f, stderr=subprocess.STDOUT, env={**os.environ, "RAH_HOME": str(ctx.home)},
+                               timeout=6 * 3600)
+            except Exception as e:
+                f.write(f"autosubmit failed: {e}\n")
+    (ctx.logs / "autosubmit-loop.pid").unlink(missing_ok=True)
+    return 0
+
+
+def cmd_autosubmit(ctx: Ctx, a):
+    """What the build supervisor runs about every 10 minutes: write a record, then, if auto-submit is on, update
+    this build's PR. Rereads config.json each time. Never fails the build: errors are printed (to the log)."""
+    try:
+        if a.cmd != "record":                     # (an older supervisor calls `record`, which already wrote one)
+            rec = make_record(ctx, a)
+            out = write_record(ctx, rec)
+            print(f"{rec['modules_compiled']:,} / {N_MODULES:,} modules\n{out}")
+        sc = ctx.conf().get("submit") or {}
+        if sc.get("auto"):
+            ns = argparse.Namespace(enable_auto=False, disable_auto=False, interval=None, repo=None, record=None, login=None,
+                                    upstream=sc.get("upstream") or UPSTREAM, dry_run=False, no_gh_check=False)
+            cmd_submit(ctx, ns)
+        elif ctx.conf().get("repo"):              # older setting: dry run into a given clone
+            ns = argparse.Namespace(enable_auto=False, disable_auto=False, interval=None, repo=ctx.conf()["repo"], record=None,
+                                    login=None, upstream=None, dry_run=True, no_gh_check=False)
+            cmd_submit(ctx, ns)
+        else:
+            print("auto-submit is off (turn on: riemann-at-home submit --enable-auto)")
+    except Fail as e:
+        print(f"auto-submit: {e} (the build goes on; next try in about 10 minutes)")
+    except Exception as e:                        # network, git, anything: log it, keep building
+        print(f"auto-submit failed: {type(e).__name__}: {e} (the build goes on)")
+    return 0
+
+
+def called_by_supervisor(ctx: Ctx) -> bool:
+    sup = supervisor(ctx)
+    return bool(sup) and os.getppid() == sup
+
 
 
 # ---------------------------------------------------------------- levels: export, recheck, joint statement
@@ -1637,7 +1875,7 @@ class Live:
     def get(self) -> dict:
         ctx = self.ctx
         with self.lock:
-            if time.time() - self.count_at > 15:
+            if time.time() - self.count_at > 1:      # cheap (0.04 s); the page rolls the counter up between readings
                 self.count, self.count_at = (count_compiled(ctx.lib) if ctx.lib.exists() else 0), time.time()
         sup = supervisor(ctx)
         running = bool(sup) or bool(outside_build(ctx))
@@ -1672,7 +1910,7 @@ def set_mode_from_page(ctx: Ctx, mode: str):
     """The page's Full / Gentle / Pause buttons. Only for a build this tool started."""
     if not supervisor(ctx):
         raise Fail("no build started by riemann-at-home is running")
-    ns = argparse.Namespace(gentle=mode == "gentle", full=mode == "full", target="Main", submit_repo=None,
+    ns = argparse.Namespace(gentle=mode == "gentle", full=mode == "full", target="Main", submit_repo=None, submit=False,
                             test_unofficial_folder=False)
     if mode == "paused":
         return cmd_pause(ctx, ns)
@@ -1775,22 +2013,29 @@ def main(argv=None):
         g.add_argument("--gentle", action="store_true", help="background priority: only spare CPU (default)")
         g.add_argument("--full", action="store_true", help="all cores (still lowest priority, nice 19)")
         b.add_argument("--target", default="Main", help=argparse.SUPPRESS)
-        b.add_argument("--submit-repo", help="clone of the Riemann@home repo: update this build's PR about every 10 min")
+        b.add_argument("--submit", action="store_true", help="update this build's pull request about every 10 min")
+        b.add_argument("--submit-repo", help=argparse.SUPPRESS)       # older: dry runs into a given clone
         b.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     sub.add_parser("pause", parents=[hidden], help="freeze the build in place")
     sub.add_parser("stop", parents=[hidden], help="stop the build (resumable)")
     sub.add_parser("status", parents=[hidden], help="progress, running or not, speed")
     r = sub.add_parser("record", parents=[hidden], help="write a build record to ~/.riemann-at-home/records/")
     r.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
-    u = sub.add_parser("submit", parents=[hidden], help="open a pull request with your latest build record")
-    u.add_argument("--repo", required=True, help="your local clone of the Riemann@home repo")
+    u = sub.add_parser("submit", parents=[hidden], help="open / update this computer's pull request with the latest record")
+    au = u.add_mutually_exclusive_group()
+    au.add_argument("--enable-auto", action="store_true", help="a running build updates its PR every ~10 min")
+    au.add_argument("--disable-auto", action="store_true", help="stop the automatic updates")
+    u.add_argument("--interval", type=int, metavar="SECONDS",
+                   help=f"seconds between automatic updates (default {AUTOSUBMIT_SECONDS:g}, minimum {MIN_INTERVAL})")
+    u.add_argument("--repo", help=argparse.SUPPRESS)               # dry runs only: show the plan for this clone
     u.add_argument("--record", help="record file (default: the latest)")
     u.add_argument("--login", help="GitHub login (default: from `gh`)")
-    u.add_argument("--upstream", help="OWNER/REPO to open the PR against (default: origin)")
+    u.add_argument("--upstream", help=f"OWNER/REPO to open the PR against (default: {UPSTREAM})")
     u.add_argument("--dry-run", action="store_true", help="print what it would do; change nothing")
     u.add_argument("--no-gh-check", action="store_true", help=argparse.SUPPRESS)
     f = sub.add_parser("finish", parents=[hidden], help="done on this computer: final record, PR gets merged")
-    f.add_argument("--repo", help="your local clone of the Riemann@home repo (submits the final record)")
+    f.add_argument("--submit", action="store_true", help="submit the final record now (default if auto-submit is on)")
+    f.add_argument("--repo", help=argparse.SUPPRESS)
     f.add_argument("--login"); f.add_argument("--upstream")
     f.add_argument("--dry-run", action="store_true", help="print what it would do; change nothing")
     f.add_argument("--no-gh-check", action="store_true", help=argparse.SUPPRESS)
@@ -1816,6 +2061,9 @@ def main(argv=None):
     rc.add_argument("--checker-args", help="extra arguments for the checker (it reads the export on stdin)")
     rc.add_argument("--checker-version", help="version to record (default: `CHECKER --version`)")
     sub.add_parser("sign", parents=[hidden, lvl], help="sign the joint statement (Level 2 or 3)")
+    y = sub.add_parser("_autosubmit", parents=[hidden])   # internal: what the supervisor runs every ~10 min
+    y.add_argument("--test-unofficial-folder", action="store_true")
+    sub.add_parser("_autosubmit_loop", parents=[hidden])  # internal: interval loop for a build started by an older version
     x = sub.add_parser("_run", parents=[hidden])   # internal: the background supervisor
     x.add_argument("--target", default="Main")
     x.add_argument("--test-unofficial-folder", action="store_true")
@@ -1824,7 +2072,9 @@ def main(argv=None):
         ctx = Ctx(a)
         fn = {"setup": cmd_setup, "build": cmd_build, "pause": cmd_pause, "resume": cmd_resume, "stop": cmd_stop,
               "status": cmd_status, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
-              "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_run": cmd_run}[a.cmd]
+              "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_autosubmit": cmd_autosubmit,
+              "_autosubmit_loop": cmd_autosubmit_loop,
+              "_run": cmd_run}[a.cmd]
         return fn(ctx, a) or 0
     except Fail as e:
         print(f"riemann-at-home: {e}", file=sys.stderr)
