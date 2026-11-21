@@ -656,6 +656,125 @@ def setup_sweeper(ctx: "Ctx", stop: "threading.Event", every: float = 60):
     threading.Thread(target=loop, daemon=True).start()
 
 
+# ---------- updates: check daily, tell the volunteer, update only when they say so ----------
+UPDATE_URL = os.environ.get("RAH_UPDATE_URL") or f"https://github.com/{UPSTREAM}.git"   # override for tests
+UPDATE_EVERY = 24 * 3600
+
+
+def tool_checkout():
+    """The git checkout this tool runs from, or None (e.g. a downloaded copy)."""
+    here = Path(__file__).resolve().parent
+    r = subprocess.run(["git", "-C", str(here), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
+
+
+def check_update(ctx: "Ctx") -> dict:
+    """Ask GitHub whether the tool (cli/) changed on main. One anonymous `git fetch`; no login, no token, nothing sent
+    about this computer. Leaderboard data commits by the bot don't count, only changes under cli/.
+    Result is saved to update.json: {"checked", "available", "changes": [one line per commit], "error"}."""
+    res = {"checked": iso(time.time()), "available": False, "changes": []}
+    top = tool_checkout()
+    if not top:
+        res["error"] = "not a git checkout; update by downloading the repository again"
+    else:
+        f = subprocess.run(["git", "-C", str(top), "fetch", "--quiet", UPDATE_URL, "main"], capture_output=True,
+                           text=True, timeout=120)
+        if f.returncode != 0:
+            res["error"] = (f.stderr or "git fetch failed").strip()[:300]
+        else:
+            log = subprocess.run(["git", "-C", str(top), "log", "--format=%s", "HEAD..FETCH_HEAD", "--", "cli/"],
+                                 capture_output=True, text=True).stdout.strip()
+            res["changes"] = [l for l in log.splitlines() if l][:20]
+            res["available"] = bool(res["changes"])
+    try:
+        ctx.home.mkdir(parents=True, exist_ok=True)
+        (ctx.home / "update.json").write_text(json.dumps(res, indent=1) + "\n")
+    except OSError:
+        pass
+    return res
+
+
+def update_state(ctx: "Ctx") -> dict:
+    try:
+        return json.loads((ctx.home / "update.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def update_checker(ctx: "Ctx", stop: "threading.Event"):
+    """Background thread: check for a new version now (if the last check is over a day old) and then daily."""
+    def loop():
+        while True:
+            last = update_state(ctx).get("checked")
+            age = time.time() - datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp() if last else 1e12
+            if age >= UPDATE_EVERY:
+                try:
+                    r = check_update(ctx)
+                    if r.get("available"):
+                        print(f"update available ({len(r['changes'])} change(s)): run `riemann-at-home update`",
+                              flush=True)
+                except Exception:
+                    pass
+                age = 0
+            if stop.wait(max(60, UPDATE_EVERY - age)):
+                return
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def cmd_update(ctx: Ctx, a):
+    top = tool_checkout()
+    if not top:
+        raise Fail("this copy isn't a git checkout; download the repository again to update")
+    r = check_update(ctx)
+    if r.get("error"):
+        raise Fail(f"couldn't check for updates: {r['error']}")
+    if not r["available"]:
+        print("already up to date")
+        return 0
+    print("What changes:")
+    for c in r["changes"]:
+        print(f"  - {c}")
+    dirty = subprocess.run(["git", "-C", str(top), "status", "--porcelain", "--", "cli/"], capture_output=True,
+                           text=True).stdout.strip()
+    if dirty:
+        raise Fail("you have local edits in cli/; keep them or undo them before updating:\n" + dirty)
+    if not a.yes:
+        if not sys.stdin.isatty():
+            raise Fail("run `riemann-at-home update --yes` to apply it")
+        if input("Update now? Building continues where it left off. [y/N] ").strip().lower() not in ("y", "yes"):
+            print("not updated")
+            return 0
+    m = subprocess.run(["git", "-C", str(top), "merge", "--ff-only", "--quiet", "FETCH_HEAD"], capture_output=True,
+                       text=True)
+    if m.returncode != 0:
+        raise Fail("couldn't update (your copy has its own commits?): " + (m.stderr or m.stdout).strip()[:300])
+    (ctx.home / "update.json").write_text(json.dumps({"checked": iso(time.time()), "available": False,
+                                                      "changes": []}) + "\n")
+    me = [sys.executable, "-I", str(Path(__file__).resolve())]
+    if supervisor(ctx):                           # restart the build with the new code; Lean picks up where it was
+        mode, paused = stored_mode(ctx), is_paused(ctx)
+        subprocess.run(me + ["stop", "--folder", str(ctx.folder)], check=False)
+        subprocess.run(me + ["build", f"--{mode}", "--folder", str(ctx.folder)], check=False)
+        if paused:
+            subprocess.run(me + ["pause", "--folder", str(ctx.folder)], check=False)
+    page = ctx.logs / "page.pid"                  # this computer's local page (written by `page`): restart it
+    try:
+        pid, port = (int(x) for x in page.read_text().split())
+    except (OSError, ValueError):
+        pid = port = None
+    if pid and pid_alive(pid, "riemann-at-home"):
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(20):
+            if not pid_alive(pid):
+                break
+            time.sleep(0.25)
+        subprocess.Popen(me + ["page", "--folder", str(ctx.folder), "--port", str(port)], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        print("local page restarted")
+    print("updated")
+    return 0
+
+
 def cmd_sweep(ctx: Ctx, a):
     n, freed = sweep_setup_files(ctx)
     print(f"deleted {n:,} finished modules' scratch files, freed {freed / 1e9:.1f} GB")
@@ -792,6 +911,7 @@ def cmd_run(ctx: Ctx, a):
                 return
     threading.Thread(target=disk_guard, daemon=True).start()
     setup_sweeper(ctx, stopping)              # keeps a whole build near 160 GB instead of 1.2 TB
+    update_checker(ctx, stopping)             # daily: is there a newer version? (tells, never installs)
 
     (ctx.logs / "supervisor.features").write_text(f"{os.getpid()} autosubmit-v2\n")   # rereads interval/config
 
@@ -971,6 +1091,9 @@ def cmd_status(ctx: Ctx, a):
         print(f"speed     {r:,.0f} modules/hour over the last {SPEED_WINDOW // 60} min{eta}")
     elif built and busy >= 600:
         print(f"speed     {built / busy * 3600:,.0f} modules/hour on average ({built:,} built while measured)")
+    up = update_state(ctx)
+    if up.get("available"):
+        print(f"update    available ({len(up['changes'])} change(s)): riemann-at-home update")
     ax = read(ctx.logs / "axioms.log")
     if ax:
         print(f"axioms    {parse_axioms(ax)}")
@@ -2021,7 +2144,7 @@ class Live:
                 "mode": "paused" if paused else stored_mode(ctx), "ours": bool(sup),
                 "started": iso(started) if started else None, "rate": round(r) if r else None,
                 "active": [{"name": m, "secs": s, "bytes": self.predict(m)} for m, s in compiling_now(ctx)],
-                "recent": recent[-5:]}
+                "recent": recent[-5:], "update": update_state(ctx)}
 
     def build_times(self) -> dict:
         try:
@@ -2111,7 +2234,13 @@ def cmd_page(ctx: Ctx, a):
             except Exception as e:         # keep serving
                 print(f"refresh failed: {e}", file=sys.stderr)
     threading.Thread(target=refresher, daemon=True).start()
+    try:
+        ctx.logs.mkdir(parents=True, exist_ok=True)
+        (ctx.logs / "page.pid").write_text(f"{os.getpid()} {a.port}\n")   # so `update` can restart this page
+    except OSError:
+        pass
     setup_sweeper(ctx, threading.Event())   # also while only the page runs (e.g. a build started by an older version)
+    update_checker(ctx, threading.Event())
     print(f"serving {url} (this computer only; Ctrl-C to stop)")
     try:
         srv.serve_forever()
@@ -2149,6 +2278,8 @@ def main(argv=None):
     sub.add_parser("stop", parents=[hidden], help="stop the build (resumable)")
     sub.add_parser("status", parents=[hidden], help="progress, running or not, speed")
     sub.add_parser("sweep", parents=[hidden], help="delete scratch files of finished modules (frees disk)")
+    u = sub.add_parser("update", parents=[hidden], help="get the newest version of this tool (asks first)")
+    u.add_argument("--yes", action="store_true", help="don't ask")
     r = sub.add_parser("record", parents=[hidden], help="write a build record to ~/.riemann-at-home/records/")
     r.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     u = sub.add_parser("submit", parents=[hidden], help="open / update this computer's pull request with the latest record")
@@ -2201,7 +2332,7 @@ def main(argv=None):
     try:
         ctx = Ctx(a)
         fn = {"setup": cmd_setup, "build": cmd_build, "pause": cmd_pause, "resume": cmd_resume, "stop": cmd_stop,
-              "status": cmd_status, "sweep": cmd_sweep, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
+              "status": cmd_status, "sweep": cmd_sweep, "update": cmd_update, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
               "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_autosubmit": cmd_autosubmit,
               "_autosubmit_loop": cmd_autosubmit_loop,
               "_run": cmd_run}[a.cmd]

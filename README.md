@@ -40,6 +40,9 @@ computer always keeps room, and every module you built still counts).
    username on the page. Your pull request is still public on GitHub under your account.
 6. **See your own build.** `python3 -I cli/riemann-at-home page` opens a local page for this computer.
 7. **Done or stopping for good.** `python3 -I cli/riemann-at-home finish`
+8. **Updates.** The tool checks GitHub once a day (one anonymous fetch, nothing about you is sent). When there's a new
+   version, your local page and `status` say so. Run `python3 -I cli/riemann-at-home update`: it shows what changed,
+   asks, then updates and restarts the build and page. Nothing built is lost. It never updates by itself.
 
 ## What this is, and what it isn't
 

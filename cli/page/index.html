@@ -9,6 +9,8 @@
   .title span{color:#ffd23f;text-shadow:0 0 8px #b36b00,2px 2px 0 #4d2a00}
   .sub{position:absolute;left:26px;top:54px;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
   .nav{position:absolute;right:22px;top:18px;display:flex;gap:6px}
+  .upd{position:absolute;right:22px;top:50px;max-width:420px;background:#ffd84a;color:#0b1c55;font:bold 12px Arial;padding:6px 10px;border-radius:4px}
+  .upd code{font:bold 12px Menlo,monospace;background:rgba(11,28,85,.12);padding:1px 4px;border-radius:3px}
   .nav a{font:bold 11px Arial;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:5px 10px;
          color:#b9d0ff;border:1px solid #2f5bd8;background:#000}
   .nav a.on{color:#fff;background:linear-gradient(#2f5bd8,#13308f)}
@@ -51,6 +53,7 @@
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub"></div>
   <div class="nav" id="nav"></div>
+  <div class="upd" id="upd" style="display:none"></div>
   <div class="panel blue"  style="left:22px;top:642px;width:300px;height:100px"><h3 id="h1"></h3><div id="p1"></div></div>
   <div class="panel navy"  style="left:22px;top:556px;width:300px;height:76px"><h3 id="h3"></h3><div id="p3"></div></div>
   <div class="panel green" style="left:340px;top:556px;width:638px;height:186px;overflow:hidden"><h3 id="h2"></h3><div id="p2"></div></div>
@@ -545,8 +548,16 @@ function tickTimers() {                      // every 200 ms: only the timer tex
 }
 setInterval(tickTimers, 200);
 let lastShown = "";
+let shownUpd = null;
 function renderLive() {
   if (!L) return;
+  const up = L.update || {}, key = up.available ? up.changes.join("|") : "";
+  if (key !== shownUpd) {                       // only touch the banner when it changes
+    shownUpd = key; const el = $("upd");
+    el.style.display = up.available ? "block" : "none";
+    if (up.available) { el.title = up.changes.join("\n");
+      el.innerHTML = `New version available (${up.changes.length} change${up.changes.length > 1 ? "s" : ""}). Run <code>riemann-at-home update</code>`; }
+  }
   if (shownMode !== L.mode) {
     shownMode = L.mode;
     $("h1").innerHTML = `This computer's build<span class="speed">` +

@@ -30,6 +30,10 @@ and this README (`sign` prints the joint statement from it).
 6. `riemann-at-home name "Display Name"` / `name --anonymous` / `name --clear`: what the page shows instead of your
    GitHub login (1 to 32 characters, no control characters). Records then carry `"display_name"` or
    `"anonymous": true`. Your pull request is still public on GitHub under your account.
+7. `riemann-at-home update [--yes]`: get the newest version. The tool checks once a day (an anonymous `git fetch`
+   of main; only changes under `cli/` count) and says so on the local page and in `status`. `update` lists the
+   changes, asks, fast-forwards your checkout, and restarts a running build (same speed; Lean resumes where it was) and
+   this computer's local page. It never updates without being asked.
 7. `riemann-at-home page`: this computer's page at http://localhost:8642/ ("This computer": its terrain, what is
    compiling now, speed). Its "Global dashboard" button opens https://riemann-at-home.github.io/riemann-at-home/.
 
