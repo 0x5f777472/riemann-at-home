@@ -274,6 +274,7 @@ $("stat").innerHTML = `<b>${fmt(once)}</b> of ${fmt(N)} modules built · <b>${fm
 const prompt = `I'd like to help build the Lean proof of the Riemann Hypothesis through Riemann@home.
 Please clone https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 "riemann-at-home setup", then "riemann-at-home build", then "riemann-at-home submit" to send my build record.
+Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
 If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
 Ask me before installing anything, and show me the build record before submitting it.`;
 $("prompt").textContent = prompt;
