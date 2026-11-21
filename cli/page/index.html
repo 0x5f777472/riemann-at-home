@@ -551,9 +551,9 @@ let lastShown = "";
 let shownUpd = null;
 function renderLive() {
   if (!L) return;
-  const up = L.update || {}, key = up.available ? up.changes.join("|") : "";
-  if (key !== shownUpd) {                       // only touch the banner when it changes
-    shownUpd = key; const el = $("upd");
+  const up = L.update || {}, updKey = up.available ? up.changes.join("|") : "";
+  if (updKey !== shownUpd) {                    // only touch the banner when it changes
+    shownUpd = updKey; const el = $("upd");
     el.style.display = up.available ? "block" : "none";
     if (up.available) { el.title = up.changes.join("\n");
       el.innerHTML = `New version available (${up.changes.length} change${up.changes.length > 1 ? "s" : ""}). Run <code>riemann-at-home update</code>`; }
