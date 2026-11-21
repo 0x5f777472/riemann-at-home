@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300"><title>Riemann@home · Global Leaderboard</title>
+<meta name="viewport" content="width=1000">
+<style>
+  html,body{margin:0;background:#000;color:#fff;font:bold 12px Arial,Helvetica,sans-serif;overflow:auto}
+  #screen{width:1000px;height:680px;margin:0 auto;position:relative;background:#000}
+  #stars,#terrain,#overlay{position:absolute;left:0;top:0}
+  .title{position:absolute;left:22px;top:12px;font:bold italic 34px "Arial Black",Arial,sans-serif;color:#5aa0ff;
+         text-shadow:0 0 8px #1a4dff,2px 2px 0 #001a66;letter-spacing:1px}
+  .title span{color:#ffd23f;text-shadow:0 0 8px #b36b00,2px 2px 0 #4d2a00}
+  .sub{position:absolute;left:26px;top:54px;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
+  .panel{position:absolute;border:1px solid rgba(120,160,255,.55);box-shadow:0 0 18px rgba(30,80,255,.25)}
+  .panel.blue{background:rgba(25,45,170,.72)}.panel.green{background:rgba(20,140,60,.62)}.panel.navy{background:rgba(5,15,60,.72)}
+  .panel h3{margin:0;padding:3px 8px;font-size:10px;color:#fff;background:rgba(0,0,0,.25);letter-spacing:1px;text-transform:uppercase}
+  .kv{display:grid;grid-template-columns:118px 1fr;gap:2px 6px;padding:6px 9px}
+  .k{color:#b9d0ff}.v{color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .green .k{color:#c9f5d4}
+  .v.y{color:#ffd23f}.v.g{color:#7dff95}.v.r{color:#ff6b6b}
+  .line{padding:6px 9px 0;color:#b9d0ff}
+  .mod{padding:1px 9px;color:#7dff95;font-family:"Courier New",monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar{margin:6px 9px 4px;height:12px;background:#0a0f2a;position:relative;border:1px solid rgba(255,255,255,.3)}
+  .bar i{position:absolute;left:0;top:0;bottom:0;background:#3a6bff}
+  .pct{padding:0 9px;color:#ffd23f}
+  .cap{position:absolute;left:96px;top:86px;color:#7f9fdf;font-size:10px;letter-spacing:.4px}
+  .legend{position:absolute;left:96px;top:100px;color:#7f9fdf;font-size:10px;letter-spacing:0;line-height:12px;display:none}
+  .legend i{display:inline-block;width:10px;height:3px;margin:0 5px 2px 0;vertical-align:middle}
+  .stat{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
+  .stat b{color:#ffd23f}
+  .demo{position:absolute;right:22px;top:52px;color:#ff6b6b;font-size:12px;letter-spacing:2px;border:1px solid #ff6b6b;padding:2px 7px;display:none}
+  .extra{display:none}
+  .global .extra{display:block}
+  .prompt{margin:6px 9px;padding:8px;background:#000;border:1px solid #2f5bd8;color:#7dff95;font:12px "Courier New",monospace;
+          line-height:1.45;white-space:pre-wrap;user-select:all}
+  .btn{display:inline-block;margin:4px 9px;padding:4px 10px;font:bold 11px Arial;letter-spacing:1px;color:#fff;
+       background:linear-gradient(#2f5bd8,#13308f);border:1px solid #6f8fff;cursor:pointer;text-decoration:none}
+  .gh{color:#ffd23f;text-decoration:none}
+  .honor{height:296px;overflow-y:auto;padding:4px 0}
+  .hr{display:grid;grid-template-columns:22px 30px 1fr auto;gap:2px 8px;padding:5px 9px;border-bottom:1px solid rgba(120,160,255,.16)}
+  .hr .n{color:#7f9fdf;font-size:11px;padding-top:1px}.hr .w{color:#fff}.hr .d{color:#7f9fdf;font-size:11px;text-align:right}
+  .hr .m{grid-column:3 / 5;color:#b9d0ff;font-size:11px;font-weight:normal}
+  .whole{color:#000;background:#ffd23f;font-size:9px;letter-spacing:1px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+  .lvl{color:#000;font-size:9px;letter-spacing:1px;padding:1px 5px;margin-left:4px;vertical-align:1px;white-space:nowrap}
+  .lvl.l2{background:#7dff95}.lvl.l3{background:#7fd8ff}
+  .nav{position:absolute;right:22px;top:18px;display:flex;gap:6px;z-index:3}
+  .nav a{font:bold 11px Arial;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:5px 10px;
+         color:#b9d0ff;border:1px solid #2f5bd8;background:#000}
+  .nav a.on{color:#fff;background:linear-gradient(#2f5bd8,#13308f)}
+  .global.view-statement .boardview,.global.view-statement .joinview{display:none}
+  .stview .honor{height:502px}
+  .global .stview{display:none}.global.view-statement .stview{display:block}
+  .stmt{height:494px;overflow-y:auto;padding:6px 12px 8px;color:#dfe7ff;font-weight:normal;font-size:12px;line-height:1.5}
+  .stmt h4{margin:2px 0 6px;color:#ffd23f;font-size:13px;letter-spacing:.3px}
+  .stmt p{margin:0 0 7px}.stmt ol{margin:0 0 7px;padding-left:20px}.stmt li{margin-bottom:2px}
+  .stmt a{color:#7fd8ff}.stmt code{font-family:"Courier New",monospace;color:#7dff95}
+  .sofar{margin:10px 0 8px;padding-top:8px;border-top:1px solid rgba(120,160,255,.35)}
+  .sofar h5{margin:0 0 5px;color:#ffd23f;font-size:12px;letter-spacing:1px;text-transform:uppercase}
+  .sofar h5 .asof{color:#7f9fdf;font-size:10px;letter-spacing:.5px;text-transform:none;margin-left:6px}
+  .sofar ul{margin:0 0 8px;padding-left:16px}.sofar li{margin-bottom:1px}
+  .sofar .y{color:#ffd23f;font-weight:bold}
+  .funnel{display:grid;grid-template-columns:168px 1fr 46px;gap:5px 8px;align-items:center;font-size:11px}
+  .funnel .fl{color:#b9d0ff;font-weight:bold;white-space:nowrap}
+  .funnel .ft{height:10px;background:#0a0f2a;border:1px solid rgba(255,255,255,.3);position:relative}
+  .funnel .ft i{position:absolute;left:0;top:0;bottom:0;background:#3a6bff}
+  .funnel .fc{color:#ffd23f;font-weight:bold;text-align:right}
+  .sig{display:flex;align-items:center;gap:8px;padding:5px 9px;border-bottom:1px solid rgba(120,160,255,.16)}
+  .sig .body{flex:1;min-width:0}.sig .w{color:#fff;text-decoration:none}
+  .sig .meta{color:#c9f5d4;font-size:11px;font-weight:normal;margin-top:2px}
+  .sig .badges{margin-top:3px;white-space:normal;line-height:1.7}.sig .badges .lvl{margin:0 4px 0 0;display:inline-block;white-space:normal;max-width:100%;line-height:1.4}
+  .honor .note{padding:8px 9px;color:#7f9fdf;font-size:10px;font-weight:normal}
+  table.lb{width:calc(100% - 18px);margin:6px 9px;border-collapse:collapse;font-size:12px}
+  table.lb td{padding:3px 4px;border-bottom:1px solid rgba(120,160,255,.18)}
+  table.lb td.n{color:#7f9fdf;width:22px}table.lb td.c{text-align:right;color:#ffd23f}
+  .val{padding:4px 9px 2px}.val b{color:#7dff95}.val .who{color:#fff}.val .what{color:#b9d0ff;font-weight:normal;font-size:11px}
+  .val a{color:#7f9fdf;font-size:10px}
+  .blink{animation:b 1s steps(1) infinite}@keyframes b{50%{opacity:0}}
+  .hr .w a{color:inherit;text-decoration:none}
+  .sub2{margin:10px 9px 2px;padding-top:6px;border-top:1px solid rgba(120,160,255,.35);color:#b9d0ff;font-size:10px;letter-spacing:1px;text-transform:uppercase}
+  .run{padding:3px 9px 4px;border-bottom:1px solid rgba(120,160,255,.16);display:flex;align-items:center;gap:8px}
+  .run .body{flex:1;min-width:0}
+  .av{display:inline-block;border-radius:50%;vertical-align:middle;flex:none;object-fit:cover;background:#0a0f2a;
+      box-shadow:0 0 0 1px rgba(185,208,255,.45)}
+  .av.ph{display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;letter-spacing:0;line-height:1}
+  a.avl{display:inline-flex;flex:none;text-decoration:none}
+  .hr .avc{grid-row:1 / 3;grid-column:2;align-self:center}
+  .stat .av{margin:-3px 0 0}
+  .run .top{display:flex;align-items:baseline;gap:7px;white-space:nowrap}
+  .run .w{color:#fff;text-decoration:none}
+  .run .mc{color:#c9f5d4;font-size:11px;font-weight:normal;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .run .pc{color:#c9f5d4;font-size:11px}.run .pc b{color:#ffd23f}
+  .dot{width:7px;height:7px;border-radius:50%;background:#7dff95;flex:none;align-self:center;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.35;box-shadow:0 0 0 0 rgba(125,255,149,.0)}50%{opacity:1;box-shadow:0 0 6px 1px rgba(125,255,149,.8)}}
+  .pb{margin-top:3px;height:5px;background:#0a0f2a;position:relative;border:1px solid rgba(255,255,255,.3);overflow:hidden}
+  .pb i{position:absolute;left:0;top:0;bottom:0;background:#3a6bff linear-gradient(100deg,transparent 0 40%,rgba(255,255,255,.55) 50%,transparent 60% 100%) no-repeat;
+        background-size:60px 100%;animation:shimmer 2.4s linear infinite}
+  @keyframes shimmer{0%{background-position:-60px 0}100%{background-position:400px 0}}
+  #running .note{color:#9fd8ae}
+  /* DOWNLOAD PDF = window.print(): a clean black-on-white document, not the dark page */
+  #printdoc{display:none}
+  @media print{
+    @page{margin:18mm 18mm 16mm}
+    html,body{background:#fff !important;color:#000;overflow:visible !important}
+    #screen{display:none !important}
+    #printdoc{display:block;font:11pt/1.5 Georgia,"Times New Roman",serif;color:#000}
+    #printdoc h1{font:bold 17pt Arial,Helvetica,sans-serif;margin:0 0 10pt}
+    #printdoc h2{font:bold 12pt Arial,Helvetica,sans-serif;margin:16pt 0 6pt;border-bottom:1px solid #000;padding-bottom:2pt}
+    #printdoc p{margin:0 0 8pt}#printdoc ol{margin:0 0 8pt;padding-left:18pt}
+    #printdoc code{font:10pt "Courier New",monospace}
+    #printdoc a{color:#000;text-decoration:none}
+    #printdoc a[href^="http"]::after{content:" (" attr(href) ")";font-size:9pt;word-break:break-all}
+    #printdoc .sample{font:bold 12pt Arial,sans-serif;border:2px solid #000;padding:4pt 8pt;margin:0 0 12pt;display:inline-block;letter-spacing:2pt}
+    #printdoc .sigs{margin:0;padding-left:20pt}#printdoc .sigs li{margin-bottom:3pt;break-inside:avoid}
+    #printdoc .sofar{border-top:1px solid #000;margin:12pt 0 0;padding-top:6pt}
+    #printdoc .sofar h5{font:bold 12pt Arial,sans-serif;margin:0 0 4pt;color:#000;text-transform:none;letter-spacing:0}
+    #printdoc .sofar h5 .asof{font:9pt Arial,sans-serif;color:#000}
+    #printdoc .sofar .y{color:#000;font-weight:bold}
+    #printdoc .funnel{font:9pt Arial,sans-serif;grid-template-columns:150pt 1fr 32pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    #printdoc .funnel .fl,#printdoc .funnel .fc{color:#000}
+    #printdoc .funnel .ft{background:#fff;border:1px solid #000;height:8pt}
+    #printdoc .funnel .ft i{background:#555}
+    #printdoc .foot{margin-top:18pt;padding-top:5pt;border-top:1px solid #000;font:8.5pt Arial,sans-serif;word-break:break-all}
+  }
+  .run .pc{margin-left:auto}
+  .jsline{margin-top:8px;color:#ffd23f}
+  #tab-statement{border-color:#ffd23f;color:#ffd23f}
+</style></head>
+<body class="global"><div id="screen" style="height:1185px">
+  <canvas id="stars" width="1000" height="680"></canvas>
+  <canvas id="terrain" width="1000" height="680"></canvas>
+  <canvas id="overlay" width="1000" height="680"></canvas>
+  <div class="title">Riemann<span>@</span>home</div>
+  <div class="sub" id="sub">every independent build of the AI proof of the Riemann Hypothesis</div>
+  <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a></div>
+  <div class="demo" id="demo">DEMO DATA</div>
+  <div class="panel blue"  style="left:22px;top:84px;display:none;width:300px;height:132px"><h3 id="h1">Coverage</h3><div id="p1"></div></div>
+  <div class="panel green" style="left:340px;top:84px;display:none;width:300px;height:132px"><h3 id="h2">Latest build</h3><div id="p2"></div></div>
+  <div class="panel navy"  style="left:658px;top:84px;display:none;width:320px;height:132px"><h3 id="h3">Integrity</h3><div id="p3"></div></div>
+  <div class="cap" id="cap"></div>
+  <div class="legend" id="legend" style="display:none!important"><div><i style="background:#ffd23f"></i>gold = whole proof built</div>
+    <div><i style="background:#7dff95;box-shadow:0 0 5px #7dff95"></i>green = export reproduced</div>
+    <div><i style="background:#7fd8ff;box-shadow:0 0 5px #7fd8ff"></i>cyan = re-checked independently</div></div>
+  <div class="stat" id="stat"></div>
+  <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
+       border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
+
+  <div class="extra panel navy joinview" style="left:22px;top:540px;width:956px;height:250px">
+    <h3>Join in</h3>
+    <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/titojankowski/riemann-at-home">github.com/titojankowski/riemann-at-home</a></div>
+    <div class="line">Or paste this into your AI assistant (Claude, ChatGPT, …) and it will walk you through it:</div>
+    <div class="prompt" id="prompt"></div>
+    <span class="btn" id="copy">COPY</span>
+    <div class="line jsline">Finish the whole proof and reproduce the export to sign the <a class="gh" href="#statement" id="jslink">joint statement</a><span id="jscount"></span>.</div>
+  </div>
+  <div class="extra panel blue boardview" style="left:22px;top:806px;width:630px;height:330px">
+    <h3>Leaderboard · finished the whole proof</h3><div id="board" class="honor"></div></div>
+  <div class="extra panel green boardview" style="left:668px;top:806px;width:310px;height:330px">
+    <h3>Running now · builds in progress</h3><div id="running" class="honor"></div></div>
+  <!-- Joint statement tab (#statement): owner-approved wording, keep exactly -->
+  <div class="extra panel navy stview" style="left:22px;top:540px;width:560px;height:536px">
+    <h3>Joint statement</h3>
+    <div class="stmt">
+      <h4>Riemann@home: a joint statement from independent builders</h4>
+      <p>We, the undersigned, each built Levent Alpöge's Lean proof of the Riemann Hypothesis (released November 20, 2026) on our own computers, from the official archive (sha256 <code>9631b4f0…c7fc</code>) with the pinned Lean 4.33.1 and Mathlib.</p>
+      <p>Each signatory:</p>
+      <ol>
+        <li>compiled all 175,187 modules (<code>lake build Main</code>) without errors,</li>
+        <li>confirmed the final theorem depends only on Lean's three standard axioms (<code>propext</code>, <code>Classical.choice</code>, <code>Quot.sound</code>),</li>
+        <li>exported the compiled proof and reproduced the same raw export file as other independent builders (sha256 <code>5ea74b91…244e</code>),</li>
+        <li>where noted, re-checked that export with an independent checker.</li>
+      </ol>
+      <p>We do not certify the mathematics. That the statement is Mathlib's Riemann Hypothesis, and that the proved theorem is exactly that statement, was checked by the Lean and Mathlib communities (<a href="https://leanprover-community.github.io/blog/posts/riemann-hypothesis/" target="_blank" rel="noopener">their statement</a>). Each signature is the signer's own report, tied to their GitHub account.</p>
+      <p>We join the Lean and Mathlib communities in congratulating Levent Alpöge.</p>
+      <div class="sofar" id="sofar"></div>
+      <span class="btn" id="pdf" style="margin-left:0" title="Opens the print dialog: choose “Save as PDF”">DOWNLOAD PDF</span>
+    </div></div>
+  <div class="extra panel blue stview" style="left:598px;top:540px;width:380px;height:536px">
+    <h3 id="sighead">Signatures</h3><div id="sigs" class="honor"></div></div>
+</div>
+<div id="printdoc"></div>
+<script type="module">
+// Riemann@home global dashboard (GitHub Pages). Reads data.json exactly as specified in CONTRACT.md:
+//   terrain height = number of distinct people whose accepted build compiled each module (builders_b64).
+// #demo           made-up crowd, labelled DEMO DATA
+// #stack=N        modules per bar (default 5; #stack=1 = one spike per module)
+// #color=library  one color per library instead of the rainbow by position
+// #hover=x,y      test hook: simulates the mouse at that spot (for headless screenshots)
+const DEMO = /demo/.test(location.hash);
+
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]);
+// Display names (CONTRACT 2026-11-21): show "name"; link to the GitHub profile only when "who" (login) is present.
+const nameOf = p => p.name ?? p.who ?? "anonymous";
+// GitHub profiles: avatar + name link to github.com/<who> when "who" is set. Sample data (top-level "sample": true)
+// uses invented logins that may belong to real strangers, so it never loads github.com avatars: placeholders only.
+let SAMPLE = false;                        // set from data.json once loaded
+const hue = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.codePointAt(0)) >>> 0; return h % 360; };
+const initials = p => {
+  if (!p.who && /^anonymous\b/i.test(nameOf(p))) return "?";
+  const words = String(nameOf(p)).split(/[\s\-_.]+|(?<=[a-z])(?=[0-9])/).filter(w => /[\p{L}\p{N}]/u.test(w));
+  const ch = w => (w.match(/[\p{L}\p{N}]/gu) || []);
+  return (words.length > 1 ? ch(words[0])[0] + ch(words[1])[0] : ch(words[0] || "?").slice(0, 2).join("") || "?").toUpperCase();
+};
+const placeholder = (p, px) => {           // logins: color from the login; display names / anonymous: neutral
+  const bg = p.who ? `hsl(${hue(p.who)},55%,42%)` : "#3b4670";
+  return `<span class="av ph" style="width:${px}px;height:${px}px;font-size:${Math.round(px * 0.42)}px;background:${bg}">${esc(initials(p))}</span>`;
+};
+// sample data: invented logins, so no links (they would 404 or point at strangers)
+const link = (p, inner, cls = "") => SAMPLE ? `<span${cls ? ` class="${cls}"` : ""}>${inner}</span>`
+  : `<a${cls ? ` class="${cls}"` : ""} href="https://github.com/${encodeURIComponent(p.who)}" target="_blank" rel="noopener">${inner}</a>`;
+const avatar = (p, px) => {
+  if (!p.who) return placeholder(p, px);
+  const img = SAMPLE ? placeholder(p, px)
+    : `<img class="av" src="https://github.com/${encodeURIComponent(p.who)}.png?size=64" width="${px}" height="${px}" loading="lazy" alt="" data-ph="${esc(placeholder(p, px))}">`;
+  return link(p, img, "avl");
+};
+// avatar that fails to load (renamed account, offline, blocked): swap in the initials placeholder
+document.addEventListener("error", e => { const t = e.target;
+  if (t.tagName === "IMG" && t.classList.contains("av") && t.dataset.ph) t.outerHTML = t.dataset.ph; }, true);
+const person = (p, cls = "") => p.who ? link(p, esc(nameOf(p)), cls) : `<span${cls ? ` class="${cls}"` : ""}>${esc(nameOf(p))}</span>`;
+const kv = rows => `<div class="kv">${rows.map(([k, v, c]) => `<div class="k">${k}</div><div class="v ${c||""}">${v}</div>`).join("")}</div>`;
+const DPR = Math.max(1, window.devicePixelRatio || 1);
+function ctx2d(id) {                       // draw at full screen resolution (Retina = 2x)
+  const cv = $(id); cv.style.width = "1000px"; cv.style.height = "680px";
+  cv.width = 1000 * DPR; cv.height = 680 * DPR;
+  const g = cv.getContext("2d"); g.scale(DPR, DPR); return g;
+}
+// Tabs: Leaderboard / Joint statement; the choice lives in the hash (#statement) so it is linkable; #demo is kept.
+$("tab-board").href = DEMO ? "#demo" : "#";
+$("tab-statement").href = DEMO ? "#demo&statement" : "#statement";
+function showTab() { const st = /statement/.test(location.hash);
+  document.body.classList.toggle("view-statement", st);
+  $("tab-board").classList.toggle("on", !st); $("tab-statement").classList.toggle("on", st); }
+showTab(); window.addEventListener("hashchange", showTab);
+async function gunzipB64(s) {              // builders_b64: gzip, then base64
+  const bytes = Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// #demo loads the made-up realistic crowd (realistic-sample.json, from make-realistic-sample.py) and labels it DEMO DATA
+if (DEMO) $("demo").style.display = "block";
+const DATA = await (await fetch((DEMO ? "realistic-sample.json?" : "data.json?") + Date.now())).json();
+const N = DATA.n, LIBS = DATA.libraries;
+let heights = await gunzipB64(DATA.builders_b64);
+if (heights.length !== N) console.warn(`builders has ${heights.length} entries, expected ${N}`);
+SAMPLE = DATA.sample === true;
+let sum = DATA.summary, cur = DATA.latest, board = DATA.leaderboard || [];
+// Contract order: modules compiled (desc), then earliest since. Re-sorted here so the page never depends on B's order.
+board = board.slice().sort((a, b) => b.modules - a.modules || String(a.since).localeCompare(String(b.since))
+                                    || (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9));
+let maxVal = 1; for (const h of heights) if (h > maxVal) maxVal = h;
+// Step reached on the modules (derived on the page, no bot field yet): a whole build covers every module, and an
+// export covers the whole proof, so one such entry lifts every bar's cap. 0 built only · 1 gold · 2 green · 3 cyan.
+const STEP = (DATA.signatures || []).some(g => g.level >= 3) ? 3 : (DATA.signatures || []).some(g => g.level >= 2) ? 2
+           : (DATA.leaderboard || []).some(p => p.whole_proof) ? 1 : 0;
+const STEP_CAP = null;   // step-colored caps: tried and dropped (owner, 2026-11-21)
+// legend off with the caps
+
+// ---------- panels ----------
+const once = sum.modules_built_once;
+$("p1").innerHTML = kv([["Built once+", `${fmt(once)} of ${fmt(N)}`, "y"], ["Built 3+ times", fmt(sum.modules_built_3x)],
+                        ["Not yet built", fmt(N - once)], ["Builders", fmt(sum.people)]]);
+$("p2").innerHTML = cur ? kv([["Builder", esc(nameOf(cur)), "y"],
+                              ["Modules", `${fmt(cur.modules)} of ${fmt(N)}`, cur.modules === N ? "g" : ""],
+                              ["Recorded", esc(cur.recorded).replace("T", " ").replace(/(\.\d+)?Z$/, " UTC")]])
+                    : `<div class="line">no builds yet</div>`;
+$("p3").innerHTML = kv([["Archive", "9631b4f0…c7fc", "g"], ["Lean", "4.33.1"], ["Mathlib", "0df444a3…"],
+                        ["Whole proofs", fmt(sum.whole_proofs), sum.whole_proofs ? "g" : ""]]);
+const first = board.find(p => p.first_whole_proof_rank === 1);
+$("stat").innerHTML = `<b>${fmt(once)}</b> of ${fmt(N)} modules built · <b>${fmt(sum.people)}</b> builder${sum.people === 1 ? "" : "s"} · ` +
+  `<b>${fmt(sum.whole_proofs)}</b> whole proof${sum.whole_proofs === 1 ? "" : "s"}` + ` · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+
+// ---------- join, leaderboard, whole-proof checks ----------
+const prompt = `I'd like to help build the Lean proof of the Riemann Hypothesis through Riemann@home.
+Please clone https://github.com/titojankowski/riemann-at-home, read its README, and walk me through the volunteer steps:
+"riemann-at-home setup", then "riemann-at-home build", then "riemann-at-home submit" to send my build record.
+If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
+Ask me before installing anything, and show me the build record before submitting it.`;
+$("prompt").textContent = prompt;
+$("copy").onclick = () => { navigator.clipboard.writeText(prompt); $("copy").textContent = "COPIED"; setTimeout(() => $("copy").textContent = "COPY", 1500); };
+const hours = h => h == null ? "" : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;
+const nth = k => k + (["th", "st", "nd", "rd"][(k % 100 - 20) % 10] || ["th", "st", "nd", "rd"][k % 100] || "th");
+const date = t => esc(String(t || "").slice(0, 10));
+const levelBadge = lv => lv >= 3 ? '<span class="lvl l3" title="Export reproduced and re-checked with an independent checker">RE-CHECKED</span>'
+                       : lv >= 2 ? '<span class="lvl l2" title="Reproduced the reference proof export">EXPORT REPRODUCED</span>' : "";
+// Joint statement signatures, in signing order: avatar, name, date, machine, level badges.
+const sigs = (DATA.signatures || []).slice().sort((a, b) => String(a.signed).localeCompare(String(b.signed)));
+// "The builders so far": live counts from data.json (never typed by hand), stamped with data.json's generated time.
+{ const c = [board.filter(p => p.whole_proof).length,                      // whole builds only: partial builders
+             sigs.filter(g => g.level >= 2).length, sigs.filter(g => g.level >= 3).length];   // aren't part of the statement
+  const asof = DATA.generated ? esc(String(DATA.generated).replace("T", " ").replace(/:\d\d(\.\d+)?Z$/, " UTC")) : "unknown";
+  const y = n => `<span class="y">${fmt(n)}</span>`;
+  const labels = ["Built the whole proof", "Export reproduced + signed", "Independently re-checked"];
+  $("sofar").innerHTML = `<h5>The builders so far<span class="asof">as of ${asof}</span></h5><ul>` +
+    `<li>${y(c[0])} built the whole proof and confirmed the axioms.</li>` +
+    `<li>${y(c[1])} reproduced the export and signed this statement.</li>` +
+    `<li>${y(c[2])} also re-checked the export with an independent checker.</li></ul>` +
+    `<div class="funnel">${labels.map((l, k) => `<span class="fl">${l}</span><span class="ft">` +
+      (c[k] ? `<i style="width:${Math.max(1, c[k] / Math.max(1, c[0]) * 100).toFixed(1)}%"></i>` : "") +
+      `</span><span class="fc">${fmt(c[k])}</span>`).join("")}</div>`; }
+{ const setTitle = () => document.title = /statement/.test(location.hash) ? "Riemann@home · Joint Statement" : "Riemann@home · Global Leaderboard";
+  setTitle(); addEventListener("hashchange", setTitle);
+  const n = (DATA.signatures || []).length; const jc = $("jscount"); if (jc) jc.textContent = n ? ` (${n} signature${n === 1 ? "" : "s"} so far)` : "";
+  const jl = $("jslink"); if (jl && /demo/.test(location.hash)) jl.href = "#demo&statement"; }
+$("sighead").textContent = `Signatures${sigs.length ? " · " + sigs.length : ""}`;
+$("sigs").innerHTML = sigs.length ? sigs.map(g =>
+    `<div class="sig">${avatar(g, 28)}<div class="body">${person(g, "w")}` +
+    `<div class="meta">signed ${date(g.signed)}${g.machine ? " · " + esc(g.machine) : ""}</div>` +
+    `<div class="badges">${g.level >= 2 ? '<span class="lvl l2">EXPORT REPRODUCED</span>' : ""}` +
+    `${g.level >= 3 ? `<span class="lvl l3">INDEPENDENT RE-CHECK: ${esc((g.checkers || []).join(", ") || "yes")}</span>` : ""}</div></div></div>`).join("")
+  : `<div class="note">No signatures yet.</div>`;
+// Printable joint statement (no avatars, no external loads): statement text as on the page, links printed as URLs.
+{ const lvlText = g => g.level >= 3 ? `Level 3: export reproduced; independent re-check: ${(g.checkers || []).join(", ") || "yes"}`
+                                    : g.level >= 2 ? "Level 2: export reproduced" : `Level ${g.level ?? "?"}`;
+  const body = document.querySelector(".stmt").cloneNode(true);
+  body.querySelector("#pdf")?.remove(); body.querySelector("#sofar")?.removeAttribute("id");
+  const title = body.querySelector("h4"); const h1 = document.createElement("h1"); h1.textContent = title.textContent; title.replaceWith(h1);
+  const url = location.href.split("#")[0];
+  $("printdoc").innerHTML = (SAMPLE || DEMO ? `<div class="sample">SAMPLE DATA: made-up names, not real signatures</div>` : "") +
+    body.innerHTML +
+    `<h2>Signatures (${sigs.length})</h2>` +
+    (sigs.length ? `<ol class="sigs">${sigs.map(g => `<li><b>${esc(nameOf(g))}</b>` +
+        ` · signed ${date(g.signed)}${g.machine ? " · " + esc(g.machine) : ""} · ${esc(lvlText(g))}</li>`).join("")}</ol>`
+                 : `<p>No signatures yet.</p>`) +
+    `<div class="foot">Generated ${new Date().toISOString().slice(0, 10)} from ${esc(url)} · archive sha256 9631b4f0…c7fc · export sha256 5ea74b91…244e</div>`;
+  $("pdf").onclick = () => window.print(); }
+// LEFT: everyone who finished the whole proof, in finishing order; then the independent public validations.
+const whole = board.filter(p => p.whole_proof)
+  .sort((a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since)));
+const VALIDATED = DATA.validated || [];
+$("board").innerHTML = (whole.length ? whole.map((p, k) => {
+    const bits = [`all ${fmt(p.modules)} modules`];
+    if (p.build_hours != null) bits.push(`built in ${hours(p.build_hours)}`);
+    if (p.machine) bits.push(esc(p.machine));
+    if (p.computers > 1) bits.push(`${p.computers} computers`);
+    return `<div class="hr"><span class="n">${p.first_whole_proof_rank ?? k + 1}.</span><span class="avc">${avatar(p, 30)}</span><span class="w">${person(p)}` +
+      `<span class="whole">WHOLE PROOF</span>${levelBadge(p.level)}</span>`+`<span class="d">${p.finished ? "finished " + date(p.finished) : "since " + date(p.since)}</span>` +
+      `<span class="m">${bits.join(" · ")}</span></div>`; }).join("")
+  : `<div class="note">No one has finished yet. Be the first.</div>`) +
+  (VALIDATED.length ? `<div class="sub2">Also checked independently by</div>` + VALIDATED.map(({who, what, url}) =>
+    `<div class="val"><b>✓</b> <span class="who">${esc(who)}</span><br><span class="what">${esc(what)}</span> <a href="${esc(url)}" target="_blank">source</a></div>`).join("") +
+    `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
+// RIGHT: every unfinished BUILD (one per computer) whose last record is under 1 h old, by this browser's clock,
+// so stale builds drop off even when the bot is idle. Bars are the accepted counts; the shimmer is decoration only.
+const FRESH = 3.6e6, now = Date.now();   // 1 hour
+const running = (DATA.running || []).filter(b => now - Date.parse(b.recorded) <= FRESH)
+  .sort((a, b) => b.modules - a.modules || String(nameOf(a)).localeCompare(String(nameOf(b))));
+$("running").innerHTML = (running.length ? running.map((p, k) => {
+    const pct = p.modules / N * 100;
+    return `<div class="run" title="${esc(p.machine || "")}">${avatar(p, 24)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
+      person(p, "w") +
+      `<span class="pc"><b>${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}%</b> · ${fmt(p.modules)}</span></div>` +
+      `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div></div></div>`; }).join("")
+  : `<div class="note">No builds reported in the last hour.</div>`) +
+  `<div class="note">One row per computer with a build record in the last hour; modules built so far out of ${fmt(N)}.</div>`;
+
+// ---------- terrain geometry ----------
+// 175,187 = 733 x 239 exactly: 733 columns across, modules run front to back, so the libraries run left to right.
+// Stacked (default, #stack=5): one continuous bar per STACK neighbouring modules (733 across x 48 deep);
+// bar height = builders summed over its modules / (STACK x most builders anywhere), so with one builder
+// a fully built bar reaches the top. Pale top only while some of its modules have no builder yet.
+const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 5));
+const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
+const left = 96, base = 434, spanX = 640, depthX = 230, depthY = 150, maxH = 170;
+const sx = spanX / C, kx = depthX / R, ky = depthY / R;
+const px = (c, r) => left + c * sx + r * kx, py = r => base - r * ky;
+const cell = i => STACK > 1 ? [Math.floor(i / (R * STACK)), Math.floor((i % (R * STACK)) / STACK), i % STACK]
+                            : [Math.floor(i / R), i % R, 0];
+const grid = new Int32Array(C * R * STACK).fill(-1);          // (r, c, layer) -> module index
+for (let i = 0; i < N; i++) { const [c, r, z] = cell(i); grid[(r * C + c) * STACK + z] = i; }
+function column(col) {                     // [first module, slots, modules built, builders summed]
+  let i0 = -1, slots = 0, k = 0, s = 0;
+  for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i < 0) continue; slots++; if (i0 < 0) i0 = i; if (heights[i]) { k++; s += heights[i]; } }
+  return [i0, slots, k, s];
+}
+const barH = (s, slots) => s / (slots * maxVal) * maxH;
+// Color: rainbow by position (default), #color=library, one color per top-level library.
+const COLOR = (location.hash.match(/color=(\w+)/) || [])[1] || "spectrum";
+const LIB = (() => { const a = new Int32Array(N); let k = 0;
+  for (let i = 0; i < N; i++) { while (k + 1 < LIBS.length && LIBS[k + 1][1] <= i) k++; a[i] = k; } return a; })();
+const LIB_HUES = [0, 30, 55, 120, 175, 205, 235, 270, 300, 330, 90];
+const hueOf = i => COLOR === "library" ? LIB_HUES[LIB[i] % LIB_HUES.length] : 300 * i / N;
+
+function stars() {
+  const g = ctx2d("stars");
+  let s = 3; const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+  for (let k = 0; k < 420; k++) { const a = 0.2 + 0.8 * rnd();
+    g.fillStyle = `rgba(255,255,255,${a * a})`; g.fillRect(rnd() * 1000, rnd() * 680, rnd() < 0.08 ? 2 : 1, rnd() < 0.08 ? 2 : 1); }
+}
+
+let HL = -1;                                // highlighted library (hovering its label), -1 = none
+const libEnd = k => k + 1 < LIBS.length ? LIBS[k + 1][1] : N;
+const libHue = k => hueOf((LIBS[k][1] + libEnd(k)) / 2);   // the label's color
+const labelBoxes = [];                      // [library index, x0, y0, width] hover areas of the labels
+function terrain() {
+  const g = ctx2d("terrain"); labelBoxes.length = 0;
+  g.fillStyle = "rgba(40,40,70,.55)";
+  g.beginPath(); g.moveTo(px(0,0), py(0)); g.lineTo(px(C,0), py(0)); g.lineTo(px(C,R), py(R)); g.lineTo(px(0,R), py(R)); g.closePath(); g.fill();
+  // Each bar is lit: bright face, darker left side, pale top cap; deeper rows sink into a darker haze.
+  const w = Math.max(1, sx * 0.85);           // about one column wide, with a hairline gap
+  for (let r = R - 1; r >= 0; r--) {
+    const depth = r / R, buckets = new Map(), todo = new Path2D(), stepCap = new Path2D();
+    for (let c = 0; c < C; c++) {
+      const [i0, slots, k, s] = column(r * C + c);
+      if (i0 < 0) continue;
+      if (!k) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // nobody yet: a faint dot on the floor
+      const key = HL < 0 ? `${Math.round(hueOf(i0) / 5) * 5}` : LIB[i0] === HL ? `${Math.round(libHue(HL))}` : "f0";
+      let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
+      const x = px(c, r), y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots));
+      b.side.rect(x - w / 2, y - h, w * 0.45, h);
+      b.face.rect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
+      if (STACK < 2 || k < slots) b.cap.rect(x - w / 2, y - h, w, 1.5);   // stacked: pale top only while unfinished
+      if (STEP_CAP && key[0] !== "f") stepCap.rect(x - w / 2, y - h - 0.5, w, 2);  // step colour on top (not on greyed bars)
+    }
+    g.fillStyle = `rgba(150,170,255,${0.30 - 0.15 * depth})`; g.fill(todo);
+    const L = 60 - 26 * depth;                                   // depth haze
+    for (const [key, b] of buckets) {
+      if (key[0] === "f") {                                     // outside the highlighted library: dim grey
+        g.globalAlpha = 0.018; g.fillStyle = "#6b7080"; g.fill(b.face); g.fill(b.side); g.globalAlpha = 1; continue;
+      }
+      const hue = +key;
+      g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fill(b.side);
+      g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fill(b.face);
+      g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fill(b.cap);
+    }
+    if (STEP_CAP) {                                               // gold / green glow / cyan glow cap
+      g.fillStyle = STEP_CAP[0]; if (STEP_CAP[1]) { g.shadowColor = STEP_CAP[1]; g.shadowBlur = 4; }
+      g.fill(stepCap); g.shadowBlur = 0;
+    }
+  }
+  g.globalAlpha = 1;
+  // box + labels
+  g.strokeStyle = "rgba(220,220,255,.55)"; g.lineWidth = 1;
+  const corners = [[0,0],[C,0],[C,R],[0,R]];
+  for (const h of [0, maxH + 8]) { g.beginPath();
+    corners.forEach(([c, r], k) => { const x = px(c, r), y = py(r) - h; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); }
+  for (const [c, r] of corners) { g.beginPath(); g.moveTo(px(c, r), py(r)); g.lineTo(px(c, r), py(r) - maxH - 8); g.stroke(); }
+  g.fillStyle = "#e8ecff"; g.font = "bold 11px Arial";
+  g.save(); g.translate(px(0, 0) - 22, py(0) - maxH / 2 + 24); g.rotate(-Math.PI / 2); g.fillText("builders", 0, 0); g.restore();
+  g.fillText(`${maxVal}`, px(0, 0) - 10 - 6 * String(maxVal).length, py(0) - maxH + 4); g.fillText("0", px(0, 0) - 12, py(0));
+  g.save(); g.translate(px(C, 0) + 14, py(0) - 4); g.rotate(-Math.atan2(depthY, depthX)); g.fillText("modules →", 0, 0); g.restore();
+  g.font = "bold 10px Arial";
+  let lastX = -1e9;
+  for (let k = 0; k < LIBS.length; k++) {
+    const [name, start] = LIBS[k], end = libEnd(k);
+    const x0 = px(cell(start)[0], 0), x1 = px(cell(end - 1)[0] + 1, 0), x = Math.max(x0, lastX + 8);
+    if (x > x1 - 10 && end - start < N / 100) continue;
+    g.strokeStyle = `hsl(${hueOf(start)},90%,60%)`; g.beginPath(); g.moveTo(x0, py(0) + 2); g.lineTo(x0, py(0) + 8); g.stroke();
+    g.fillStyle = HL >= 0 && HL !== k ? `hsla(${hueOf((start + end) / 2)},90%,68%,.35)` : `hsl(${hueOf((start + end) / 2)},90%,68%)`;
+    g.save(); g.translate(x + 2, py(0) + 16); g.rotate(0.45); g.fillText(name, 0, 0); g.restore();
+    const tw = g.measureText(name).width;
+    labelBoxes.push([k, x + 2, py(0) + 16, tw]);           // origin + width of the slanted text
+    lastX = x + tw * Math.cos(0.45) * 0.55;
+  }
+}
+$("cap").textContent = STACK > 1 ? `everyone · one bar per ${STACK} neighbouring modules · height = people who built them`
+                                 : "everyone · one spike per module · height = people who built it";
+stars(); terrain();
+
+// ---------- hover: module number and name ----------
+let NAMES = null, loading = false;
+const pick = (mx, my) => {               // front-most bar under the mouse; which of its modules by height
+  for (let r = 0; r < R; r++) {
+    const c = Math.round((mx - left - r * kx) / sx); if (c < 0 || c >= C) continue;
+    const col = r * C + c, [i0, slots, k, s] = column(col); if (i0 < 0 || !k) continue;
+    const y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots));
+    if (my <= y + 1.5 && my >= y - h - 1.5) {
+      const z = Math.min(slots - 1, Math.max(0, Math.floor((y - my) / h * slots)));
+      return grid[col * STACK + z];
+    }
+  }
+  return -1;
+};
+$("overlay").style.pointerEvents = "auto";
+$("overlay").addEventListener("mousemove", e => {
+  const b = $("overlay").getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, tip = $("tip");
+  // hovering a library label: light up that library, fade the rest
+  const lb = labelBoxes.find(([, ox, oy, tw]) => {       // mouse in the label's own slanted frame
+    const dx = mx - ox, dy = my - oy, u = dx * Math.cos(0.45) + dy * Math.sin(0.45), v = -dx * Math.sin(0.45) + dy * Math.cos(0.45);
+    return u >= -2 && u <= tw + 2 && v >= -11 && v <= 3; });
+  const want = lb ? lb[0] : -1;
+  if (want !== HL) { HL = want; terrain(); }
+  if (lb) {
+    const k = lb[0], [name, start] = LIBS[k], end = libEnd(k);
+    tip.innerHTML = `<span style="color:#ffd23f">${esc(name)}</span><br>${fmt(end - start)} modules · ${((end - start) / N * 100).toFixed(1)}% of the proof`;
+    tip.style.display = "block";
+    tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my - 40) + "px";
+    return;
+  }
+  const i = pick(mx, my);
+  if (i < 0) { tip.style.display = "none"; return; }
+  if (!NAMES && !loading) { loading = true; fetch("modules.txt").then(r => r.text()).then(t => { NAMES = t.split("\n"); }); }
+  const v = heights[i];
+  const state = v ? `built by ${v} ${v === 1 ? "person" : "people"}` : "not built yet";
+  tip.innerHTML = `#${fmt(i + 1)} of ${fmt(N)} · ${state}<br><span style="color:#7dff95;font-family:'Courier New',monospace">${NAMES ? esc(NAMES[i]) : "loading names…"}</span>`;
+  tip.style.display = "block";
+  tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my + 14) + "px";
+});
+$("overlay").addEventListener("mouseleave", () => { $("tip").style.display = "none"; if (HL >= 0) { HL = -1; terrain(); } });
+// test hook: #hover=x,y simulates the mouse at that spot (for offscreen screenshots)
+const hv = location.hash.match(/hover=(\d+),(\d+)/);
+if (hv) { const b = $("overlay").getBoundingClientRect(), fire = () => $("overlay").dispatchEvent(new MouseEvent("mousemove", {clientX: b.left + +hv[1], clientY: b.top + +hv[2]}));
+          fire(); setTimeout(fire, 1500); }
+</script></body></html>

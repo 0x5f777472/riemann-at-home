@@ -1,0 +1,117 @@
+{
+ "generated": "2026-11-21T19:24:03Z",
+ "n": 175187,
+ "libraries": [
+  [
+   "BuildAid",
+   0
+  ],
+  [
+   "CompanionTheory",
+   5
+  ],
+  [
+   "Development",
+   2032
+  ],
+  [
+   "Formalism",
+   143960
+  ],
+  [
+   "GroundTheory",
+   162214
+  ],
+  [
+   "Lemmata",
+   170721
+  ],
+  [
+   "Main",
+   170888
+  ],
+  [
+   "PositivityTheory",
+   170889
+  ],
+  [
+   "ReciprocityTheory",
+   171338
+  ],
+  [
+   "Statements",
+   175183
+  ],
+  [
+   "Supplements",
+   175184
+  ]
+ ],
+ "builders_b64": "H4sIAAAAAAAC/+3diXaiShAA0K7//+n3JjFQBY2AgBpz75kz2VCgl+qFRloDAPjb4te9MfTLW+wohHGkpMbllWLDgUfZKMp30dlCneQdK238+/d2xTQ+qbbE8i+W/hTlx688iu+v33k2/KGVb3WdTn+toL0rneIdshcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC+RHzOqbzoLeKixI3PTOMN7xrqZS+RQrp8ZuTiY9qf6BXL6P2k+PLJNQEJDQAAAPwRJilAdXUKgNjinAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4YB6L81eTRc4DAAAAAAAAwAtEuWIf6atL+b8wM//37/+Sm/Hni3U/qZQXAAAAAP68GP5b+mP+8d/k48LWccJEZGzeIK7aw7ZXrKXaC+ceO/Oe0d3ga4Y0Vg4+yu/TpGo8ksbdOdnILzr1wkQ8ux4Nh/9dT75P9+u7t6jqcVI9up1RlMBwWt0CAAD4O+JnuC0pAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgoJg/NS4uk/axvqfWfeGmM7qz4wdTqd0eRjc9xHY70O/nKPz8Joatb39rs/PKGw6n2h5P2LUE35vH9TmMv6c4X/6a70zqvSj27DHGx3v+5F8bSkQMFfP7u/S8zFx42vj/8NzFfim6PU0xF8F2sMil9+qeXrxM21ltfp5RGjnN21h/YsiQx2rELQ+HfQ25MTzJc6zAuYi18vTUnNi3r8NbtTH8jK/9eV5mlFAfnofJq3oZY6mfBa/cTuYIOP4+hc1uq5dDcAoEQ1AcY1OMDyeeRK3SHC/H9eGRu7ktbZHbhlxPSyBo9cxvNfnnWb45+KS/D0c0Pus3NyCd5wJHamhaS28/xp0xDg0nkA6wpQNqk7BYI9fCCUbtbZSzmsbpeSM6Ob+o73VLsVb7YD+JGfnR2UOGjIWh5OMsySO1venYYsipmL5lpEQZQ3Lq5rbodRJShB+7gmOJTT+nDkGbPBE5J99Yy0rxbLkW5I3HRi4mRTtvHq10NWotu9/rXmiMD3d3J2Wn9KvXem5x/TDnnK7LdJjUZuXuUDyOsbDu7sD2c5XSGkw7yPHII9pTGFhO62htEhqizSp0GtHFNASlkjZ7YWpKVkY06fSWW9mHU/Xujrt5MB7SbIucQfXMclBJTUH8tNA15VqO0UuV4PyaMQ5XLqh2YysUqS1tKfCPwagT7++dcRw969ZKlyQ3ZI+MxmIhtqXeQWw/ifuzJrMGayWClMHfg9Ne8xxq0du2bZtri6iFf9ZyTP5+NyOf32JEN2Ret7e1uhAP1orYFB7evpm89r3iYDmJWhFj3nmaVr42b0uGNmNxquyZybStW/dIczEf6t7Zw2TkPIzlOjWjP+SOMm1aJuoW834yLhwm7GtLkgewtQ807HGaQlHOJRbajCOdSV3q54WkiG7pe7DyAp80gb3yK57aWekPuuPYmy6MCRcmEk4ZIhwf0cynq39dbn76Zcky8zx0tidzUM++MN7Kxara0R7XtZQlIRHdY21ROs6pe701Y1fmk+9MUy8PpGN5RJVOY1Nkj7a25iP21PBY/d00U2LLEHFlGDVOAMf944m4t6MtoXDHdZbtI91JNzwWM2ycdV/Kzcmlj3r5b3Oxrdf54rkj+N99BebxdXo7N90xxRJPy7ujKdY7i7wyYlgMdMHc2qaAdnra7TyZS2vFsbctKzpWU3Kthiw1ySd1y7i8OueFJJfs5U9mZZycU716XyvaU69rrTafi6tuTm+KJlcXH4uQ29avv0M/55RkfOM+26/oT3ZWP8QLM/eMwr5+18zJwaws8eSUOLy7G50H1Y9dyO7Mf8ae4x/vbWotL/0pXYeT7hSZrdc8dP/Gtbepldtu8pra+RreNm8I4+587LHDizge8vL68hhvcKulaOMl/bouLM3URLl0Oq5yb+MKsrywuKUlx3UFYcmccaJmvpI8J1Ht8tSzmS8G3xzZ49H2YMMU5tbBY5tdlC59sDKrHGnubB6lIt+ImG8LqxukSbNy70at3eVuxroEvOVFzKvt2oZFyfVuqtmkeg1i04Wer2t+f1vr1l6SCrElWh7tpaVI/fKZz4fOLu7MLOU5hToFELG//zLtxqzd+vH0xvo5c1iHC8t0BfnmVnpTYUhX8xauBMXd6rBQ/98oGO2dXdjTo55eGJwvc15d2XygOHV2dn5x/i2NWfTK9tLfov9pEnfLxKNzojHr6y8Nc95iJPPeUmbMbt+7rke2dhk6FY3hoGI9erpYcnIXqfXudL26swAAAAAAAAAA8LnqB1LnhXDTj62IcktAftWwTrstfv77ZKdt6RN+b7vqf3Q5v7qkfUBdsdboGWn8lLLyZ3LyittpOSsmpgWpk5sSe3kW9XED+Ua/MUKVGhSzx5akdjZvs7FixEJdis21Oy8Snj5jZ8NdZO91X3NcuPXFB7kvm+/fLxlPPL37n+5/Sht/57Ojnpa/sTeI6Kyh8/4RYwy3RHxwNfoPirNPNlOsAgA=",
+ "summary": {
+  "people": 1,
+  "whole_proofs": 0,
+  "modules_built_once": 4685,
+  "modules_built_3x": 0
+ },
+ "leaderboard": [
+  {
+   "name": "titojankowski",
+   "who": "titojankowski",
+   "level": 1,
+   "modules": 4685,
+   "whole_proof": false,
+   "build_hours": null,
+   "finished": null,
+   "machine": "Apple M5 Max",
+   "computers": 1,
+   "since": "2026-11-21T15:26:02Z",
+   "first_whole_proof_rank": null
+  }
+ ],
+ "latest": {
+  "name": "titojankowski",
+  "who": "titojankowski",
+  "modules": 4685,
+  "recorded": "2026-11-21T19:23:51Z",
+  "machine": "Apple M5 Max"
+ },
+ "running": [
+  {
+   "name": "titojankowski",
+   "who": "titojankowski",
+   "build_id": "fe4725a62d70089e",
+   "machine": "Apple M5 Max",
+   "modules": 4685,
+   "recorded": "2026-11-21T19:23:51Z"
+  }
+ ],
+ "signatures": [],
+ "validated": [
+  {
+   "who": "Andrew Sutherland (MIT)",
+   "what": "full build, 175,187 modules, 0 errors; leanchecker, nanoda, lean4lean and con-leche all accept",
+   "url": "https://math.mit.edu/~drew/grh"
+  },
+  {
+   "who": "Simon DeDeo",
+   "what": "native kernel replay of the whole proof (3 h 22 min)",
+   "url": "https://github.com/leecrossley/riemann-rev"
+  },
+  {
+   "who": "shosonoda (RIKEN)",
+   "what": "lake build, 175,187 of 175,187 modules, 0 failed jobs",
+   "url": "https://github.com/shosonoda/lean-rh-alpoge"
+  },
+  {
+   "who": "vincitamore",
+   "what": "lake build of all 175,187 modules, axiom check, kernel replay",
+   "url": "https://github.com/vincitamore/riemann-lean-account"
+  },
+  {
+   "who": "starx237",
+   "what": "build plus axiom audit of all five main theorems",
+   "url": "https://github.com/starx237/RH-Lean-Verification"
+  }
+ ]
+}

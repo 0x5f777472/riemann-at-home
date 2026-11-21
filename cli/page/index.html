@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Riemann@home · This Computer</title>
+<style>
+  html,body{margin:0;background:#000;color:#fff;font:bold 12px Arial,Helvetica,sans-serif;overflow:hidden}
+  #screen{width:1000px;height:780px;margin:0 auto;position:relative;background:#000}
+  #stars,#terrain,#overlay{position:absolute;left:0;top:0}
+  .title{position:absolute;left:22px;top:12px;font:bold italic 34px "Arial Black",Arial,sans-serif;color:#5aa0ff;
+         text-shadow:0 0 8px #1a4dff,2px 2px 0 #001a66;letter-spacing:1px}
+  .title span{color:#ffd23f;text-shadow:0 0 8px #b36b00,2px 2px 0 #4d2a00}
+  .sub{position:absolute;left:26px;top:54px;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
+  .nav{position:absolute;right:22px;top:18px;display:flex;gap:6px}
+  .nav a{font:bold 11px Arial;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:5px 10px;
+         color:#b9d0ff;border:1px solid #2f5bd8;background:#000}
+  .nav a.on{color:#fff;background:linear-gradient(#2f5bd8,#13308f)}
+  .panel{position:absolute;border:1px solid rgba(120,160,255,.55);box-shadow:0 0 18px rgba(30,80,255,.25)}
+  .panel.blue{background:rgba(25,45,170,.72)}.panel.green{background:rgba(20,140,60,.62)}.panel.navy{background:rgba(5,15,60,.72)}
+  .panel h3{margin:0;padding:3px 8px;font-size:10px;color:#fff;background:rgba(0,0,0,.25);letter-spacing:1px;text-transform:uppercase}
+  .kv{display:grid;grid-template-columns:118px 1fr;gap:2px 6px;padding:6px 9px}
+  .k{color:#b9d0ff}.v{color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .green .k{color:#c9f5d4}
+  .v.y{color:#ffd23f}.v.g{color:#7dff95}.v.r{color:#ff6b6b}
+  .line{padding:6px 9px 0;color:#b9d0ff}
+  .mod{padding:1px 9px;color:#7dff95;font-family:"Courier New",monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:clip}
+  #mods{columns:2;column-gap:14px}
+  #mods .mod{display:flex;gap:8px;break-inside:avoid}
+  #mods .nm{flex:1;overflow:hidden;text-overflow:clip}
+  #mods .t{color:#ffd23f}
+  .last{float:right;color:#9fd8ae;font-size:10px;font-weight:normal;padding-right:9px}
+  #h1{display:flex;justify-content:space-between;align-items:center;white-space:nowrap}
+  .speed{display:flex;gap:2px}
+  .speed a{cursor:pointer;padding:0 4px;border:1px solid rgba(255,255,255,.4);color:#dfe8ff;font-size:9px;letter-spacing:.5px;line-height:11px;user-select:none}
+  .speed a:hover{border-color:#ffd23f}
+  .speed a.on{background:#ffd23f;color:#000;border-color:#ffd23f}
+  .bar{margin:6px 9px 4px;height:12px;background:#0a0f2a;position:relative;border:1px solid rgba(255,255,255,.3)}
+  .bar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,hsl(0,100%,55%),hsl(60,100%,55%),hsl(120,100%,50%),hsl(180,100%,50%),hsl(240,100%,62%),hsl(300,100%,60%)) 0 0/var(--bw,280px) 100% no-repeat}
+  .pct{padding:0 9px;color:#ffd23f}
+  .cap{position:absolute;left:96px;top:96px;color:#7f9fdf;font-size:10px;letter-spacing:.4px}
+  .stat{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
+  .stat b{color:#ffd23f}
+  .demo{position:absolute;right:22px;top:52px;color:#ff6b6b;font-size:12px;letter-spacing:2px;border:1px solid #ff6b6b;padding:2px 7px;display:none}
+  .blink{animation:b 1s steps(1) infinite}@keyframes b{50%{opacity:0}}
+  .lib{font:bold 9px Arial,sans-serif;letter-spacing:.5px;text-transform:uppercase;margin-right:6px;opacity:.95}
+</style></head>
+<body><div id="screen">
+  <canvas id="stars" width="1000" height="780"></canvas>
+  <canvas id="terrain" width="1000" height="780"></canvas>
+  <canvas id="overlay" width="1000" height="780"></canvas>
+  <div class="title">Riemann<span>@</span>home</div>
+  <div class="sub" id="sub"></div>
+  <div class="nav" id="nav"></div>
+  <div class="panel blue"  style="left:22px;top:556px;width:300px;height:100px"><h3 id="h1"></h3><div id="p1"></div></div>
+  <div class="panel navy"  style="left:22px;top:666px;width:300px;height:76px"><h3 id="h3"></h3><div id="p3"></div></div>
+  <div class="panel green" style="left:340px;top:556px;width:638px;height:186px;overflow:hidden"><h3 id="h2"></h3><div id="p2"></div></div>
+  <div class="cap" id="cap"></div>
+  <div class="stat" id="stat"></div>
+  <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
+       border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
+
+</div>
+<script type="module">
+// Riemann@home: this computer's build of the Lean proof of the Riemann hypothesis.
+// Served by `riemann-at-home page` (localhost only): data.json (regenerated every minute), modules.txt,
+// live.json (what is compiling now, every 2 s), times.json (how long each module took), POST mode.
+const GLOBAL_URL = "https://titojankowski.github.io/riemann-at-home/";
+const VIEW = "local";
+document.title = "Riemann@home · This Computer";
+const DATA = await (await fetch("data.json?" + Date.now())).json();
+const T = DATA.terrain, N = T.n;
+const fmt = n => n.toLocaleString("en-US");
+const $ = id => document.getElementById(id);
+const DPR = Math.max(1, window.devicePixelRatio || 1);
+function ctx2d(id) {                       // draw at full screen resolution (Retina = 2x)
+  const cv = $(id); cv.style.width = "1000px"; cv.style.height = "780px";
+  cv.width = 1000 * DPR; cv.height = 780 * DPR;
+  const g = cv.getContext("2d"); g.scale(DPR, DPR); return g;
+}
+const kv = rows => `<div class="kv">${rows.map(([k, v, c]) => `<div class="k">${k}</div><div class="v ${c||""}">${v}</div>`).join("")}</div>`;
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+// ---------- data ----------
+let heights = b64(T.local_b64), maxVal = 255, axis = "size";
+let caption = "this computer's build · one spike per compiled module · height = size of its compiled file";
+if (/height=flat/.test(location.hash)) {   // every compiled module the same height: a spike just means "compiled"
+  heights = heights.map(v => v ? 254 : 0); axis = "";
+  caption = "this computer's build · one spike per compiled module · all the same height";
+}
+
+// Long module names keep their end (the part that differs), cut at a dot so no word is split. No ellipsis:
+// the library tag in front (in its terrain color) says where in the proof it is; hover shows the full name.
+const short = (n, max = 40) => {
+  const p = n.split("."); p.shift();                       // library shown separately as a tag
+  let s = p.pop() || n;
+  while (p.length && s.length + p[p.length - 1].length + 1 <= max) s = p.pop() + "." + s;
+  return s.length > max ? s.slice(0, max) : s;
+};
+const libTag = n => {                                       // "Development" in the color of its terrain label
+  const L = (T && T.libraries) || [], top = n.split(".")[0], N0 = (T && T.n) || 1;
+  const k = L.findIndex(x => x[0] === top); if (k < 0) return "";
+  const end = k + 1 < L.length ? L[k + 1][1] : N0, hue = 300 * ((L[k][1] + end) / 2) / N0;
+  return `<span class="lib" style="color:hsl(${hue},90%,68%)">${top}</span>`;
+};
+$("sub").textContent = "this computer's build of the AI proof of the Riemann hypothesis";
+$("nav").innerHTML = `<a href="${GLOBAL_URL}" target="_blank" rel="noopener">Global dashboard →</a>`;
+if (/stack=\d+/.test(location.hash) && VIEW === "local") { caption = "this computer's build · one bar per 5 neighbouring modules · grows as they compile"; axis = ""; }
+$("cap").textContent = caption;
+
+let active = T.active || [];
+const names = active.map(i => null);   // names are filled from the module list order below when known
+{
+  const p = T.local_compiled / N;
+  $("h1").textContent = "This computer's build";
+  $("p1").innerHTML = kv([["Compiled", `${fmt(T.local_compiled)} of ${fmt(N)}`, "y"], ["Running for", "–"],
+                          ["Speed", "measuring…"], ["Finishes", "–", "y"]]);
+  $("h2").textContent = "Compiling now";
+  $("p2").innerHTML = `<div class="line">${active.length} modules in progress<span class="blink">_</span></div><div id="mods"></div>`;
+  $("h3").textContent = "Progress";
+  $("p3").innerHTML = `<div class="line">Whole proof, compiled on this computer</div><div class="bar"><i style="width:${Math.max(0.3, p * 100).toFixed(2)}%"></i></div>` +
+                      `<div class="pct">${(p * 100).toFixed(2)}% of ${fmt(N)} modules</div>`;
+  $("stat").innerHTML = `<b>${fmt(T.local_compiled)}</b> of ${fmt(N)} modules compiled on this computer · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+  $("mods").innerHTML = (T.active_names || []).map(n => `<div class="mod" title="${n}">${libTag(n)}${short(n, 30)}</div>`).join("");
+}
+
+// ---------- terrain geometry (shared by both views) ----------
+// 175,187 = 733 x 239 exactly (both prime): 733 columns across, 239 modules deep, no spare spots.
+// Each column is 239 neighbouring modules front to back, so the proof's libraries run left to right.
+// #stack=5: every module the same-size block, stacked 5 high (733 across x 48 deep x 5 tall)
+const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 1));
+const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
+const left = 96, base = 444, spanX = 640, depthX = 230, depthY = 150, maxH = 170;
+const sx = spanX / C, kx = depthX / R, ky = depthY / R;
+const px = (c, r) => left + c * sx + r * kx, py = r => base - r * ky;
+const cell = i => STACK > 1 ? [Math.floor(i / (R * STACK)), Math.floor((i % (R * STACK)) / STACK), i % STACK]
+                            : [Math.floor(i / R), i % R, 0];
+const grid = new Int32Array(C * R * STACK).fill(-1);          // (r, c, layer) -> module index
+for (let i = 0; i < N; i++) { const [c, r, z] = cell(i); grid[(r * C + c) * STACK + z] = i; }
+const LH = maxH / STACK;                                          // block height in stack mode
+// Gravity: in each column the compiled modules stack from the floor up, in order; a module being
+// compiled sits on top of its column's stack. LEVEL[i] = which layer module i is drawn on.
+const LEVEL = new Int8Array(N).fill(-1);
+function settle() {
+  if (STACK < 2) return;
+  const busy = new Set(active);
+  for (let col = 0; col < C * R; col++) {
+    let lv = 0;
+    for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i >= 0 && heights[i]) LEVEL[i] = lv++; }
+    for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i >= 0 && !heights[i]) LEVEL[i] = busy.has(i) ? lv++ : -1; }
+  }
+}
+// Color: #color=spectrum (default: rainbow by position, like SETI's frequency axis),
+// #color=library (one color per top-level library), #color=folder (one per second-level folder).
+const COLOR = (location.hash.match(/color=(\w+)/) || [])[1] || "spectrum";
+const groupStart = list => { const a = new Int32Array(N); let k = 0;
+  for (let i = 0; i < N; i++) { while (k + 1 < list.length && list[k + 1][1] <= i) k++; a[i] = k; } return a; };
+const LIB = groupStart(T.libraries), FOLD = T.folders ? groupStart(T.folders) : LIB;
+const LIB_HUES = [0, 30, 55, 120, 175, 205, 235, 270, 300, 330, 90];
+const hueOf = i => COLOR === "library" ? LIB_HUES[LIB[i] % LIB_HUES.length]
+                 : COLOR === "folder" ? (FOLD[i] * 137.508) % 360        // golden-angle steps: neighbouring folders differ
+                 : 300 * i / N;
+
+function stars() {
+  const g = ctx2d("stars");
+  let s = 3; const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+  for (let k = 0; k < 420; k++) { const a = 0.2 + 0.8 * rnd();
+    g.fillStyle = `rgba(255,255,255,${a * a})`; g.fillRect(rnd() * 1000, rnd() * 780, rnd() < 0.08 ? 2 : 1, rnd() < 0.08 ? 2 : 1); }
+}
+
+let HL = -1;                                // highlighted library (hovering its label), -1 = none
+const libEnd = k => k + 1 < T.libraries.length ? T.libraries[k + 1][1] : N;
+const libHue = k => hueOf((T.libraries[k][1] + libEnd(k)) / 2);   // the label's color
+const labelBoxes = [];                      // [library index, x0, y0, x1, y1] hover areas of the labels
+function terrain() {
+  const g = ctx2d("terrain"); labelBoxes.length = 0;
+  g.fillStyle = "rgba(40,40,70,.55)";
+  g.beginPath(); g.moveTo(px(0,0), py(0)); g.lineTo(px(C,0), py(0)); g.lineTo(px(C,R), py(R)); g.lineTo(px(0,R), py(R)); g.closePath(); g.fill();
+  // Each spike is a little lit bar: bright face, darker left side, pale top cap; deeper rows sink into
+  // a darker haze. That separation is what keeps neighbouring spikes from merging into one blob.
+  const w = Math.max(1, sx * 0.85);           // about one module wide, with a hairline gap
+  for (let r = R - 1; r >= 0; r--) {
+    const depth = r / R, buckets = new Map(), todo = new Path2D();
+    if (STACK > 1) for (let c = 0; c < C; c++) {     // stacked: one continuous bar per column
+      const col = r * C + c; let k = 0, slots = 0, i0 = -1;
+      for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i < 0) continue; slots++; if (i0 < 0) i0 = i; if (heights[i]) k++; }
+      if (i0 < 0) continue;
+      if (!k) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }
+      const key = HL < 0 ? `${Math.round(hueOf(i0) / 5) * 5}` : LIB[i0] === HL ? `${Math.round(libHue(HL))}` : "f0";
+      let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
+      const x = px(c, r), y = py(r), h = k * LH;
+      b.side.rect(x - w / 2, y - h, w * 0.45, h);
+      b.face.rect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
+      if (k < slots) b.cap.rect(x - w / 2, y - h, w, 1.5);           // pale top only while the column is unfinished
+    }
+    if (STACK < 2) for (let c = 0; c < C; c++) for (let z = 0; z < STACK; z++) {
+      const i = grid[(r * C + c) * STACK + z]; if (i < 0) continue;
+      const v = heights[i];
+      if (!v) { if (z === 0) todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // still to do: a faint dot on the floor
+      const fail = v === 255;
+      const h = STACK > 1 ? LH - 1.2 : fail ? maxH : Math.max(3, v / maxVal * maxH);   // stacked: one equal block per module
+      const key = fail ? "fail" : HL < 0 ? `${Math.round(hueOf(i) / 5) * 5}`
+                               : LIB[i] === HL ? `${Math.round(libHue(HL))}` : "f0";   // highlighted: one color, the label's
+      let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
+      const x = px(c, r), y = py(r) - (STACK > 1 ? LEVEL[i] : 0) * LH;
+      b.side.rect(x - w / 2, y - h, w * 0.45, h);
+      b.face.rect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
+      b.cap.rect(x - w / 2, y - h, w, 1.5);
+    }
+    g.fillStyle = `rgba(150,170,255,${0.30 - 0.15 * depth})`; g.fill(todo);
+    const L = 60 - 26 * depth;                                   // depth haze
+    for (const [key, b] of buckets) {
+      if (key === "fail") { g.fillStyle = "#fff"; g.shadowColor = "#f00"; g.shadowBlur = 8; g.fill(b.face); g.fill(b.side); g.shadowBlur = 0; continue; }
+      const faded = key[0] === "f", hue = +key.replace("f", "");
+      if (faded) {                                        // outside the highlighted library: dim grey
+        g.globalAlpha = 0.018; g.fillStyle = "#6b7080"; g.fill(b.face); g.fill(b.side); g.globalAlpha = 1; continue;
+      }
+      g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fill(b.side);
+      g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fill(b.face);
+      g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fill(b.cap);
+    }
+  }
+  g.globalAlpha = 1;
+  // box + labels
+  g.strokeStyle = "rgba(220,220,255,.55)"; g.lineWidth = 1;
+  const corners = [[0,0],[C,0],[C,R],[0,R]];
+  for (const h of [0, maxH + 8]) { g.beginPath();
+    corners.forEach(([c, r], k) => { const x = px(c, r), y = py(r) - h; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); }
+  for (const [c, r] of corners) { g.beginPath(); g.moveTo(px(c, r), py(r)); g.lineTo(px(c, r), py(r) - maxH - 8); g.stroke(); }
+  g.fillStyle = "#e8ecff"; g.font = "bold 11px Arial";
+  g.save(); g.translate(px(0, 0) - 22, py(0) - maxH / 2 + 24); g.rotate(-Math.PI / 2); g.fillText(axis, 0, 0); g.restore();
+  g.save(); g.translate(px(C, 0) + 14, py(0) - 4); g.rotate(-Math.atan2(depthY, depthX)); g.fillText("modules →", 0, 0); g.restore();
+  g.font = "bold 10px Arial";
+  let lastX = -1e9;
+  for (let k = 0; k < T.libraries.length; k++) {
+    const [name, start] = T.libraries[k], end = k + 1 < T.libraries.length ? T.libraries[k + 1][1] : N;
+    const x0 = px(cell(start)[0], 0), x1 = px(cell(end - 1)[0] + 1, 0), x = Math.max(x0, lastX + 8);
+    if (x > x1 - 10 && end - start < N / 100) continue;
+    g.strokeStyle = `hsl(${hueOf(start)},90%,60%)`; g.beginPath(); g.moveTo(x0, py(0) + 2); g.lineTo(x0, py(0) + 8); g.stroke();
+    g.fillStyle = HL >= 0 && HL !== k ? `hsla(${hueOf((start + end) / 2)},90%,68%,.35)` : `hsl(${hueOf((start + end) / 2)},90%,68%)`;
+    g.save(); g.translate(x + 2, py(0) + 16); g.rotate(0.45); g.fillText(name, 0, 0); g.restore();
+    const tw = g.measureText(name).width;
+    labelBoxes.push([k, x + 2, py(0) + 16, tw]);           // origin + width of the slanted text
+    lastX = x + tw * Math.cos(0.45) * 0.55;
+  }
+}
+
+// modules compiling on this computer right now: steady beacons that pulse in place (this-computer view only)
+let g = null;
+function overlay(t) {
+  g = g || ctx2d("overlay");
+  g.clearRect(0, 0, 1000, 780);
+  if (VIEW === "local" && HL < 0) active.forEach((i, k) => {     // beacons hide while a library is highlighted
+    const [c, r] = cell(i), x = px(c, r), y = py(r) - Math.max(0, LEVEL[i]) * LH, phase = 0.5 + 0.5 * Math.sin(t / 200 + k * 1.7);
+    g.strokeStyle = `rgba(255,255,255,${0.15 + 0.85 * phase})`; g.lineWidth = 1.5;
+    if (STACK > 1) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - LH); g.stroke(); }   // same thin pulsing line, one slot tall
+    else { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 44); g.stroke(); }
+  });
+  requestAnimationFrame(overlay);
+}
+
+settle(); stars(); terrain(); requestAnimationFrame(overlay);
+
+// ---------- hover: module number and name ----------
+let NAMES = null, loading = false;
+const pick = (mx, my) => {               // front-most spike (or floor spot) under the mouse
+  for (let r = 0; r < R; r++) {
+    const c = Math.round((mx - left - r * kx) / sx); if (c < 0 || c >= C) continue;
+    if (STACK > 1) {
+      for (let z = 0; z < STACK; z++) { const i = grid[(r * C + c) * STACK + z]; if (i < 0) continue;
+        if (!heights[i]) continue; const y = py(r) - LEVEL[i] * LH; if (my <= y + 1.5 && my >= y - LH - 1.5) return i; }
+      continue;
+    }
+    const i = grid[r * C + c]; if (i < 0) continue;
+    const v = heights[i], y = py(r), h = !v ? 0 : Math.max(3, v / maxVal * maxH);
+    if (my <= y + 1.5 && my >= y - h - 1.5) return i;
+  }
+  return -1;
+};
+$("overlay").style.pointerEvents = "auto";
+$("overlay").addEventListener("mousemove", e => {
+  const b = $("overlay").getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, tip = $("tip");
+  // hovering a library label: light up that library, fade the rest
+  const lb = labelBoxes.find(([, ox, oy, tw]) => {       // mouse in the label's own slanted frame
+    const dx = mx - ox, dy = my - oy, u = dx * Math.cos(0.45) + dy * Math.sin(0.45), v = -dx * Math.sin(0.45) + dy * Math.cos(0.45);
+    return u >= -2 && u <= tw + 2 && v >= -11 && v <= 3; });
+  const want = lb ? lb[0] : -1;
+  if (want !== HL) { HL = want; terrain(); }
+  if (lb) {
+    const k = lb[0], [name, start] = T.libraries[k], end = k + 1 < T.libraries.length ? T.libraries[k + 1][1] : N;
+    tip.innerHTML = `<span style="color:#ffd23f">${name}</span><br>${fmt(end - start)} modules · ${((end - start) / N * 100).toFixed(1)}% of the proof`;
+    tip.style.display = "block";
+    tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my - 40) + "px";
+    return;
+  }
+  const i = pick(mx, my);
+  if (i < 0) { tip.style.display = "none"; return; }
+  if (!NAMES && !loading) { loading = true; fetch("modules.txt").then(r => r.text()).then(t => { NAMES = t.split("\n"); }); }
+  const v = heights[i];
+  const state = v ? "compiled" : "not compiled yet";
+  const took = VIEW === "local" && v && TIMES && NAMES && TIMES[NAMES[i]] != null ? ` · took ${dur(TIMES[NAMES[i]])}` : "";
+  tip.innerHTML = `#${fmt(i + 1)} of ${fmt(N)} · ${state}${took}<br><span style="color:#7dff95;font-family:'Courier New',monospace">${NAMES ? NAMES[i] : "loading names…"}</span>`;
+  tip.style.display = "block";
+  tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my + 14) + "px";
+});
+$("overlay").addEventListener("mouseleave", () => { $("tip").style.display = "none"; if (HL >= 0) { HL = -1; terrain(); } });
+// test hook: #hover=x,y simulates the mouse at that spot (for offscreen screenshots)
+const hv = location.hash.match(/hover=(\d+),(\d+)/);
+if (hv) { const b = $("overlay").getBoundingClientRect(), fire = () => $("overlay").dispatchEvent(new MouseEvent("mousemove", {clientX: b.left + +hv[1], clientY: b.top + +hv[2]}));
+          fire(); setTimeout(fire, 1500); }
+
+// ---------- live: this computer's build, updated in place (no page reloads) ----------
+// `riemann-at-home page` answers live.json (what is compiling, for how long, speed, mode) every 2 s, times.json
+// (how long each module took, from the build log) and POST mode (Full / Gentle / Pause).
+function dur(s) {
+  s = Math.max(0, Math.round(s));
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`
+                                     : `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}m`;
+}
+var TIMES = null;
+const LIVE = true;
+let L = null, Lat = 0, IDX = null, shownMode = null;
+const SPEEDS = [["full", "Full"], ["gentle", "Gentle"], ["paused", "Pause"]];
+function renderLive() {
+  if (!L) return;
+  const age = L.paused || !L.running ? 0 : (Date.now() - Lat) / 1000;   // timers tick between readings
+  const done = L.compiled, p = done / N, st = L.started ? new Date(L.started) : null;
+  if (shownMode !== L.mode) {
+    shownMode = L.mode;
+    $("h1").innerHTML = `This computer's build<span class="speed">` +
+      SPEEDS.map(([m, l]) => `<a data-m="${m}" class="${L.mode === m ? "on" : ""}">${l}</a>`).join("") + `</span>`;
+  }
+  $("p1").innerHTML = kv([["Compiled", `${fmt(done)} of ${fmt(N)}`, "y"],
+    ["Running for", !L.running ? "not running" : st ? dur((Date.now() - st) / 1000) : "–"],
+    ["Speed", L.paused ? "paused" : !L.running ? "–" : L.rate ? `${fmt(L.rate)} modules/hr` : "measuring…"],
+    ["Finishes", L.rate && L.running && !L.paused
+       ? new Date(Date.now() + (N - done) / L.rate * 3.6e6).toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit"})
+       : "–", "y"]]);
+  const last = L.recent[L.recent.length - 1];
+  $("p2").innerHTML = `<div class="line">${L.paused ? `paused · ${L.active.length} modules waiting` : !L.running ? "build not running"
+      : `${L.active.length} modules in progress<span class="blink">_</span>`}` +
+    (last ? `<span class="last">just finished: ${libTag(last[0])}${short(last[0], 26)} · ${dur(last[1])}</span>` : "") + `</div>` +
+    `<div id="mods">${L.active.map(a => `<div class="mod" title="${a.name}"><span class="nm">${libTag(a.name)}${short(a.name, 26)}</span><span class="t">${dur(a.secs + age)}</span></div>`).join("")}</div>`;
+  $("p3").innerHTML = `<div class="line">Whole proof, compiled on this computer</div><div class="bar"><i style="width:${Math.max(0.3, p * 100).toFixed(2)}%"></i></div>` +
+                      `<div class="pct">${(p * 100).toFixed(2)}% of ${fmt(N)} modules</div>`;
+  $("stat").innerHTML = `<b>${fmt(done)}</b> of ${fmt(N)} modules compiled on this computer · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+}
+async function poll() {
+  try {
+    const r = await fetch("live.json");
+    if (!r.ok) return;
+    L = await r.json(); Lat = Date.now();
+    if (IDX) { active = L.active.map(a => IDX.get(a.name)).filter(i => i !== undefined); settle(); }
+    renderLive();
+  } catch (e) {}
+}
+async function refreshTerrain() {     // new spikes: redraw the field when data.json is regenerated (every minute)
+  try {
+    const d = await (await fetch("data.json?" + Date.now())).json();
+    if (d.terrain.generated !== T.generated) {
+      Object.assign(T, d.terrain);
+      heights = b64(T.local_b64);
+      if (/height=flat/.test(location.hash)) heights = heights.map(v => v ? 254 : 0);
+      settle(); terrain();
+    }
+    const t = await fetch("times.json"); if (t.ok) TIMES = await t.json();
+  } catch (e) {}
+}
+if (LIVE) {
+  fetch("modules.txt").then(r => r.text()).then(t => {
+    NAMES = t.split("\n"); IDX = new Map(NAMES.map((n, i) => [n, i])); poll(); });
+  $("h1").addEventListener("click", async e => {
+    const m = e.target.dataset && e.target.dataset.m; if (!m || (L && m === L.mode)) return;
+    try {
+      const r = await fetch("mode", {method: "POST", headers: {"Content-Type": "application/json", "X-Riemann-At-Home": "1"},
+                                     body: JSON.stringify({mode: m})});
+      if (r.ok) { L = await r.json(); Lat = Date.now(); renderLive(); }
+    } catch (e) {}
+  });
+  poll(); setInterval(poll, 2000); setInterval(renderLive, 1000);
+  refreshTerrain(); setInterval(refreshTerrain, 60000);
+}
+</script></body></html>

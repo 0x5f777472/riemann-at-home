@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- TEMPLATE, NOT INSTALLED. rahbot poll (live mode) every 10 minutes.
+     Before installing: replace OWNER/NAME with the repo, clone it to __BOT_DIR__/repo
+     (git clone, push access to main), make sure `gh auth status` works for this user, then:
+       cp riemann-at-home.bot.plist.template ~/Library/LaunchAgents/riemann-at-home.bot.plist
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/riemann-at-home.bot.plist
+     Add the check-digest and reference-hashes FILE options to ProgramArguments once M0 confirms cross-machine identity. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>riemann-at-home.bot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3</string>
+    <string>-I</string>
+    <string>__BOT_DIR__/rahbot</string>
+    <string>poll</string>
+    <string>--repo</string><string>OWNER/NAME</string>
+    <string>--workdir</string><string>__BOT_DIR__/repo</string>
+    <string>--live</string>
+  </array>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+  </dict>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/rahbot.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/rahbot.log</string>
+</dict>
+</plist>

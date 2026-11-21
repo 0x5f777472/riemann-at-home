@@ -1,0 +1,1816 @@
+#!/usr/bin/env -S python3 -I
+"""riemann-at-home: build the official Lean proof of the Riemann hypothesis on this computer.
+
+  riemann-at-home setup [--archive PATH]   download + verify + unpack the archive, install Lean + Mathlib cache
+  riemann-at-home build [--gentle|--full]  start the official `lake build Main` in the background (or switch speed)
+  riemann-at-home pause | resume | stop    control the running build (resumable: nothing compiled is lost)
+  riemann-at-home status                   modules compiled, running or not, speed
+  riemann-at-home record                   write a build record (rah/build/1) to ~/.riemann-at-home/records/
+  riemann-at-home submit --repo DIR --dry-run   show how it opens / updates this computer's one PR (`gh`)
+  riemann-at-home finish [--repo DIR]      done here: final record ("final": true), the bot merges the PR
+  riemann-at-home name "NAME" | --anonymous | --clear   what the page shows instead of your GitHub login
+  riemann-at-home page [--once] [--port N]  this computer's page at http://localhost:8642/
+  riemann-at-home export                   Level 2: hash the proof export (lean4export) and compare with the reference
+  riemann-at-home recheck --nanoda|--con-leche   Level 3 (optional): re-check the export with an independent checker
+  riemann-at-home sign                     sign the joint statement (Level 2 or 3 only; shows the text first)
+
+Standard library only. Run with `python3 -I`. Contract: CONTRACT.md (format rah/build/1).
+"""
+import argparse, base64, contextlib, getpass, io, math, gzip, hashlib, http.server, json, os, platform, re, shlex
+import secrets, unicodedata, shutil, signal, socket, subprocess, sys, tarfile, threading, time, urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+VERSION = "1.0.0"
+TOOL = f"riemann-at-home {VERSION}"
+FORMAT = "rah/build/1"
+ARCHIVE_SHA256 = "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc"
+ARCHIVE_BYTES = 239275554
+PARTS = 14
+PART_URL = "https://alpo.ge/lean.tar.gz.part{nn}"
+TOOLCHAIN = "leanprover/lean4:v4.33.1"
+MATHLIB_REV = "0df444a360eaa60ab8c11dca51a86af692955474"
+N_MODULES = 175187
+FIXED_FOLDERS = {"Darwin": "/Users/Shared/riemann-at-home/lean", "Linux": "/opt/riemann-at-home/lean"}
+EXPECTED_AXIOMS = ["propext", "Classical.choice", "Quot.sound"]
+RECORD_KEYS = ["format", "tool", "archive_sha256", "toolchain", "mathlib_rev", "build_folder", "build_id", "machine", "started",
+               "recorded", "busy_seconds", "modules_compiled", "bitmap_b64", "olean_digest", "whole_proof", "axioms", "final"]
+NAME_KEYS = ["display_name", "anonymous"]       # at most one, only when the volunteer chose it (`name`)
+LEVEL_KEYS = ["export_sha256", "export_bytes", "checkers", "sign_statement"]   # Levels 2-3 and the joint statement
+OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS
+# Level 2: the raw proof export (lean4export, NDJSON) reproduces the reference made by Andrew Sutherland
+# (https://math.mit.edu/~drew/grh). Streamed into sha256 + a byte counter: the ~61 GB file is never written to disk.
+EXPORT_SHA256 = "5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e"
+EXPORT_BYTES = 61570595788
+EXPORTER_REPO = "https://github.com/leanprover/lean4export"
+EXPORTER_TAG = "v4.33.0"
+UNVERIFIED = "unverified: the reference hash has not yet been reproduced by this tool"
+# Level 3: an independent checker accepts the export. RAM each needs (GB, approximate).
+CHECKERS = {"nanoda": 100, "con-leche": 50}
+NAME_NOTICE = ("This hides your username on the Riemann@home page. "
+               "Your pull request is still public on GitHub under your account.")
+PAGE_PORT = 8642
+SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
+MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "3"))           # stop the build below this much free disk
+DISK_CHECK_SECONDS = float(os.environ.get("RAH_DISK_CHECK_SECONDS", "30"))
+AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # update the build's PR ~every 10 min
+AUTOSUBMIT = os.environ.get("RAH_AUTOSUBMIT", "dry-run")   # dry-run | off. Real PRs are not enabled in this build.
+USER_AGENT = TOOL.replace(" ", "/")
+AUDIT_LEAN = """import Main
+
+#print axioms riemannHypothesis
+#print axioms riemannZeta_eq_zero_re
+#print axioms LFunction_ne_zero_of_half_lt_re
+#print axioms LFunction_eq_zero_re
+#print axioms LFunction_eq_zero_re_of_isPrimitive
+"""
+IS_MAC = platform.system() == "Darwin"
+
+
+class Fail(Exception):
+    pass
+
+
+# ---------------------------------------------------------------- paths and small helpers
+
+def fixed_folder() -> Path:
+    f = FIXED_FOLDERS.get(platform.system())
+    if not f:
+        raise Fail(f"no fixed build folder defined for {platform.system()} yet (macOS and Linux only)")
+    return Path(f)
+
+
+class Ctx:
+    def __init__(self, a):
+        self.home = Path(os.environ.get("RAH_HOME") or Path.home() / ".riemann-at-home")
+        self.folder = Path(a.folder) if getattr(a, "folder", None) else fixed_folder()
+        self.logs = Path(a.logs) if getattr(a, "logs", None) else self.home / "logs"
+        self.records = self.home / "records"
+        self.status = self.logs / "status.txt"
+        self.samples = self.logs / "samples.txt"
+        self.mode_file = self.logs / "mode.txt"
+        self.pid_file = self.logs / "build.pid"      # supervisor (this script, `_run`)
+        self.pgid_file = self.logs / "build.pgid"    # process group of time/nice/lake/lean
+        self.caff_file = self.logs / "caffeinate.pid"
+        self.build_id_file = self.home / "build_id"
+        self.config = self.home / "config.json"
+
+    def build_id(self, create=True) -> str:
+        """Random per-computer id (16 hex chars), made once by setup and kept."""
+        b = read(self.build_id_file).strip()
+        if re.fullmatch(r"[0-9a-f]{16}", b) or not create:
+            return b or None
+        b = secrets.token_hex(8)
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.build_id_file.write_text(b + "\n")
+        return b
+
+    def conf(self) -> dict:
+        try:
+            return json.loads(self.config.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def set_conf(self, **kw):
+        c = {**self.conf(), **kw}
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.config.write_text(json.dumps(c, indent=1) + "\n")
+
+    @property
+    def lib(self) -> Path:
+        return self.folder / ".lake/build/lib/lean"
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_time(s: str):
+    """ISO `2026-11-21T15:26:31Z`, or an older build-script form `2026-11-21 07:26:31 PST` (local time)."""
+    s = s.strip()
+    try:
+        return datetime.strptime(s[:20], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        pass
+    m = re.match(r"(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)", s)
+    if m:
+        return time.mktime(time.strptime(f"{m[1]} {m[2]}", "%Y-%m-%d %H:%M:%S"))
+    return None
+
+
+def log_event(ctx: Ctx, kind: str, t: float = None):
+    ctx.logs.mkdir(parents=True, exist_ok=True)
+    with open(ctx.status, "a") as f:
+        f.write(f"{kind} {iso(t or time.time())}\n")
+
+
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def elan_bin() -> Path:
+    return Path(os.environ.get("ELAN_HOME") or Path.home() / ".elan") / "bin"
+
+
+def lean_env() -> dict:
+    env = dict(os.environ)
+    env["PATH"] = f"{elan_bin()}:{env.get('PATH', '')}"
+    return env
+
+
+def which(name: str):
+    p = elan_bin() / name
+    return str(p) if p.exists() else shutil.which(name)
+
+
+def run(cmd, **kw):
+    print("  $ " + shlex.join(map(str, cmd)), file=sys.stderr)
+    return subprocess.run(list(map(str, cmd)), **kw)
+
+
+def read(p: Path, default=""):
+    try:
+        return p.read_text()
+    except OSError:
+        return default
+
+
+# ---------------------------------------------------------------- module list, bitmap, digest
+
+def all_modules(folder: Path) -> list:
+    """All src/**/*.lean as dotted names, sorted byte-wise (UTF-8 byte order == code point order)."""
+    src = folder / "src"
+    out = []
+    for root, dirs, files in os.walk(src):
+        rel = os.path.relpath(root, src)
+        for f in files:
+            if f.endswith(".lean"):
+                out.append((f[:-5] if rel == "." else f"{rel}/{f[:-5]}").replace(os.sep, ".").replace("/", "."))
+    return sorted(out, key=lambda m: m.encode())
+
+
+def compiled_modules(lib: Path) -> set:
+    """Modules Lake has finished: both `.olean` and `.trace` present. Lake writes the trace last, so an
+    .olean without one (a build stopped mid-module) is not finished and Lake rebuilds it."""
+    out = set()
+    for root, _, files in os.walk(lib):
+        rel = os.path.relpath(root, lib)
+        fs = set(files)
+        for f in files:
+            if f.endswith(".olean") and f[:-6] + ".trace" in fs:
+                out.add((f[:-6] if rel == "." else f"{rel}/{f[:-6]}").replace(os.sep, "."))
+    return out
+
+
+def count_compiled(lib: Path) -> int:
+    return len(compiled_modules(lib))
+
+
+def encode_bitmap(bits: list) -> str:
+    """bit i = module i compiled, LSB-first within each byte, gzip (mtime 0) then base64."""
+    b = bytearray((len(bits) + 7) // 8)
+    for i, on in enumerate(bits):
+        if on:
+            b[i >> 3] |= 1 << (i & 7)
+    return base64.b64encode(gzip.compress(bytes(b), compresslevel=9, mtime=0)).decode()
+
+
+def decode_bitmap(b64: str, n: int) -> list:
+    b = gzip.decompress(base64.b64decode(b64))
+    if len(b) != (n + 7) // 8:
+        raise ValueError(f"bitmap is {len(b)} bytes, expected {(n + 7) // 8}")
+    return [bool(b[i >> 3] >> (i & 7) & 1) for i in range(n)]
+
+
+class HashCache:
+    """sha256 of each .olean, keyed by (path, size, mtime), so repeat records only hash new files."""
+    def __init__(self, path: Path):
+        self.path, self.d = path, {}
+        try:
+            self.d = json.loads(path.read_text())
+        except (OSError, ValueError):
+            pass
+
+    def get(self, p: Path) -> bytes:
+        st = p.stat()
+        key = str(p)
+        e = self.d.get(key)
+        if e and e[0] == st.st_size and e[1] == st.st_mtime_ns:
+            return bytes.fromhex(e[2])
+        h = sha256_file(p)
+        self.d[key] = [st.st_size, st.st_mtime_ns, h]
+        return bytes.fromhex(h)
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.d))
+        tmp.replace(self.path)
+
+
+def olean_digest(lib: Path, mods: list, bits: list, cache: HashCache = None) -> str:
+    """sha256 over sha256(.olean bytes) (32 raw bytes each) of each compiled module, in index order."""
+    h = hashlib.sha256()
+    for m, on in zip(mods, bits):
+        if on:
+            p = lib / (m.replace(".", "/") + ".olean")
+            h.update(cache.get(p) if cache else bytes.fromhex(sha256_file(p)))
+    return h.hexdigest()
+
+
+# ---------------------------------------------------------------- machine, logs, busy time
+
+def machine() -> dict:
+    cpu = ""
+    if IS_MAC:
+        cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip()
+    else:
+        m = re.search(r"^model name\s*:\s*(.+)$", read(Path("/proc/cpuinfo")), re.M)
+        cpu = m[1].strip() if m else ""
+    return {"os": f"{platform.system()} {platform.release()}", "arch": platform.machine(),
+            "cpu": cpu or platform.processor() or "", "cores": int(os.cpu_count() or 0)}
+
+
+def events(ctx: Ctx) -> list:
+    out = []
+    for line in read(ctx.status).splitlines():
+        kind, _, rest = line.partition(" ")
+        t = parse_time(rest)
+        if t is not None:
+            out.append((kind.split("=")[0], kind, t))
+    return out
+
+
+def samples(ctx: Ctx) -> list:
+    """(time, modules compiled) from samples.txt; either timestamp form."""
+    out = []
+    for line in read(ctx.samples).splitlines():
+        m = re.match(r"(\S+(?: \d\d:\d\d:\d\d)?)\s+(?:oleans|modules)=(\d+)", line)
+        if m:
+            t = parse_time(m[1])
+            if t is not None:
+                out.append((t, int(m[2])))
+    return out
+
+
+def busy_seconds(ctx: Ctx, running: bool, now: float = None) -> tuple:
+    """(started, busy seconds): wall time the build was running, summed over sessions, minus pauses.
+    A session opens at START/RESTART and closes at BUILD_EXIT. A session with no BUILD_EXIT (the build was
+    killed) closes at its last sign of life: the last sample, or the build log's last write."""
+    now = now or time.time()
+    ev = events(ctx)
+    smp = [t for t, _ in samples(ctx)]
+    started = next((t for k, _, t in ev if k == "START"), None) or next((t for k, _, t in ev if k == "RESTART"), None)
+    total, open_at, paused_at, paused = 0.0, None, None, 0.0
+
+    def last_alive(after, before):
+        cands = [t for t in smp if after <= t <= before]
+        for p in (ctx.logs / "build.log", ctx.logs / "time.txt"):
+            try:
+                mt = p.stat().st_mtime
+                if after <= mt <= before:
+                    cands.append(mt)
+            except OSError:
+                pass
+        return max(cands) if cands else after
+
+    def close(end):
+        nonlocal total, open_at, paused_at, paused
+        if paused_at is not None:
+            paused += max(0.0, end - paused_at)
+        total += max(0.0, end - open_at - paused)
+        open_at, paused_at, paused = None, None, 0.0
+
+    for i, (k, _, t) in enumerate(ev):
+        if k in ("START", "RESTART"):
+            if open_at is not None:
+                close(last_alive(open_at, t))
+            open_at = t
+        elif open_at is None:
+            continue
+        elif k == "PAUSE" and paused_at is None:
+            paused_at = t
+        elif k == "RESUME" and paused_at is not None:
+            paused += t - paused_at
+            paused_at = None
+        elif k == "BUILD_EXIT":
+            close(t)
+    if open_at is not None:
+        close(now if running else last_alive(open_at, now))
+    return started, int(round(total))
+
+
+def parse_axioms(text: str):
+    """The axioms Lean prints for riemannHypothesis, or None if the check did not print them."""
+    m = re.search(r"'riemannHypothesis' depends on axioms:\s*\[([^\]]*)\]", text)
+    if m:
+        return [a.strip() for a in m[1].split(",") if a.strip()]
+    if re.search(r"'riemannHypothesis' does not depend on any axioms", text):
+        return []
+    return None
+
+
+# ---------------------------------------------------------------- processes
+
+def ps_table() -> list:
+    out = subprocess.run(["ps", "-axo", "pid=,pgid=,stat=,comm="], capture_output=True, text=True).stdout
+    rows = []
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4:
+            rows.append((int(parts[0]), int(parts[1]), parts[2], os.path.basename(parts[3])))
+    return rows
+
+
+def pid_alive(pid: int, must_contain: str = None) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    if must_contain:
+        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout
+        return must_contain in cmd
+    return True
+
+
+def read_pid(p: Path):
+    try:
+        return int(p.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def supervisor(ctx: Ctx):
+    pid = read_pid(ctx.pid_file)
+    return pid if pid and pid_alive(pid, " _run") else None
+
+
+def outside_build(ctx: Ctx) -> list:
+    """lake processes working in this folder that this tool did not start (e.g. an older build script).
+    Two builds in one folder would fight over the same files, so `build` refuses while one runs."""
+    pgid = read_pid(ctx.pgid_file)
+    ours = {p for p, g, _, _ in ps_table() if pgid and g == pgid}
+    found = []
+    for pid, _, _, comm in ps_table():
+        if comm != "lake" or pid in ours:
+            continue
+        r = subprocess.run(["lsof", "-a", "-d", "cwd", "-p", str(pid), "-Fn"], capture_output=True, text=True)
+        cwd = next((l[1:] for l in r.stdout.splitlines() if l.startswith("n")), None)
+        if cwd is None and Path(f"/proc/{pid}/cwd").exists():
+            try:
+                cwd = os.readlink(f"/proc/{pid}/cwd")
+            except OSError:
+                pass
+        if cwd and os.path.realpath(cwd) == os.path.realpath(ctx.folder):
+            found.append(pid)
+    return found
+
+
+def group_procs(pgid: int) -> list:
+    return [r for r in ps_table() if r[1] == pgid]
+
+
+def is_paused(ctx: Ctx) -> bool:
+    ev = [k for k, _, _ in events(ctx) if k in ("PAUSE", "RESUME", "START", "RESTART", "BUILD_EXIT")]
+    return bool(ev) and ev[-1] == "PAUSE"
+
+
+def set_priority(pids: list, mode: str):
+    """gentle = background policy (macOS taskpolicy -b / Linux SCHED_IDLE); full = normal (still nice 19)."""
+    for pid in pids:
+        if IS_MAC:
+            subprocess.run(["taskpolicy", "-b" if mode == "gentle" else "-B", "-p", str(pid)], capture_output=True)
+        elif hasattr(os, "sched_setscheduler"):
+            try:
+                pol = os.SCHED_IDLE if mode == "gentle" else os.SCHED_OTHER
+                os.sched_setscheduler(pid, pol, os.sched_param(0))
+            except OSError:
+                pass
+
+
+def build_pids(ctx: Ctx, names=("lake", "lean")) -> list:
+    pgid = read_pid(ctx.pgid_file)
+    return [p for p, _, _, c in group_procs(pgid) if c in names] if pgid else []
+
+
+def start_caffeinate(ctx: Ctx, pgid: int):
+    """Keep the Mac from idle-sleeping while the build runs (released while paused)."""
+    if IS_MAC and shutil.which("caffeinate"):
+        c = subprocess.Popen(["caffeinate", "-i", "-w", str(pgid)], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        ctx.caff_file.write_text(str(c.pid))
+
+
+def stop_caffeinate(ctx: Ctx):
+    pid = read_pid(ctx.caff_file)
+    if pid and pid_alive(pid, "caffeinate"):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    ctx.caff_file.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------- setup
+
+def toolchain_of(folder: Path) -> str:
+    return read(folder / "lean-toolchain").strip()
+
+
+def mathlib_rev_of(folder: Path):
+    try:
+        pk = json.loads((folder / "lake-manifest.json").read_text())["packages"]
+        return next((p.get("rev") for p in pk if p.get("name") == "mathlib"), None)
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def download_archive(ctx: Ctx, url_template: str) -> Path:
+    dl = ctx.home / "download"
+    dl.mkdir(parents=True, exist_ok=True)
+    out = dl / "lean.tar.gz"
+    if out.exists() and out.stat().st_size == ARCHIVE_BYTES and sha256_file(out) == ARCHIVE_SHA256:
+        print(f"archive already downloaded and verified: {out}")
+        return out
+    for i in range(1, PARTS + 1):
+        nn = f"{i:02d}"
+        part = dl / f"lean.tar.gz.part{nn}"
+        url = url_template.format(nn=nn)
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            size = r.headers.get("Content-Length")
+            if part.exists() and size and part.stat().st_size == int(size):
+                print(f"  part {nn}/{PARTS} already here")
+                continue
+            print(f"  part {nn}/{PARTS} <- {url}")
+            tmp = part.with_suffix(".tmp")
+            with open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+            tmp.replace(part)
+    h = hashlib.sha256()
+    tmp = out.with_suffix(".tmp")
+    with open(tmp, "wb") as f:
+        for i in range(1, PARTS + 1):
+            with open(dl / f"lean.tar.gz.part{i:02d}", "rb") as p:
+                for chunk in iter(lambda: p.read(1 << 20), b""):
+                    h.update(chunk)
+                    f.write(chunk)
+    if h.hexdigest() != ARCHIVE_SHA256:
+        tmp.unlink()
+        raise Fail(f"downloaded archive has sha256 {h.hexdigest()}, expected {ARCHIVE_SHA256}; parts kept in {dl} "
+                   "(delete them to download again)")
+    tmp.replace(out)
+    for i in range(1, PARTS + 1):
+        (dl / f"lean.tar.gz.part{i:02d}").unlink(missing_ok=True)
+    return out
+
+
+def unpack(archive: Path, folder: Path):
+    parent = folder.parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise Fail(f"cannot create {parent}. Run once:  sudo mkdir -p {parent} && sudo chown $USER {parent}")
+    staging = parent / f".unpacking-{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir()
+    try:
+        with tarfile.open(archive, "r:gz") as t:
+            members = t.getmembers()
+            bad = [m.name for m in members if not (m.name == "lean" or m.name.startswith("lean/"))
+                   or ".." in m.name.split("/") or not (m.isfile() or m.isdir())]
+            if bad:
+                raise Fail(f"archive has unexpected entries, refusing to unpack: {bad[:3]}")
+            kw = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+            t.extractall(staging, members=members, **kw)
+        (staging / "lean").rename(folder)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def ensure_elan():
+    elan = which("elan")
+    if elan:
+        return elan
+    print("installing elan (the Lean version manager) from github.com/leanprover/elan")
+    init = Path(os.environ.get("TMPDIR", "/tmp")) / f"elan-init-{os.getpid()}.sh"
+    req = urllib.request.Request("https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh",
+                                 headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        init.write_bytes(r.read())
+    try:
+        if run(["sh", str(init), "-y", "--default-toolchain", "none"]).returncode != 0:
+            raise Fail("elan install failed")
+    finally:
+        init.unlink(missing_ok=True)
+    elan = which("elan")
+    if not elan:
+        raise Fail("elan installed but not found in ~/.elan/bin")
+    return elan
+
+
+def toolchain_installed(elan: str, toolchain: str = TOOLCHAIN) -> bool:
+    out = subprocess.run([elan, "toolchain", "list"], capture_output=True, text=True, env=lean_env()).stdout
+    return any(l.split()[0] == toolchain for l in out.splitlines() if l.strip())
+
+
+def mathlib_cache_present(folder: Path) -> bool:
+    return (folder / ".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean").exists()
+
+
+def cmd_setup(ctx: Ctx, a):
+    folder = ctx.folder
+    if folder.exists():
+        tc = toolchain_of(folder)
+        if tc != TOOLCHAIN:
+            raise Fail(f"{folder} exists but pins {tc or 'no toolchain'}, expected {TOOLCHAIN}. "
+                       "Move it aside and run setup again.")
+        if mathlib_rev_of(folder) != MATHLIB_REV:
+            raise Fail(f"{folder} pins Mathlib {mathlib_rev_of(folder)}, expected {MATHLIB_REV}")
+        print(f"[1/3] proof folder already here with {TOOLCHAIN}: {folder} (skipping download)")
+    else:
+        if a.archive:
+            archive = Path(a.archive).expanduser()
+            print(f"[1/3] checking {archive}")
+            if sha256_file(archive) != ARCHIVE_SHA256:
+                raise Fail(f"{archive} does not have sha256 {ARCHIVE_SHA256}")
+        else:
+            print(f"[1/3] downloading the official archive ({PARTS} parts, {ARCHIVE_BYTES / 1e6:.0f} MB)")
+            archive = download_archive(ctx, a.parts_url)
+        print(f"      sha256 {ARCHIVE_SHA256} ok; unpacking into {folder}")
+        unpack(archive, folder)
+        if toolchain_of(folder) != TOOLCHAIN:
+            raise Fail(f"unpacked archive pins {toolchain_of(folder)}, expected {TOOLCHAIN}")
+    elan = ensure_elan()
+    if toolchain_installed(elan):
+        print(f"[2/3] Lean {TOOLCHAIN} already installed")
+    else:
+        print(f"[2/3] installing Lean {TOOLCHAIN}")
+        if run([elan, "toolchain", "install", TOOLCHAIN], env=lean_env()).returncode != 0:
+            raise Fail("toolchain install failed")
+    if mathlib_cache_present(folder) and not a.force_cache:
+        print("[3/3] Mathlib compiled cache already here")
+    elif a.skip_cache:
+        print("[3/3] skipping Mathlib cache (--skip-cache)")
+    else:
+        print("[3/3] fetching Mathlib's compiled cache (lake exe cache get Mathlib)")
+        if run([which("lake") or "lake", "exe", "cache", "get", "Mathlib"], cwd=folder, env=lean_env()).returncode != 0:
+            raise Fail("`lake exe cache get Mathlib` failed; run setup again to retry")
+    print(f"this computer's build_id: {ctx.build_id()}")
+    print(f"ready. Next: riemann-at-home build")
+
+
+# ---------------------------------------------------------------- build control
+
+def free_gb(folder: Path) -> float:
+    p = folder
+    while not p.exists():
+        p = p.parent
+    return shutil.disk_usage(p).free / 1e9
+
+
+def disk_message(ctx: Ctx) -> str:
+    return (f"only {free_gb(ctx.folder):.1f} GB free on the build disk (minimum {MIN_FREE_GB:g} GB; a whole build "
+            "writes about 88 GB). Free some space, then `riemann-at-home build` continues from here. "
+            "`record` and `submit` still work for what is built.")
+
+
+def stored_mode(ctx: Ctx) -> str:
+    m = read(ctx.mode_file).strip()
+    return m if m in ("gentle", "full") else "gentle"
+
+
+def cmd_build(ctx: Ctx, a):
+    mode = "full" if a.full else "gentle" if a.gentle else stored_mode(ctx)
+    ctx.logs.mkdir(parents=True, exist_ok=True)
+    sup = supervisor(ctx)
+    if sup:
+        if mode != stored_mode(ctx) or a.full or a.gentle:
+            ctx.mode_file.write_text(mode)
+            set_priority(build_pids(ctx), mode)
+            log_event(ctx, f"MODE_{mode.upper()}")
+            print(f"build already running (pid {sup}); speed set to {mode}")
+        else:
+            print(f"build already running (pid {sup}), {mode}")
+        return 0
+    other = outside_build(ctx)
+    if other:
+        raise Fail(f"another build is already running in {ctx.folder} (lake pid {', '.join(map(str, other))}), "
+                   "not started by this tool. Stop that one first.")
+    if toolchain_of(ctx.folder) != TOOLCHAIN:
+        raise Fail(f"{ctx.folder} is not set up (expected lean-toolchain {TOOLCHAIN}); run: riemann-at-home setup")
+    if not which("lake"):
+        raise Fail("lake not found; run: riemann-at-home setup")
+    if free_gb(ctx.folder) < MIN_FREE_GB:
+        raise Fail(disk_message(ctx))
+    if a.submit_repo:
+        ctx.set_conf(repo=str(Path(a.submit_repo).expanduser().resolve()))
+    ctx.mode_file.write_text(mode)
+    cmd = [sys.executable, "-I", str(Path(__file__).resolve()), "_run", "--folder", str(ctx.folder),
+           "--logs", str(ctx.logs), "--target", a.target] + (["--test-unofficial-folder"] if a.test_unofficial_folder else [])
+    with open(ctx.logs / "supervisor.log", "ab") as lf:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=lf, stderr=lf, start_new_session=True,
+                             env={**os.environ, "RAH_HOME": str(ctx.home)})
+    for _ in range(100):
+        if read_pid(ctx.pgid_file) and supervisor(ctx) == p.pid:
+            break
+        if p.poll() is not None:
+            raise Fail(f"build failed to start; see {ctx.logs / 'supervisor.log'}")
+        time.sleep(0.1)
+    print(f"building `lake build {a.target}` in {ctx.folder} ({mode}), in the background.\n"
+          f"  log: {ctx.logs / 'build.log'}\n  riemann-at-home status | pause | resume | stop")
+    return 0
+
+
+def cmd_run(ctx: Ctx, a):
+    """The background supervisor: runs the official `lake build Main` unchanged (nice 19), then the axiom check."""
+    ctx.logs.mkdir(parents=True, exist_ok=True)
+    ctx.pid_file.write_text(str(os.getpid()))
+    log_event(ctx, "RESTART" if any(k == "START" for k, _, _ in events(ctx)) else "START")
+    if free_gb(ctx.folder) < MIN_FREE_GB:
+        print(disk_message(ctx), flush=True)
+        log_event(ctx, "DISK_LOW")
+        log_event(ctx, "BUILD_EXIT=disk")
+        ctx.pid_file.unlink(missing_ok=True)
+        return 1
+    mode = stored_mode(ctx)
+    tcmd = (["/usr/bin/time", "-l"] if IS_MAC else ["/usr/bin/time", "-v"]) if Path("/usr/bin/time").exists() else []
+    cmd = tcmd + ["nice", "-n", "19", which("lake") or "lake", "--no-ansi", "build", a.target]
+    stopping, terminated, disk_low = threading.Event(), threading.Event(), threading.Event()
+    with open(ctx.logs / "build.log", "ab") as out, open(ctx.logs / "time.txt", "ab") as err:
+        p = subprocess.Popen(cmd, cwd=ctx.folder, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                             env=lean_env(), start_new_session=True)
+    ctx.pgid_file.write_text(str(p.pid))
+    start_caffeinate(ctx, p.pid)
+
+    def on_term(sig, frm):
+        terminated.set()
+        for s in (signal.SIGCONT, signal.SIGTERM):
+            try:
+                os.killpg(p.pid, s)
+            except OSError:
+                pass
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+
+    def sampler():                            # first sample now: the baseline for this session's speed
+        while True:
+            with open(ctx.samples, "a") as f:
+                f.write(f"{iso(time.time())} modules={count_compiled(ctx.lib)}\n")
+            if stopping.wait(SAMPLE_SECONDS):
+                return
+    threading.Thread(target=sampler, daemon=True).start()
+
+    def disk_guard():                         # stop safely before the disk fills; everything built is kept
+        while not stopping.wait(DISK_CHECK_SECONDS):
+            if free_gb(ctx.folder) < MIN_FREE_GB:
+                print(disk_message(ctx), flush=True)
+                log_event(ctx, "DISK_LOW")
+                disk_low.set()
+                on_term(None, None)
+                return
+    threading.Thread(target=disk_guard, daemon=True).start()
+
+    def progress():                           # refresh the record on this build's one PR about every 10 minutes
+        while not stopping.wait(AUTOSUBMIT_SECONDS):
+            autosubmit(ctx, a, "progress")
+    threading.Thread(target=progress, daemon=True).start()
+    if mode == "gentle":                      # new lean processes inherit lake's policy
+        for _ in range(30):
+            pids = build_pids(ctx)
+            if pids:
+                set_priority(pids, mode)
+                break
+            time.sleep(1)
+    rc = p.wait()
+    stopping.set()
+    stop_caffeinate(ctx)
+    log_event(ctx, f"BUILD_EXIT={rc}")
+    final_submit = rc == 0 or disk_low.is_set()
+    if rc == 0 and a.target == "Main" and not terminated.is_set():
+        audit = ctx.home / "audit"
+        audit.mkdir(parents=True, exist_ok=True)
+        (audit / "Audit.lean").write_text(AUDIT_LEAN)
+        with open(ctx.logs / "axioms.log", "wb") as f:
+            r = subprocess.run([which("lake") or "lake", "--no-ansi", "env", "lean", f"--root={audit}",
+                                str(audit / "Audit.lean")], cwd=ctx.folder, stdout=f, stderr=subprocess.STDOUT,
+                               env=lean_env())
+        log_event(ctx, f"AXIOMS_EXIT={r.returncode}")
+    if final_submit:
+        autosubmit(ctx, a, "final")
+    ctx.pgid_file.unlink(missing_ok=True)
+    ctx.pid_file.unlink(missing_ok=True)
+    return rc
+
+
+def autosubmit(ctx: Ctx, a, why: str):
+    """Write a record and push it to this build's one PR (dry run only in this build), using the repo given
+    with `build --submit-repo`.
+    Output goes to logs/autosubmit.log. Never raises: the build goes on whatever happens here."""
+    if AUTOSUBMIT == "off":
+        return
+    me = [sys.executable, "-I", str(Path(__file__).resolve())]
+    loc = ["--folder", str(ctx.folder), "--logs", str(ctx.logs)]
+    with open(ctx.logs / "autosubmit.log", "a") as f:
+        f.write(f"--- autosubmit ({why}) {iso(time.time())}\n")
+        f.flush()
+        try:
+            extra = ["--test-unofficial-folder"] if getattr(a, "test_unofficial_folder", False) else []
+            r = subprocess.run(me + ["record"] + loc + extra, stdout=f, stderr=subprocess.STDOUT,
+                               env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=6 * 3600)
+            repo = ctx.conf().get("repo")
+            if r.returncode == 0 and repo:
+                subprocess.run(me + ["submit", "--repo", repo, "--dry-run"] + loc, stdout=f, stderr=subprocess.STDOUT,
+                               env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=600)
+            elif r.returncode == 0:
+                f.write("no repo to submit to (set one with: riemann-at-home build --submit-repo DIR)\n")
+        except Exception as e:
+            f.write(f"autosubmit failed: {e}\n")
+
+
+def need_running(ctx: Ctx) -> int:
+    if not supervisor(ctx) or not read_pid(ctx.pgid_file):
+        raise Fail("no build is running. Start one with: riemann-at-home build")
+    return read_pid(ctx.pgid_file)
+
+
+def cmd_pause(ctx: Ctx, a):
+    pgid = need_running(ctx)
+    if is_paused(ctx):
+        print("already paused")
+        return 0
+    os.killpg(pgid, signal.SIGSTOP)
+    stop_caffeinate(ctx)
+    log_event(ctx, "PAUSE")
+    print("paused: frozen in place, nothing is lost. riemann-at-home resume")
+    return 0
+
+
+def cmd_resume(ctx: Ctx, a):
+    if not supervisor(ctx):
+        print("no build running; starting it again (it picks up where it stopped)")
+        a.gentle = a.full = False
+        return cmd_build(ctx, a)
+    pgid = need_running(ctx)
+    os.killpg(pgid, signal.SIGCONT)
+    if is_paused(ctx):
+        start_caffeinate(ctx, pgid)
+        log_event(ctx, "RESUME")
+    print(f"resumed ({stored_mode(ctx)})")
+    return 0
+
+
+def cmd_stop(ctx: Ctx, a):
+    sup = supervisor(ctx)
+    if not sup:
+        print("no build running")
+        return 0
+    if is_paused(ctx):
+        log_event(ctx, "RESUME")
+    log_event(ctx, "STOP_REQUESTED")
+    os.kill(sup, signal.SIGTERM)
+    for _ in range(300):
+        if not pid_alive(sup):
+            break
+        time.sleep(0.1)
+    else:
+        pgid = read_pid(ctx.pgid_file)
+        if pgid:
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+    print("stopped. Everything compiled so far is kept; `riemann-at-home build` continues from here.")
+    return 0
+
+
+# ---------------------------------------------------------------- status
+
+SPEED_WINDOW = 1800   # speed = modules finished in the last 30 minutes of samples
+
+
+def session_samples(ctx: Ctx) -> list:
+    """Samples grouped by build session (each START/RESTART opens one). Counts are totals in the folder, so
+    only differences within a session measure work done; modules that were already there never count."""
+    starts = sorted(t for k, _, t in events(ctx) if k in ("START", "RESTART"))
+    groups = [[] for _ in range(len(starts) + 1)]
+    for t, n in samples(ctx):
+        i = sum(1 for st in starts if st <= t)
+        groups[i].append((t, n))
+    return [g for g in groups if g]
+
+
+def rate_per_hour(ctx: Ctx):
+    """Modules per hour over the current session's last SPEED_WINDOW seconds; None until measurable."""
+    ss = session_samples(ctx)
+    if not ss:
+        return None
+    cur = ss[-1]
+    recent = [x for x in cur if x[0] >= cur[-1][0] - SPEED_WINDOW]
+    if len(recent) < 2:
+        recent = cur[-2:]
+    if len(recent) < 2:
+        return None
+    (t0, n0), (t1, n1) = recent[0], recent[-1]
+    if t1 - t0 < 60:
+        return None
+    return max(0, n1 - n0) / (t1 - t0) * 3600
+
+
+def built_by_this_tool(ctx: Ctx) -> int:
+    """Modules finished while builds were measured (sum over sessions of last minus first sample)."""
+    return sum(max(0, g[-1][1] - g[0][1]) for g in session_samples(ctx))
+
+
+def cmd_status(ctx: Ctx, a):
+    done = count_compiled(ctx.lib) if ctx.lib.exists() else 0
+    sup = supervisor(ctx)
+    ev = events(ctx)
+    print(f"folder    {ctx.folder}{'' if ctx.folder.exists() else '  (not set up: riemann-at-home setup)'}")
+    print(f"compiled  {done:,} / {N_MODULES:,} modules ({100 * done / N_MODULES:.2f}%)")
+    if sup:
+        state = "PAUSED" if is_paused(ctx) else f"running, {stored_mode(ctx)}"
+        active = len(build_pids(ctx, ("lean",)))
+        print(f"build     {state} (pid {sup}, {active} modules compiling now)")
+    elif outside_build(ctx):
+        print(f"build     running, started outside this tool (lake pid {', '.join(map(str, outside_build(ctx)))}); "
+              "pause/stop only control builds started with `riemann-at-home build`")
+    else:
+        last = next((raw for k, raw, _ in reversed(ev) if k == "BUILD_EXIT"), None)
+        how = {"BUILD_EXIT=0": "finished"}.get(last, "stopped" + (f" ({last})" if last else ""))
+        print(f"build     not running, {how}" if ev else "build     not started yet")
+    started, busy = busy_seconds(ctx, bool(sup) or bool(outside_build(ctx)))
+    if started:
+        print(f"started   {iso(started)}, busy {busy / 3600:.1f} h")
+    r = rate_per_hour(ctx)
+    built = built_by_this_tool(ctx)
+    if sup and is_paused(ctx):
+        print("speed     paused")
+    elif sup and r is None:
+        print(f"speed     measuring (first reading about {SAMPLE_SECONDS / 60:.0f} min after the build started)")
+    elif sup and r is not None:
+        left = N_MODULES - done
+        eta = f", about {left / r / 24:.1f} days to go at this speed" if r > 0 else ""
+        print(f"speed     {r:,.0f} modules/hour over the last {SPEED_WINDOW // 60} min{eta}")
+    elif built and busy >= 600:
+        print(f"speed     {built / busy * 3600:,.0f} modules/hour on average ({built:,} built while measured)")
+    ax = read(ctx.logs / "axioms.log")
+    if ax:
+        print(f"axioms    {parse_axioms(ax)}")
+    ex = levels_state(ctx).get("export")
+    if ex and ex.get("sha256") == EXPORT_SHA256:
+        lv = levels_state(ctx)
+        ok = [e["name"] for e in lv.get("checkers", []) if e.get("result") == "accept"]
+        print(f"level     {3 if ok else 2}: export reproduces the reference" + (f", re-checked by {', '.join(ok)}" if ok else "")
+              + (", joint statement signed" if lv.get("sign_statement") else ""))
+    elif ex:
+        print(f"export    sha256 {ex.get('sha256')} does not match the reference ({UNVERIFIED})")
+    elif done == N_MODULES and parse_axioms(ax) is not None:
+        print("level     1: whole proof built. Next: riemann-at-home export")
+    return 0
+
+
+# ---------------------------------------------------------------- record
+
+def make_record(ctx: Ctx, a, final: bool = False) -> dict:
+    folder = ctx.folder
+    official = str(folder) == str(fixed_folder())
+    if not official and not a.test_unofficial_folder:
+        raise Fail(f"records come from the fixed folder {fixed_folder()} only (got {folder})")
+    if toolchain_of(folder) != TOOLCHAIN:
+        raise Fail(f"{folder} pins {toolchain_of(folder) or 'no toolchain'}, expected {TOOLCHAIN}")
+    if mathlib_rev_of(folder) != MATHLIB_REV:
+        raise Fail(f"{folder} pins Mathlib {mathlib_rev_of(folder)}, expected {MATHLIB_REV}")
+    mods = all_modules(folder)
+    if len(mods) != N_MODULES and not a.test_unofficial_folder:
+        raise Fail(f"{folder}/src has {len(mods):,} modules, expected {N_MODULES:,}: not the official archive")
+    done = compiled_modules(ctx.lib)
+    bits = [m in done for m in mods]
+    cache = HashCache(ctx.home / "olean-hashes.json")
+    digest = olean_digest(ctx.lib, mods, bits, cache)
+    cache.save()
+    started, busy = busy_seconds(ctx, bool(supervisor(ctx)) or bool(outside_build(ctx)))
+    n = sum(bits)
+    if n == 0:
+        raise Fail("nothing compiled yet, so there is nothing to record. Start with: riemann-at-home build")
+    recorded = int(time.time())
+    # Modules may predate this tool's logs (a folder built before, or by another script). `started` is the earlier
+    # of the first logged start and the first finished module, so new-modules / (recorded - started) stays an
+    # honest rate for the bot's speed check, even on a first record of a pre-built folder.
+    first_trace = min((ctx.lib / (m.replace(".", "/") + ".trace")).stat().st_mtime for m, on in zip(mods, bits) if on)
+    started = int(min(started if started is not None else first_trace, first_trace, recorded - 1))
+    bid = ctx.build_id()
+    kept = ctx.conf().get("started") or {}      # keep `started` steady across this build's records
+    if kept.get("build_id") == bid and isinstance(kept.get("t"), int) and kept["t"] <= started:
+        started = kept["t"]
+    else:
+        ctx.set_conf(started={"build_id": bid, "t": started})
+    busy = max(0, min(busy, recorded - started))
+    axioms = None
+    if n == len(mods) and mods:
+        axioms = parse_axioms(read(ctx.logs / "axioms.log"))
+    rec = {
+        "format": FORMAT,
+        "tool": TOOL,
+        "archive_sha256": ARCHIVE_SHA256,
+        "toolchain": TOOLCHAIN,
+        "mathlib_rev": MATHLIB_REV,
+        "build_folder": str(folder) if official else "unofficial",
+        "build_id": bid,
+        "machine": machine(),
+        "started": iso(started),
+        "recorded": iso(recorded),
+        "busy_seconds": busy,
+        "modules_compiled": n,
+        "bitmap_b64": encode_bitmap(bits),
+        "olean_digest": digest,
+        "whole_proof": axioms is not None,
+        "axioms": axioms,
+        "final": bool(final),
+    }
+    assert list(rec) == RECORD_KEYS
+    shown = ctx.conf().get("display")
+    if shown == {"anonymous": True}:
+        rec["anonymous"] = True
+    elif isinstance(shown, dict) and name_problem(shown.get("display_name")) is None:
+        rec["display_name"] = shown["display_name"]
+    rec.update(level_fields(ctx, rec))
+    if official:
+        errs = validate_record(rec)
+        if errs:
+            raise Fail("record failed its own check:\n  " + "\n  ".join(errs))
+    return rec
+
+
+KEEP_RECORDS = 50
+
+
+def write_record(ctx: Ctx, rec: dict) -> Path:
+    """records/<UTC time>.json locally (history; the repo keeps one file per build). Keeps the last 50."""
+    ctx.records.mkdir(parents=True, exist_ok=True)
+    out = ctx.records / (rec["recorded"].replace("-", "").replace(":", "") + ".json")   # 20261122T091002Z.json
+    out.write_text(json.dumps(rec, indent=2) + "\n")
+    for old in sorted(ctx.records.glob("*.json"))[:-KEEP_RECORDS]:
+        old.unlink()
+    return out
+
+
+def cmd_record(ctx: Ctx, a):
+    rec = make_record(ctx, a)
+    out = write_record(ctx, rec)
+    print(f"{rec['modules_compiled']:,} / {N_MODULES:,} modules, busy {rec['busy_seconds'] / 3600:.1f} h"
+          f"{', WHOLE PROOF' if rec['whole_proof'] else ''}\n{out}")
+    return 0
+
+
+def cmd_finish(ctx: Ctx, a):
+    """Done with this computer: stop the build if it runs, write a final record, submit it (the bot then merges)."""
+    if supervisor(ctx):
+        print("stopping the build first")
+        cmd_stop(ctx, a)
+    rec = make_record(ctx, a, final=True)
+    out = write_record(ctx, rec)
+    print(f"final record: {rec['modules_compiled']:,} / {N_MODULES:,} modules\n{out}")
+    if not a.repo:
+        print("submit it with: riemann-at-home submit --repo DIR")
+        return 0
+    a.record = str(out)
+    return cmd_submit(ctx, a)
+
+
+# ---------------------------------------------------------------- submit
+
+def validate_record(rec: dict):
+    errs = []
+    extra = [k for k in rec if k not in RECORD_KEYS]           # a set of keys: order does not matter
+    if (not set(RECORD_KEYS) <= set(rec) or any(k not in OPTIONAL_KEYS for k in extra)
+            or sum(k in rec for k in NAME_KEYS) > 1):
+        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS}, at most one of {NAME_KEYS})")
+    if "display_name" in rec and name_problem(rec["display_name"]):
+        errs.append(f"display_name: {name_problem(rec['display_name'])}")
+    if "anonymous" in rec and rec["anonymous"] is not True:
+        errs.append("anonymous must be true when present")
+    for k, v in (("format", FORMAT), ("archive_sha256", ARCHIVE_SHA256), ("toolchain", TOOLCHAIN),
+                 ("mathlib_rev", MATHLIB_REV)):
+        if rec.get(k) != v:
+            errs.append(f"{k} is {rec.get(k)!r}, expected {v!r}")
+    if not re.fullmatch(r"[0-9a-f]{16}", str(rec.get("build_id"))):
+        errs.append("build_id must be 16 lowercase hex chars")
+    if rec.get("build_folder") not in FIXED_FOLDERS.values():
+        errs.append(f"build_folder {rec.get('build_folder')!r} is not a fixed folder")
+    if rec.get("tool") != TOOL:
+        errs.append(f"tool is {rec.get('tool')!r}, expected {TOOL!r}")
+    m = rec.get("machine")
+    if not (isinstance(m, dict) and set(m) == {"os", "arch", "cpu", "cores"}
+            and all(isinstance(m[k], str) for k in ("os", "arch", "cpu")) and type(m["cores"]) is int):
+        errs.append("machine must be {os, arch, cpu: strings, cores: int}")
+    st, rc = parse_time(str(rec.get("started"))), parse_time(str(rec.get("recorded")))
+    if st is None or rc is None or not st < rc <= time.time() + 300:
+        errs.append("need started < recorded <= now")
+    elif not (isinstance(rec.get("busy_seconds"), int) and 0 <= rec["busy_seconds"] <= rc - st):
+        errs.append("busy_seconds must be an int between 0 and recorded - started")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(rec.get("olean_digest"))):
+        errs.append("olean_digest must be lowercase hex sha256")
+    if len(json.dumps(rec, indent=2)) > 256 * 1024:
+        errs.append("record over 256 KB")
+    try:
+        bits = decode_bitmap(rec["bitmap_b64"], N_MODULES)   # exact length: no bits past module N-1
+        raw = gzip.decompress(base64.b64decode(rec["bitmap_b64"]))
+        if N_MODULES % 8 and raw[-1] >> (N_MODULES % 8):
+            errs.append("bitmap has bits past module N-1")
+        if sum(bits) != rec.get("modules_compiled"):
+            errs.append("modules_compiled != popcount(bitmap)")
+        if not sum(bits):
+            errs.append("bitmap is empty")
+    except (ValueError, KeyError, OSError, TypeError) as e:
+        errs.append(f"bitmap: {e}")
+    if not isinstance(rec.get("final"), bool):
+        errs.append("final must be true or false")
+    if rec.get("whole_proof") is not (rec.get("axioms") is not None):
+        errs.append("whole_proof must be true exactly when axioms is a list")
+    errs += validate_levels(rec)
+    return errs
+
+
+def validate_levels(rec: dict) -> list:
+    """The optional Level 2-3 fields (CONTRACT: "Levels and the joint statement")."""
+    errs = []
+    has_export = "export_sha256" in rec or "export_bytes" in rec
+    if has_export:
+        if not ("export_sha256" in rec and "export_bytes" in rec):
+            errs.append("export_sha256 and export_bytes go together")
+        if not (rec.get("whole_proof") is True and isinstance(rec.get("axioms"), list)
+                and sorted(rec["axioms"]) == sorted(EXPECTED_AXIOMS)):
+            errs.append("export fields need a whole proof with the three standard axioms")
+        if rec.get("export_sha256") != EXPORT_SHA256:
+            errs.append("export does not reproduce the reference")
+        if not (type(rec.get("export_bytes")) is int and rec["export_bytes"] >= 0):
+            errs.append("export_bytes must be a non-negative integer")
+    if "checkers" in rec:
+        c = rec["checkers"]
+        if not has_export:
+            errs.append("checkers need export_sha256 (Level 2) first")
+        if not (isinstance(c, list) and c and all(
+                isinstance(e, dict) and set(e) == {"name", "version", "result", "seconds"}
+                and isinstance(e["name"], str) and isinstance(e["version"], str) and 1 <= len(e["name"]) <= 32
+                and len(e["version"]) <= 64 and e["result"] in ("accept", "reject")
+                and type(e["seconds"]) is int and e["seconds"] >= 0 for e in c)):
+            errs.append('checkers must be a non-empty list of {"name", "version", "result": accept|reject, "seconds": int}')
+        elif len({e["name"] for e in c}) != len(c):
+            errs.append("checkers: one entry per checker")
+    if "sign_statement" in rec:
+        if rec["sign_statement"] is not True:
+            errs.append("sign_statement must be true when present")
+        if record_level(rec) < 2:
+            errs.append("sign_statement needs Level 2 (whole proof and the reference export)")
+    return errs
+
+
+def record_level(rec: dict) -> int:
+    """1 = build; 2 = whole proof + export reproduces the reference; 3 = 2 + an independent checker accepted."""
+    if not (rec.get("whole_proof") is True and rec.get("export_sha256") == EXPORT_SHA256):
+        return 1
+    ok = isinstance(rec.get("checkers"), list) and any(isinstance(e, dict) and e.get("result") == "accept"
+                                                       for e in rec["checkers"])
+    return 3 if ok else 2
+
+
+def name_problem(name):
+    """None if `name` is a valid display name: plain text, 1-32 characters, no control characters."""
+    if not isinstance(name, str) or not 1 <= len(name) <= 32:
+        return "must be 1 to 32 characters"
+    if any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in name):
+        return "no control characters"
+    if name.casefold().startswith("anonymous"):
+        return "may not start with \"anonymous\" (use `name --anonymous` for that)"
+    if name != name.strip():
+        return "no spaces at the start or end"
+    return None
+
+
+def cmd_name(ctx: Ctx, a):
+    """What the Riemann@home page shows for you instead of your GitHub login."""
+    if a.clear:
+        ctx.set_conf(display=None)
+        print("cleared: the Riemann@home page shows your GitHub username")
+        return 0
+    if a.anonymous:
+        ctx.set_conf(display={"anonymous": True})
+        print("you will show as anonymous")
+        print(NAME_NOTICE)
+        return 0
+    if a.display_name is None:
+        d = ctx.conf().get("display")
+        print("anonymous" if d == {"anonymous": True} else
+              f"display name: {d['display_name']}" if d else "not set: the page shows your GitHub username")
+        return 0
+    name = a.display_name.strip()
+    err = name_problem(name)
+    if err:
+        raise Fail(f"display name {err}")
+    ctx.set_conf(display={"display_name": name})
+    print(f"display name: {name}")
+    print(NAME_NOTICE)
+    return 0
+
+
+def check_gh(dry_run: bool):
+    """gh must be installed and logged in. Logging in is the human's job: this tool never handles tokens."""
+    if not shutil.which("gh"):
+        how = "brew install gh" if IS_MAC else "see https://cli.github.com"
+        if IS_MAC and shutil.which("brew") and sys.stdin.isatty() and not dry_run:
+            if input("GitHub's `gh` tool is needed to submit. Install it with Homebrew now? [y/N] ").strip().lower() == "y":
+                if run(["brew", "install", "gh"]).returncode == 0 and shutil.which("gh"):
+                    return check_gh(dry_run)
+        raise Fail(f"GitHub's `gh` tool is not installed. Install it ({how}), then run `gh auth login` yourself.")
+    if subprocess.run(["gh", "auth", "status"], capture_output=True, text=True).returncode != 0:
+        raise Fail("`gh` is not logged in to GitHub. Please run `gh auth login` yourself, then submit again.")
+
+
+def gh_login() -> str:
+    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        raise Fail("could not get your GitHub login from `gh` (run `gh auth login`, or pass --login)")
+    return r.stdout.strip()
+
+
+def pr_state(ctx: Ctx, repo: Path, upstream: str, rel: str, bid: str, check_github: bool) -> dict:
+    """Where this build's one pull request stands: state none | open, and whether the build is done. The bot merges
+    a PR only when the record is whole_proof or final, so a merged PR (the file is on main) means nothing more is
+    submitted; neither is anything after a final record sent from here. Read-only: local git, the remembered state
+    in config.json, and (unless told not to) `gh pr list`."""
+    st = ctx.conf().get("pr") or {}
+    if st.get("build_id") != bid:
+        st = {}
+    out = {"state": st.get("state"), "done": "a final record was already sent from this computer"
+           if st.get("final_sent") else None}
+    if check_github:
+        r = subprocess.run(["gh", "pr", "list", "--repo", upstream, "--head", f"rah/{bid}", "--state", "all",
+                            "--json", "state"], capture_output=True, text=True)
+        try:
+            states = {p.get("state") for p in json.loads(r.stdout)}
+            out["state"] = "open" if "OPEN" in states else None
+            if "MERGED" in states:
+                out["done"] = "its pull request was merged"
+        except (ValueError, TypeError):
+            pass
+    shown = subprocess.run(["git", "-C", str(repo), "show", f"origin/main:{rel}"], capture_output=True, text=True)
+    if shown.returncode == 0:
+        try:
+            d = json.loads(shown.stdout)
+            out["done"] = "its final record is merged" if d.get("final") else \
+                "its whole-proof record is merged" if d.get("whole_proof") else "its record is merged"
+        except ValueError:
+            out["done"] = "its record is merged"
+    return out
+
+
+def cmd_submit(ctx: Ctx, a):
+    repo = Path(a.repo).expanduser().resolve()
+    if not (repo / ".git").exists():
+        raise Fail(f"{repo} is not a git clone of the Riemann@home repo")
+    if a.record:
+        src = Path(a.record)
+    else:
+        recs = sorted(ctx.records.glob("*.json"))
+        if not recs:
+            raise Fail("no build record yet; run: riemann-at-home record")
+        src = recs[-1]
+    rec = json.loads(src.read_text())
+    errs = validate_record(rec)
+    if errs:
+        raise Fail(f"{src} is not a valid {FORMAT} record:\n  " + "\n  ".join(errs))
+    if not a.no_gh_check:
+        check_gh(a.dry_run)
+    login = a.login or gh_login()
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})", login):
+        raise Fail(f"{login!r} does not look like a GitHub login")
+    bid = rec["build_id"]
+    rel = f"submissions/{login}/{bid}.json"      # one file per build, overwritten on each update
+    upstream = a.upstream
+    if not upstream:
+        url = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True,
+                             text=True).stdout.strip()
+        m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        upstream = m[1] if m else "<owner>/<repo>"
+    pr = pr_state(ctx, repo, upstream, rel, bid, check_github=not a.no_gh_check)
+    if pr["done"]:
+        raise Fail(f"build {bid} is finished ({pr['done']}); nothing more is submitted for it. "
+                   "A new build on another computer gets its own build_id from `riemann-at-home setup`.")
+    n = f"{rec['modules_compiled']:,}"
+    what = "final" if rec["final"] else "WHOLE PROOF" if rec["whole_proof"] else "progress"
+    msg = f"Build {bid}: {n} modules ({what})"
+    g = ["git", "-C", str(repo)]
+    copy = [["mkdir", "-p", str(repo / "submissions" / login)], ["cp", str(src), str(repo / rel)], g + ["add", rel],
+            g + ["commit", "-m", msg]]
+    branch = f"rah/{bid}"                         # one branch and one PR for the build's whole life
+    if pr["state"] == "open":
+        plan = [g + ["switch", branch]] + copy + [g + ["push", "fork", branch]]
+        head = "update the open PR (quiet: no new PR)"
+    else:
+        title = f"Riemann@home build {bid} ({login})"
+        body = (f"One {FORMAT} record for build `{bid}`, updated in place while it builds.\n\n"
+                f"modules compiled: {n} / {N_MODULES:,}\nmachine: {rec['machine'].get('cpu')}, {rec['machine'].get('os')}\n")
+        plan = ([g + ["fetch", "origin"], g + ["switch", "-c", branch, "origin/main"]] + copy +
+                [["gh", "repo", "fork", upstream, "--remote", "--remote-name", "fork"],
+                 g + ["push", "-u", "fork", branch],
+                 ["gh", "pr", "create", "--repo", upstream, "--head", f"{login}:{branch}", "--base", "main",
+                  "--title", title, "--body", body]])
+        head = "open this build's one PR"
+    if not a.dry_run:
+        raise Fail("submit without --dry-run is not enabled in this build. Use --dry-run to see what it would do.")
+    print(f"DRY RUN: nothing is written, committed, pushed or opened.\nrecord: {src}\nas:     {rel} on branch {branch}\n"
+          f"step:   {head} -> {upstream}\nwould run:")
+    for c in plan:
+        print("  " + shlex.join(c))
+    return 0
+
+
+# ---------------------------------------------------------------- levels: export, recheck, joint statement
+
+def levels_state(ctx: Ctx, digest: str = None) -> dict:
+    """Export / checker / signature results kept in config.json, tied to this build_id and to the olean digest
+    of the whole build they were made from (a different folder state does not inherit them)."""
+    lv = ctx.conf().get("levels") or {}
+    if lv.get("build_id") != ctx.build_id(create=False) or (digest and lv.get("olean_digest") != digest):
+        return {}
+    return lv
+
+
+def level_fields(ctx: Ctx, rec: dict) -> dict:
+    """The optional record fields earned so far. Only a reproduced export goes into a record (the bot rejects any
+    other export hash); checkers and the signature only on top of that."""
+    if not rec.get("whole_proof"):
+        return {}
+    lv = levels_state(ctx, rec["olean_digest"])
+    ex = lv.get("export") or {}
+    if ex.get("sha256") != EXPORT_SHA256:
+        return {}
+    out = {"export_sha256": ex["sha256"], "export_bytes": ex["bytes"]}
+    if lv.get("checkers"):
+        out["checkers"] = lv["checkers"]
+    if lv.get("sign_statement") is True:
+        out["sign_statement"] = True
+    return out
+
+
+def whole_build(ctx: Ctx, a, what: str) -> dict:
+    """A record of the build, which must be whole with the axiom check passed."""
+    rec = make_record(ctx, a)
+    if not rec["whole_proof"]:
+        raise Fail(f"{what} needs the whole build first: {rec['modules_compiled']:,} / {N_MODULES:,} modules compiled "
+                   "and the axiom check run (`riemann-at-home build` runs it when the build finishes)")
+    if sorted(rec["axioms"]) != sorted(EXPECTED_AXIOMS):
+        raise Fail(f"{what} needs a passing axiom check; riemannHypothesis depends on {rec['axioms']}, "
+                   f"expected {EXPECTED_AXIOMS}")
+    return rec
+
+
+def exporter_command(ctx: Ctx, a) -> list:
+    """`lake env <lean4export> Main`, run in the build folder. lean4export is built once from the pinned tag into
+    ~/.riemann-at-home/tools with the toolchain that tag pins."""
+    if getattr(a, "exporter", None):                         # testing: a stand-in exporter
+        return [a.exporter, "Main"]
+    src = ctx.home / "tools" / f"lean4export-{EXPORTER_TAG}"
+    exe = src / ".lake/build/bin/lean4export"
+    if not exe.exists():
+        if not src.exists():
+            src.parent.mkdir(parents=True, exist_ok=True)
+            tmp = src.with_name(src.name + f".cloning-{os.getpid()}")
+            if run(["git", "clone", "-q", "--depth", "1", "--branch", EXPORTER_TAG, EXPORTER_REPO, tmp]).returncode != 0:
+                shutil.rmtree(tmp, ignore_errors=True)
+                raise Fail(f"could not download lean4export {EXPORTER_TAG} from {EXPORTER_REPO}")
+            tmp.rename(src)
+        tc = toolchain_of(src)
+        if not tc:
+            raise Fail(f"{src} has no lean-toolchain")
+        elan = ensure_elan()
+        if not toolchain_installed(elan, tc):
+            print(f"installing {tc} (the toolchain lean4export {EXPORTER_TAG} pins)")
+            if run([elan, "toolchain", "install", tc], env=lean_env()).returncode != 0:
+                raise Fail(f"could not install {tc}")
+        print(f"building lean4export {EXPORTER_TAG} with {tc}")
+        if run([which("lake") or "lake", "build"], cwd=src, env=lean_env()).returncode != 0 or not exe.exists():
+            raise Fail(f"building lean4export failed (in {src})")
+    return [which("lake") or "lake", "env", str(exe), "Main"]
+
+
+def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None) -> tuple:
+    """Run the exporter in the build folder at nice 19 and read its stdout straight into sha256 and a byte counter
+    (and into `sink`, a checker's stdin, if given). Nothing is written to disk. -> (exit code, sha256, bytes)."""
+    h, n, next_note = hashlib.sha256(), 0, 1 << 33
+    print("  $ " + shlex.join(map(str, cmd)) + f"   (in {ctx.folder}; output hashed, not stored)", file=sys.stderr)
+    with open(log, "ab") as lf:
+        p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=lf, env=lean_env())
+    try:
+        for chunk in iter(lambda: p.stdout.read(1 << 20), b""):
+            h.update(chunk)
+            n += len(chunk)
+            if sink is not None:
+                sink.write(chunk)
+            if n >= next_note:
+                print(f"  {n / 1e9:,.0f} GB of about {EXPORT_BYTES / 1e9:,.1f} GB", file=sys.stderr, flush=True)
+                next_note += 1 << 33
+    except BrokenPipeError:                                   # the checker stopped reading
+        p.kill()
+    finally:
+        p.stdout.close()
+    return p.wait(), h.hexdigest(), n
+
+
+def cmd_export(ctx: Ctx, a):
+    """Level 2: export the compiled proof with lean4export and compare it with the reference export."""
+    rec = whole_build(ctx, a, "export")
+    cmd = exporter_command(ctx, a)
+    ctx.logs.mkdir(parents=True, exist_ok=True)
+    log = ctx.logs / "export.log"
+    print(f"exporting the proof (about {EXPORT_BYTES / 1e9:.1f} GB of output, hashed as it streams; takes hours)")
+    t0 = time.time()
+    rc, sha, n = stream_export(ctx, cmd, log)
+    if rc != 0:
+        raise Fail(f"the exporter exited with {rc}; see {log}")
+    match = sha == EXPORT_SHA256 and n == EXPORT_BYTES
+    lv = levels_state(ctx, rec["olean_digest"])
+    same = (lv.get("export") or {}).get("sha256") == sha
+    ctx.set_conf(levels={"build_id": rec["build_id"], "olean_digest": rec["olean_digest"],
+                         "export": {"sha256": sha, "bytes": n, "exporter": f"lean4export {EXPORTER_TAG}",
+                                    "seconds": int(time.time() - t0), "when": iso(time.time())},
+                         "checkers": lv.get("checkers", []) if same else [],
+                         "sign_statement": bool(lv.get("sign_statement")) and same and match})
+    print(f"export sha256 {sha}\nexport bytes  {n:,}")
+    if not match:
+        print(f"reference     {EXPORT_SHA256}, {EXPORT_BYTES:,} bytes (Andrew Sutherland, https://math.mit.edu/~drew/grh)")
+        print("does not match the reference, so records do not carry it.")
+        print(UNVERIFIED)
+        return 1
+    print("Level 2: matches the reference export (Andrew Sutherland, https://math.mit.edu/~drew/grh).")
+    out = write_record(ctx, make_record(ctx, a))
+    print(f"record with export_sha256: {out}")
+    return 0
+
+
+def total_ram_gb() -> float:
+    if os.environ.get("RAH_TEST_RAM_GB"):                    # testing only
+        return float(os.environ["RAH_TEST_RAM_GB"])
+    if IS_MAC:
+        r = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout.strip()
+        return int(r) / 2 ** 30 if r.isdigit() else 0.0
+    m = re.search(r"^MemTotal:\s+(\d+) kB", read(Path("/proc/meminfo")), re.M)
+    return int(m[1]) / 2 ** 20 if m else 0.0
+
+
+def cmd_recheck(ctx: Ctx, a):
+    """Level 3 (optional): stream the export into an independent checker (it reads the export on stdin)."""
+    name = "nanoda" if a.nanoda else "con-leche"
+    need, ram = CHECKERS[name], total_ram_gb()
+    if ram < need:
+        raise Fail(f"{name} needs about {need} GB of memory; this computer has {ram:.0f} GB. "
+                   "Level 3 is optional: a computer with more memory can run it.")
+    rec = whole_build(ctx, a, "recheck")
+    lv = levels_state(ctx, rec["olean_digest"])
+    if (lv.get("export") or {}).get("sha256") != EXPORT_SHA256:
+        raise Fail("recheck needs Level 2 first: run `riemann-at-home export` and reproduce the reference export")
+    exe = a.checker or shutil.which(name) or str(ctx.home / "tools/bin" / name)
+    if not Path(exe).exists():
+        raise Fail(f"{name} is not installed. Build it from its project, then put it at "
+                   f"{ctx.home / 'tools/bin' / name} or pass --checker PATH")
+    version = a.checker_version
+    if not version:
+        try:
+            v = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30)
+            version = (v.stdout or v.stderr).strip().splitlines()[0][:64] if v.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired, IndexError):
+            version = ""
+    version = version or "unknown"
+    log = ctx.logs / f"recheck-{name}.log"
+    ctx.logs.mkdir(parents=True, exist_ok=True)
+    ccmd = [exe] + shlex.split(a.checker_args or "")
+    print(f"re-checking the export with {name} {version} (needs about {need} GB of memory; takes hours)")
+    print("  $ " + shlex.join(ccmd) + "   (export on stdin)", file=sys.stderr)
+    t0 = time.time()
+    with open(log, "ab") as lf:
+        chk = subprocess.Popen(ccmd, cwd=ctx.home, stdin=subprocess.PIPE, stdout=lf, stderr=subprocess.STDOUT)
+        rc, sha, n = stream_export(ctx, exporter_command(ctx, a), ctx.logs / "export.log", sink=chk.stdin)
+        try:
+            chk.stdin.close()
+        except BrokenPipeError:
+            pass
+        crc = chk.wait()
+    secs = int(time.time() - t0)
+    if sha != EXPORT_SHA256 or n != EXPORT_BYTES:
+        raise Fail(f"the export streamed to {name} was not the reference export (sha256 {sha}, {n:,} bytes, exporter "
+                   f"exit {rc}); nothing recorded. See {ctx.logs / 'export.log'}")
+    result = "accept" if crc == 0 else "reject"
+    entry = {"name": name, "version": version, "result": result, "seconds": secs}
+    lv = levels_state(ctx, rec["olean_digest"])
+    lv["checkers"] = [e for e in lv.get("checkers", []) if e.get("name") != name] + [entry]
+    ctx.set_conf(levels=lv)
+    print(f"{name}: {result.upper()} in {secs / 3600:.1f} h (log: {log})")
+    out = write_record(ctx, make_record(ctx, a))
+    print(f"{'Level 3. ' if result == 'accept' else ''}record with checkers: {out}")
+    return 0 if result == "accept" else 1
+
+
+README = Path(__file__).resolve().parent / "README.md"       # shipped next to this script
+
+
+def statement_text() -> str:
+    """The joint statement, word for word from the README's "## Joint statement" section."""
+    m = re.search(r"^## Joint statement[ \t]*\n(.*?)(?=^## |\Z)", read(README), re.M | re.S)
+    text = " ".join(m[1].split()) if m else ""
+    if not text.startswith("Riemann@home: a joint statement"):
+        raise Fail(f"the joint statement is missing from {README} (it ships next to this tool)")
+    return text
+
+
+def cmd_sign(ctx: Ctx, a):
+    """Sign the joint statement: allowed at Level 2 or 3. Shows the text and asks first."""
+    rec = whole_build(ctx, a, "signing")
+    if record_level(rec) < 2:
+        raise Fail("signing needs Level 2: a whole build whose export reproduces the reference "
+                   "(run `riemann-at-home export`)")
+    import textwrap
+    print("\n" + textwrap.fill(statement_text(), 100) + "\n")
+    print(f"You are at Level {record_level(rec)}. Your signature is your own report, tied to your GitHub account.")
+    try:
+        yes = input("Sign this statement? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        yes = False
+    if not yes:
+        print("not signed")
+        return 1
+    lv = levels_state(ctx, rec["olean_digest"])
+    lv["sign_statement"] = True
+    ctx.set_conf(levels=lv)
+    out = write_record(ctx, make_record(ctx, a))
+    print(f"signed: records now carry \"sign_statement\": true; the next update of this build's PR sends it.\n{out}")
+    return 0
+
+
+# ---------------------------------------------------------------- page
+
+PAGE_TEMPLATE = Path(__file__).resolve().parent / "page" / "index.html"   # shipped next to this script
+
+
+def compiled_sizes(lib: Path) -> dict:
+    """Finished modules (.olean + .trace) -> size of the .olean."""
+    out = {}
+    for root, _, files in os.walk(lib):
+        rel = os.path.relpath(root, lib)
+        fs = set(files)
+        for f in files:
+            if f.endswith(".olean") and f[:-6] + ".trace" in fs:
+                name = (f[:-6] if rel == "." else f"{rel}/{f[:-6]}").replace(os.sep, ".")
+                out[name] = os.path.getsize(os.path.join(root, f))
+    return out
+
+
+def compiling_now(ctx: Ctx) -> list:
+    """(module, seconds so far) for each lean process compiling a file of this folder right now."""
+    ps = subprocess.run(["ps", "-axo", "etime=,command="], capture_output=True, text=True).stdout
+    src = f"{ctx.folder}/src/"
+    out = []
+    for line in ps.splitlines():
+        et, _, cmd = line.strip().partition(" ")
+        if "/lean " not in cmd or src not in cmd:
+            continue
+        i = cmd.index(src) + len(src)
+        j = cmd.find(".lean", i)
+        if j < 0:
+            continue
+        d, _, hms = et.rpartition("-")
+        try:
+            parts = [int(x) for x in hms.split(":")]
+            secs = (int(d) * 86400 if d else 0) + sum(v * 60 ** k for k, v in enumerate(reversed(parts)))
+        except ValueError:
+            secs = 0
+        out.append((cmd[i:j].replace("/", "."), secs))
+    return out
+
+
+def parse_secs(t: str):
+    """Lake's durations: `805ms`, `24s`, `1.2s`, `1m 3s`, `2h 1m`."""
+    total, ok = 0.0, False
+    for v, u in re.findall(r"([\d.]+)\s*(ms|h|m|s)", t):
+        total += float(v) * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[u]
+        ok = True
+    return round(total, 1) if ok else None
+
+
+BUILT = re.compile(r"Built (\S+) \(([^)]*)\)")
+
+
+def build_times(ctx: Ctx) -> dict:
+    """Module -> seconds it took, from the build log (the last time it was built)."""
+    out = {}
+    try:
+        with open(ctx.logs / "build.log", errors="replace") as f:
+            for line in f:
+                m = BUILT.search(line)
+                if m and ":" not in m[1]:
+                    sec = parse_secs(m[2])
+                    if sec is not None:
+                        out[m[1]] = sec
+    except OSError:
+        pass
+    return out
+
+
+def page_data(ctx: Ctx):
+    """data.json for the local page: one byte per module (0 = not compiled, else the log-scaled size of its
+    compiled file), library and folder boundaries, what is compiling now, when this build started."""
+    mods = all_modules(ctx.folder)
+    local = compiled_sizes(ctx.lib) if ctx.lib.exists() else {}
+    lo, hi = math.log(1e3), math.log(5e7)
+    local_b = bytes(0 if m not in local else
+                    max(1, min(255, 1 + round(254 * (math.log(max(local[m], 1e3)) - lo) / (hi - lo)))) for m in mods)
+    index = {m: i for i, m in enumerate(mods)}
+
+    def bounds(depth):
+        out, prev = [], None
+        for i, m in enumerate(mods):
+            k = ".".join(m.split(".")[:depth])
+            if k != prev:
+                out.append([k, i]); prev = k
+        return out
+    active = [m for m, _ in compiling_now(ctx) if m in index]
+    started, _ = busy_seconds(ctx, bool(supervisor(ctx)))
+    data = {"terrain": {"n": len(mods), "libraries": bounds(1), "folders": bounds(2),
+                        "local_b64": base64.b64encode(local_b).decode(), "local_compiled": len(local),
+                        "local_started": iso(started) if started else None,
+                        "active": [index[m] for m in active], "active_names": active,
+                        "generated": iso(time.time())}}
+    return data, mods
+
+
+def write_page(ctx: Ctx) -> Path:
+    """index.html + data.json + modules.txt into ~/.riemann-at-home/page/, which is what gets served."""
+    if not PAGE_TEMPLATE.exists():
+        raise Fail(f"page template missing: {PAGE_TEMPLATE} (it ships in the page/ folder next to this tool)")
+    out = ctx.home / "page"
+    out.mkdir(parents=True, exist_ok=True)
+    data, mods = page_data(ctx)
+    for name, text in (("index.html", PAGE_TEMPLATE.read_text()), ("modules.txt", "\n".join(mods) + "\n"),
+                       ("data.json", json.dumps(data))):
+        tmp = out / (name + ".tmp")
+        tmp.write_text(text)
+        tmp.replace(out / name)
+    return out
+
+
+class Live:
+    """live.json: what this computer's build is doing now. The folder walk runs at most every 15 s."""
+    def __init__(self, ctx):
+        self.ctx, self.lock, self.count, self.count_at = ctx, threading.Lock(), 0, 0.0
+        self.times, self.times_size = {}, -1
+
+    def get(self) -> dict:
+        ctx = self.ctx
+        with self.lock:
+            if time.time() - self.count_at > 15:
+                self.count, self.count_at = (count_compiled(ctx.lib) if ctx.lib.exists() else 0), time.time()
+        sup = supervisor(ctx)
+        running = bool(sup) or bool(outside_build(ctx))
+        paused = bool(sup) and is_paused(ctx)
+        started = next((t for k, _, t in reversed(events(ctx)) if k in ("START", "RESTART")), None) if running else None
+        recent = []
+        try:
+            with open(ctx.logs / "build.log", "rb") as f:
+                f.seek(max(0, f.seek(0, 2) - 20000))
+                for m in BUILT.finditer(f.read().decode(errors="replace")):
+                    if ":" not in m[1] and parse_secs(m[2]) is not None:
+                        recent.append([m[1], parse_secs(m[2])])
+        except OSError:
+            pass
+        r = rate_per_hour(ctx)
+        return {"compiled": self.count, "running": running, "paused": paused,
+                "mode": "paused" if paused else stored_mode(ctx), "ours": bool(sup),
+                "started": iso(started) if started else None, "rate": round(r) if r else None,
+                "active": [{"name": m, "secs": s} for m, s in compiling_now(ctx)], "recent": recent[-5:]}
+
+    def build_times(self) -> dict:
+        try:
+            size = (self.ctx.logs / "build.log").stat().st_size
+        except OSError:
+            return {}
+        if size != self.times_size:
+            self.times, self.times_size = build_times(self.ctx), size
+        return self.times
+
+
+def set_mode_from_page(ctx: Ctx, mode: str):
+    """The page's Full / Gentle / Pause buttons. Only for a build this tool started."""
+    if not supervisor(ctx):
+        raise Fail("no build started by riemann-at-home is running")
+    ns = argparse.Namespace(gentle=mode == "gentle", full=mode == "full", target="Main", submit_repo=None,
+                            test_unofficial_folder=False)
+    if mode == "paused":
+        return cmd_pause(ctx, ns)
+    if is_paused(ctx):
+        cmd_resume(ctx, ns)
+    return cmd_build(ctx, ns)
+
+
+def make_handler(ctx: Ctx, root: Path, live: Live):
+    class H(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *x, **k):
+            super().__init__(*x, directory=str(root), **k)
+
+        def log_message(self, *x):
+            pass
+
+        def send_json(self, obj, code=200):
+            b = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            path = self.path.split("?")[0]
+            if path == "/live.json":
+                return self.send_json(live.get())
+            if path == "/times.json":
+                return self.send_json(live.build_times())
+            return super().do_GET()
+
+        def do_POST(self):
+            # only this page may switch the build's speed: same-host request carrying our header
+            host = (self.headers.get("Host") or "").split(":")[0]
+            if self.path != "/mode" or self.headers.get("X-Riemann-At-Home") != "1" or host not in ("localhost", "127.0.0.1"):
+                return self.send_json({"error": "forbidden"}, 403)
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 1000)
+                mode = json.loads(self.rfile.read(n) or b"{}").get("mode")
+                if mode not in ("full", "gentle", "paused"):
+                    return self.send_json({"error": "mode must be full, gentle or paused"}, 400)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    set_mode_from_page(ctx, mode)
+            except Fail as e:
+                return self.send_json({"error": str(e)}, 409)
+            except (ValueError, AttributeError):
+                return self.send_json({"error": "bad request"}, 400)
+            return self.send_json(live.get())
+    return H
+
+
+def cmd_page(ctx: Ctx, a):
+    root = write_page(ctx)
+    url = f"http://localhost:{a.port}/"
+    if a.once:
+        print(f"page written to {root}\n{url}  (run `riemann-at-home page` to serve it)")
+        return 0
+    try:
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(ctx, root, Live(ctx)))
+    except OSError:
+        raise Fail(f"port {a.port} is busy (is the page already being served?). Try: riemann-at-home page --port 8643")
+
+    def refresher():                       # new spikes: regenerate data.json every minute
+        while True:
+            time.sleep(60)
+            try:
+                write_page(ctx)
+            except Exception as e:         # keep serving
+                print(f"refresh failed: {e}", file=sys.stderr)
+    threading.Thread(target=refresher, daemon=True).start()
+    print(f"serving {url} (this computer only; Ctrl-C to stop)")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+# ---------------------------------------------------------------- main
+
+def main(argv=None):
+    hidden = argparse.ArgumentParser(add_help=False)
+    hidden.add_argument("--folder", help=argparse.SUPPRESS)        # testing: a build folder other than the fixed one
+    hidden.add_argument("--logs", help=argparse.SUPPRESS)          # testing / logs of an older build script
+    ap = argparse.ArgumentParser(prog="riemann-at-home", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version=TOOL)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("setup", parents=[hidden], help="download, verify, unpack; install Lean + Mathlib cache")
+    s.add_argument("--archive", help="use this local lean.tar.gz instead of downloading")
+    s.add_argument("--parts-url", default=PART_URL, help=argparse.SUPPRESS)
+    s.add_argument("--skip-cache", action="store_true", help=argparse.SUPPRESS)
+    s.add_argument("--force-cache", action="store_true", help=argparse.SUPPRESS)
+    for name, h in (("build", "start the official build in the background, or change its speed"),
+                    ("resume", "continue a paused build (or start a stopped one)")):
+        b = sub.add_parser(name, parents=[hidden], help=h)
+        g = b.add_mutually_exclusive_group()
+        g.add_argument("--gentle", action="store_true", help="background priority: only spare CPU (default)")
+        g.add_argument("--full", action="store_true", help="all cores (still lowest priority, nice 19)")
+        b.add_argument("--target", default="Main", help=argparse.SUPPRESS)
+        b.add_argument("--submit-repo", help="clone of the Riemann@home repo: update this build's PR about every 10 min")
+        b.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
+    sub.add_parser("pause", parents=[hidden], help="freeze the build in place")
+    sub.add_parser("stop", parents=[hidden], help="stop the build (resumable)")
+    sub.add_parser("status", parents=[hidden], help="progress, running or not, speed")
+    r = sub.add_parser("record", parents=[hidden], help="write a build record to ~/.riemann-at-home/records/")
+    r.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
+    u = sub.add_parser("submit", parents=[hidden], help="open a pull request with your latest build record")
+    u.add_argument("--repo", required=True, help="your local clone of the Riemann@home repo")
+    u.add_argument("--record", help="record file (default: the latest)")
+    u.add_argument("--login", help="GitHub login (default: from `gh`)")
+    u.add_argument("--upstream", help="OWNER/REPO to open the PR against (default: origin)")
+    u.add_argument("--dry-run", action="store_true", help="print what it would do; change nothing")
+    u.add_argument("--no-gh-check", action="store_true", help=argparse.SUPPRESS)
+    f = sub.add_parser("finish", parents=[hidden], help="done on this computer: final record, PR gets merged")
+    f.add_argument("--repo", help="your local clone of the Riemann@home repo (submits the final record)")
+    f.add_argument("--login"); f.add_argument("--upstream")
+    f.add_argument("--dry-run", action="store_true", help="print what it would do; change nothing")
+    f.add_argument("--no-gh-check", action="store_true", help=argparse.SUPPRESS)
+    f.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
+    nm = sub.add_parser("name", parents=[hidden], help="the name the page shows instead of your GitHub login")
+    nm.add_argument("display_name", nargs="?", help="1 to 32 characters")
+    g = nm.add_mutually_exclusive_group()
+    g.add_argument("--anonymous", action="store_true", help="show as anonymous")
+    g.add_argument("--clear", action="store_true", help="show your GitHub login again")
+    p = sub.add_parser("page", parents=[hidden], help="regenerate the local page and serve it on localhost:8642")
+    p.add_argument("--once", action="store_true", help="regenerate only, don't serve")
+    p.add_argument("--port", type=int, default=PAGE_PORT, help=f"local port (default {PAGE_PORT})")
+    lvl = argparse.ArgumentParser(add_help=False)
+    lvl.add_argument("--exporter", help=argparse.SUPPRESS)            # testing: a stand-in for lean4export
+    lvl.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
+    sub.add_parser("export", parents=[hidden, lvl],
+                   help="Level 2: hash the proof export (lean4export, streamed, never stored) against the reference")
+    rc = sub.add_parser("recheck", parents=[hidden, lvl], help="Level 3 (optional): re-check the export independently")
+    g = rc.add_mutually_exclusive_group(required=True)
+    g.add_argument("--nanoda", action="store_true", help=f"nanoda (needs about {CHECKERS['nanoda']} GB of memory)")
+    g.add_argument("--con-leche", action="store_true", help=f"con-leche (needs about {CHECKERS['con-leche']} GB of memory)")
+    rc.add_argument("--checker", help="path to the checker binary (default: on PATH or ~/.riemann-at-home/tools/bin)")
+    rc.add_argument("--checker-args", help="extra arguments for the checker (it reads the export on stdin)")
+    rc.add_argument("--checker-version", help="version to record (default: `CHECKER --version`)")
+    sub.add_parser("sign", parents=[hidden, lvl], help="sign the joint statement (Level 2 or 3)")
+    x = sub.add_parser("_run", parents=[hidden])   # internal: the background supervisor
+    x.add_argument("--target", default="Main")
+    x.add_argument("--test-unofficial-folder", action="store_true")
+    a = ap.parse_args(argv)
+    try:
+        ctx = Ctx(a)
+        fn = {"setup": cmd_setup, "build": cmd_build, "pause": cmd_pause, "resume": cmd_resume, "stop": cmd_stop,
+              "status": cmd_status, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
+              "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_run": cmd_run}[a.cmd]
+        return fn(ctx, a) or 0
+    except Fail as e:
+        print(f"riemann-at-home: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

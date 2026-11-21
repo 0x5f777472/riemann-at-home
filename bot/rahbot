@@ -1,0 +1,962 @@
+#!/usr/bin/env -S python3 -I
+"""rahbot: the Riemann@home v1 bot. Checks volunteers' build records and keeps data.json.
+
+Spec: ../CONTRACT.md (formats + acceptance rules). Python 3 stdlib only; run with `python3 -I`.
+One PR per computer (build): it adds submissions/<login>/<build_id>.json and the volunteer's tool overwrites that
+file on the same branch every ~10 min. The bot checks each new version against that build's last accepted version,
+shows accepted versions of open PRs in data.json without merging, and merges only when the accepted version is whole or final
+(CONTRACT "No stale merge": one PR per build for life; abandoned PRs simply stay open).
+
+Commands
+  rahbot check RECORD.json --author LOGIN --prev PREV.json|none [--path submissions/LOGIN/BUILD_ID.json]
+               [--check-digest [--reference-hashes SNAP]]
+      Apply every CONTRACT acceptance rule. PREV = this build's last accepted version. Prints ACCEPT / REJECT /
+      PENDING with reasons and FLAG lines. Exit 0 accept, 1 reject, 2 pending (digest rule on, reference lacks modules).
+  rahbot reference-digest BITMAP [--reference-hashes SNAP]
+      olean_digest the reference build (/Users/Shared/riemann-at-home/lean, read-only) gives for BITMAP
+      (a record JSON, or a file holding the bitmap_b64 text).
+  rahbot reference-snapshot --out SNAP
+      Freeze sha256 of every reference .olean (32 bytes x N, zeros = not compiled) so digests don't move while
+      the reference build is still running.
+  rahbot aggregate DIR [DIR ...] --out data.json
+      data.json from accepted records laid out as DIR/<login>/<build_id>.json (repo submissions/ = merged builds,
+      STATE/accepted/ = accepted versions of open PRs). Newest version per build wins; each is re-checked.
+  rahbot poll --repo OWNER/NAME --workdir CLONE [--state DIR] [--live]
+      One pass (launchd runs it every 10 min). Without --live: prints decisions, writes nothing, calls only
+      read-only gh (GraphQL list + file contents). --live: comments, closes, merges, commits + pushes data.json.
+  rahbot poll --fixtures DIR --round K --workdir SCRATCH
+      Same logic over DIR/rounds.json[K-1] (fake PRs, fake clock); SCRATCH/repo plays main, SCRATCH/state the
+      bot state; round 1 starts fresh. Never calls gh or git.
+"""
+import argparse, base64, gzip, hashlib, json, os, re, shutil, subprocess, sys, unicodedata, zlib
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+# ---- CONTRACT constants -------------------------------------------------------------------------------------
+FORMAT = "rah/build/1"
+KNOWN_TOOLS = {"riemann-at-home 1.0.0"}
+ARCHIVE_SHA256 = "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc"
+TOOLCHAIN = "leanprover/lean4:v4.33.1"
+MATHLIB_REV = "0df444a360eaa60ab8c11dca51a86af692955474"
+BUILD_FOLDERS = {"/Users/Shared/riemann-at-home/lean", "/opt/riemann-at-home/lean"}
+N = 175187
+MODULES_TXT = HERE / "modules.txt"   # the published module list, sorted byte-wise
+MODULES_SHA256 = "21f45a03c4d152c91034a8f3229c2c1f35961ad2f0f69e1a4dfd97fef8584841"
+EXPECTED_AXIOMS = ["propext", "Classical.choice", "Quot.sound"]
+REFERENCE = Path("/Users/Shared/riemann-at-home/lean")   # project's own build; opened read-only
+SPEED_FLAG, SPEED_REJECT = 6000, 12000                    # new modules per hour
+BUILDERS_CAP = 250
+MAX_RECORD_BYTES = 256 * 1024
+CLOCK_SKEW = timedelta(minutes=10)
+
+FIELDS = {"format": str, "tool": str, "archive_sha256": str, "toolchain": str, "mathlib_rev": str,
+          "build_folder": str, "machine": dict, "started": str, "recorded": str, "busy_seconds": (int, float),
+          "modules_compiled": int, "bitmap_b64": str, "olean_digest": str, "whole_proof": bool, "axioms": (list, type(None)),
+          "build_id": str}
+# CONTRACT "Levels and the joint statement": reference export (Andrew Sutherland, lean4export v4.33.0)
+REF_EXPORT_SHA256 = "5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e"
+REF_EXPORT_BYTES = 61_570_595_788
+KNOWN_CHECKERS = {"nanoda", "con-leche", "lean4checker", "lean4lean"}
+BACKUPS_KEPT = 20
+OPTIONAL = {"export_sha256": str, "export_bytes": int, "checkers": list, "sign_statement": bool,
+            "final": bool,           # set by `riemann-at-home finish`
+            "display_name": str, "anonymous": bool}   # shown instead of the login (CONTRACT "Display names")
+PUBLISH_EVERY = timedelta(minutes=10) # GitHub Pages: at most ~6 builds/hour
+MACHINE_FIELDS = {"os": str, "arch": str, "cpu": str, "cores": int}
+PATH_RE = re.compile(r"^submissions/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([0-9a-f]{16})\.json$")
+BUILD_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+# Public full checks of the whole proof, as each person reported it.
+VALIDATED = [
+    {"who": "Andrew Sutherland (MIT)", "what": "full build, 175,187 modules, 0 errors; leanchecker, nanoda, lean4lean and con-leche all accept", "url": "https://math.mit.edu/~drew/grh"},
+    {"who": "Simon DeDeo", "what": "native kernel replay of the whole proof (3 h 22 min)", "url": "https://github.com/leecrossley/riemann-rev"},
+    {"who": "shosonoda (RIKEN)", "what": "lake build, 175,187 of 175,187 modules, 0 failed jobs", "url": "https://github.com/shosonoda/lean-rh-alpoge"},
+    {"who": "vincitamore", "what": "lake build of all 175,187 modules, axiom check, kernel replay", "url": "https://github.com/vincitamore/riemann-lean-account"},
+    {"who": "starx237", "what": "build plus axiom audit of all five main theorems", "url": "https://github.com/starx237/RH-Lean-Verification"},
+]
+
+
+# ---- helpers ------------------------------------------------------------------------------------------------
+_modules = None
+def modules() -> list:
+    global _modules
+    if _modules is None:
+        raw = MODULES_TXT.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != MODULES_SHA256:
+            sys.exit(f"{MODULES_TXT} is not the published module list (sha256 mismatch)")
+        _modules = raw.decode().split("\n")[:-1]
+        assert len(_modules) == N
+    return _modules
+
+
+def parse_ts(s: str) -> datetime:
+    if not isinstance(s, str) or not TS_RE.match(s):
+        raise ValueError(f"not a UTC time like 2026-11-21T15:26:31Z: {s!r}")
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def decode_bitmap(b64: str) -> bytes:
+    """bitmap_b64 -> exactly ceil(N/8) bytes. Raises ValueError. Bounded decompression (no gzip bombs)."""
+    try:
+        gz = base64.b64decode(b64, validate=True)
+    except Exception:
+        raise ValueError("bitmap_b64 is not valid base64")
+    want = (N + 7) // 8
+    try:
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)       # gzip container
+        raw = d.decompress(gz, want + 1)
+        if d.unconsumed_tail or len(raw) > want:
+            raise ValueError(f"bitmap is longer than {want} bytes")
+        raw += d.flush()
+        if not d.eof:
+            raise ValueError("bitmap gzip stream is truncated")
+    except zlib.error as e:
+        raise ValueError(f"bitmap_b64 is not gzip: {e}")
+    if len(raw) != want:
+        raise ValueError(f"bitmap is {len(raw)} bytes, expected {want} (N = {N} bits)")
+    if N % 8 and raw[-1] >> (N % 8):
+        raise ValueError("bitmap has bits set past module N-1")
+    return raw
+
+
+def encode_bitmap(raw: bytes) -> str:
+    return base64.b64encode(gzip.compress(raw, mtime=0)).decode()
+
+
+def bits_from_indices(idx) -> bytes:
+    b = bytearray((N + 7) // 8)
+    for i in idx:
+        b[i >> 3] |= 1 << (i & 7)
+    return bytes(b)
+
+
+def indices(raw: bytes):
+    for byte_i, v in enumerate(raw):
+        while v:
+            low = v & -v
+            yield byte_i * 8 + low.bit_length() - 1
+            v ^= low
+
+
+def popcount(raw: bytes) -> int:
+    return int.from_bytes(raw, "little").bit_count()
+
+
+def is_superset(new: bytes, old: bytes) -> bool:
+    return (int.from_bytes(old, "little") & ~int.from_bytes(new, "little")) == 0
+
+
+def load_record(path: Path) -> dict:
+    if path.stat().st_size > MAX_RECORD_BYTES:
+        raise ValueError(f"record is larger than {MAX_RECORD_BYTES} bytes")
+    d = json.loads(path.read_text())
+    if not isinstance(d, dict):
+        raise ValueError("record is not a JSON object")
+    return d
+
+
+def olean_sha256(ref: Path, module: str):
+    """sha256 of one reference .olean (32 raw bytes), or None if not compiled there. Opened read-only.
+    CONTRACT: compiled = .olean AND .trace exist (Lake writes the trace last; olean alone = interrupted build)."""
+    h = hashlib.sha256()
+    base = ref / ".lake/build/lib/lean" / module.replace(".", "/")
+    if not os.path.exists(f"{base}.trace"):
+        return None
+    try:
+        with open(f"{base}.olean", "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except FileNotFoundError:
+        return None
+    return h.digest()
+
+
+_snapshot = None
+def use_snapshot(path):
+    """Use a frozen per-module hash table (from `reference-snapshot`) instead of the live build folder.
+    A build in progress deletes and rewrites .olean files, so the live folder is not a stable reference."""
+    global _snapshot
+    if path:
+        _snapshot = Path(path).read_bytes()
+        if len(_snapshot) != 32 * N:
+            sys.exit(f"{path} is not a reference snapshot ({32 * N} bytes expected)")
+
+
+def reference_digest(raw: bytes, ref: Path = REFERENCE) -> str:
+    """CONTRACT olean_digest: sha256 over, for each set bit in index order, sha256(.olean bytes) as 32 raw bytes.
+    Raises LookupError if the reference has not compiled every module in the bitmap (the rule can't decide yet)."""
+    mods, outer, missing = modules(), hashlib.sha256(), []
+    for i in indices(raw):
+        if _snapshot is not None:
+            h = _snapshot[32 * i:32 * i + 32]
+            if h == bytes(32): missing.append(mods[i])
+            else: outer.update(h)
+            continue
+        h = olean_sha256(ref, mods[i])
+        if h is None: missing.append(mods[i])
+        else: outer.update(h)
+    if missing:
+        raise LookupError(f"reference build has not compiled {len(missing)} of these modules (first: {missing[0]})")
+    return outer.hexdigest()
+
+
+# ---- the acceptance rules -----------------------------------------------------------------------------------
+def clean_display_name(name: str) -> str:
+    return name.strip()                                # CONTRACT: trim ends (the trimmed text is what is shown)
+
+
+def name_key(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
+def display_name_problems(rec, author, logins, prev=None):
+    """CONTRACT (CLI and bot identical): trim ends, 1-32 chars, no Unicode Cc/Cf/Zl/Zp; NFKC + casefold must not
+    equal any other participant's login."""
+    out, name = [], rec.get("display_name")
+    if name is None:
+        return out
+    if rec.get("anonymous"):
+        out.append("display_name and anonymous: true are both set; choose one")
+    name = clean_display_name(name)
+    if not 1 <= len(name) <= 32:
+        out.append(f"display_name must be 1-32 characters after trimming (got {len(name)})")
+    if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in name):
+        out.append("display_name contains control or invisible formatting characters")
+    key = name_key(name)
+    if key.startswith("anonymous"):
+        out.append("display_name may not start with \"anonymous\"; use anonymous: true instead")
+    if prev is not None and prev.get("display_name") is not None and name_key(clean_display_name(prev["display_name"])) == key:
+        return out                                     # accepted before: a name is judged once, never re-judged
+    if any(key == name_key(l) for l in (logins or ()) if name_key(l) != name_key(author)):
+        out.append(f"display_name {name!r} is another participant's GitHub login")
+    return out
+
+
+def record_level(rec) -> int:
+    """1 build; 2 whole proof + reference export reproduced; 3 = 2 + a known independent checker accepted it."""
+    if not (rec.get("whole_proof") and str(rec.get("export_sha256", "")).lower() == REF_EXPORT_SHA256
+            and rec.get("export_bytes", REF_EXPORT_BYTES) == REF_EXPORT_BYTES):
+        return 1
+    ok = [c for c in rec.get("checkers") or [] if isinstance(c, dict) and c.get("result") == "accept"
+          and c.get("name") in KNOWN_CHECKERS]
+    return 3 if ok else 2
+
+
+def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now=None, logins=None):
+    """-> (rejects, flags, bitmap). rejects empty = ACCEPT, unless a flag starts with PENDING (can't decide yet). prev = this build's last accepted version (dict) or None."""
+    now = now or datetime.now(timezone.utc)
+    rej, flags = [], []
+    # schema
+    if not isinstance(rec, dict):
+        return ["record is not a JSON object"], flags, None
+    missing = [k for k in FIELDS if k not in rec]
+    extra = [k for k in rec if k not in FIELDS and k not in OPTIONAL]
+    if missing: rej.append(f"schema: missing fields {missing}")
+    if extra: rej.append(f"schema: unknown fields {extra}")
+    for k, t in {**FIELDS, **OPTIONAL}.items():
+        if k in rec and (not isinstance(rec[k], t) or (t is int and isinstance(rec[k], bool))):
+            rej.append(f"schema: {k} has the wrong type")
+    m = rec.get("machine")
+    if isinstance(m, dict):
+        for k, t in MACHINE_FIELDS.items():
+            if not isinstance(m.get(k), t) or isinstance(m.get(k), bool):
+                rej.append(f"schema: machine.{k} missing or wrong type")
+    if rej:
+        return rej, flags, None
+    rej += display_name_problems(rec, author, logins, prev)
+    # format / tool known
+    if rec["format"] != FORMAT: rej.append(f"format {rec['format']!r} is not {FORMAT!r}")
+    if rec["tool"] not in KNOWN_TOOLS: rej.append(f"tool {rec['tool']!r} is not a known release")
+    # constants
+    for k, want in (("archive_sha256", ARCHIVE_SHA256), ("toolchain", TOOLCHAIN), ("mathlib_rev", MATHLIB_REV)):
+        if rec[k] != want: rej.append(f"{k} {rec[k]!r} is not the pinned {want!r}")
+    if rec["build_folder"] not in BUILD_FOLDERS: rej.append(f"build_folder {rec['build_folder']!r} is not a fixed build folder")
+    # identity: path login == PR author; path build_id == record build_id; prev is this build's
+    if not BUILD_ID_RE.match(rec["build_id"]): rej.append(f"build_id {rec['build_id']!r} is not 16 lowercase hex chars")
+    pm = PATH_RE.match(repo_path or "")
+    if not pm:
+        rej.append(f"path {repo_path!r} is not submissions/<github-login>/<build_id>.json")
+    else:
+        if pm.group(1).lower() != author.lower():
+            rej.append(f"path login {pm.group(1)!r} is not the PR author {author!r}")
+        if pm.group(2) != rec["build_id"]:
+            rej.append(f"path build_id {pm.group(2)!r} is not the record's build_id {rec['build_id']!r}")
+    if prev is not None and prev.get("final"):
+        rej.append("this build was already marked final; start a new build for more")
+    if prev is not None and prev.get("build_id") != rec["build_id"]:
+        rej.append(f"previous record is from build {prev.get('build_id')!r}, not this build {rec['build_id']!r}")
+    # times
+    try:
+        started, recorded = parse_ts(rec["started"]), parse_ts(rec["recorded"])
+    except ValueError as e:
+        rej.append(f"time: {e}")
+        return rej, flags, None
+    if recorded < started: rej.append("recorded is before started")
+    if recorded > now + CLOCK_SKEW: rej.append(f"recorded {rec['recorded']} is in the future")
+    if rec["busy_seconds"] < 0 or rec["busy_seconds"] > (recorded - started).total_seconds() + 60:
+        rej.append("busy_seconds is negative or longer than started..recorded")
+    # bitmap
+    try:
+        raw = decode_bitmap(rec["bitmap_b64"])
+    except ValueError as e:
+        rej.append(f"bitmap: {e}")
+        return rej, flags, None
+    pop = popcount(raw)
+    if rec["modules_compiled"] != pop:
+        rej.append(f"modules_compiled {rec['modules_compiled']} != popcount(bitmap) {pop}")
+    if pop == 0: rej.append("bitmap is empty")
+    # whole proof
+    if rec["whole_proof"]:
+        if pop != N: rej.append(f"whole_proof claimed but only {pop:,} of {N:,} modules compiled")
+        ax = rec["axioms"]
+        if ax is None: rej.append("whole_proof claimed but the axiom check did not run (axioms is null)")
+        elif not all(isinstance(x, str) for x in ax) or len(ax) != len(EXPECTED_AXIOMS) or set(ax) != set(EXPECTED_AXIOMS):
+            bad = sorted(set(map(str, ax)) - set(EXPECTED_AXIOMS))
+            rej.append(f"whole_proof axioms {ax} are not exactly {EXPECTED_AXIOMS}" + (f" (extra: {bad})" if bad else ""))
+    elif rec["axioms"] is not None and not all(isinstance(a, str) for a in rec["axioms"]):
+        rej.append("axioms must be null or a list of names")
+    # levels: export reproduced (2), independent checker accepted it (3); signing needs Level 2+
+    if "export_sha256" in rec:
+        if not rec["whole_proof"]: rej.append("export_sha256 is only meaningful with whole_proof")
+        if rec["export_sha256"].lower() != REF_EXPORT_SHA256: rej.append("export does not reproduce the reference")
+    if "export_bytes" in rec:
+        if "export_sha256" not in rec: rej.append("export_bytes without export_sha256")
+        if rec["export_bytes"] != REF_EXPORT_BYTES:
+            rej.append(f"export_bytes {rec['export_bytes']:,} is not the reference {REF_EXPORT_BYTES:,}")
+    for c in rec.get("checkers") or []:
+        if not (isinstance(c, dict) and set(c) == {"name", "version", "result", "seconds"} and isinstance(c["name"], str)
+                and isinstance(c["version"], str) and c["result"] in ("accept", "reject")
+                and isinstance(c["seconds"], (int, float)) and not isinstance(c["seconds"], bool)):
+            rej.append("checkers entries must be {name, version, result: accept|reject, seconds}"); break
+        if c["name"] not in KNOWN_CHECKERS:
+            flags.append(f"checker {c['name']!r} is not one of {sorted(KNOWN_CHECKERS)}; it does not count for Level 3")
+        if c["result"] == "reject":
+            flags.append(f"CHECKER REJECTED THE EXPORT: {c['name']} {c['version']} (needs a human look)")
+    if rec.get("checkers") and "export_sha256" not in rec: rej.append("checkers reported without an export_sha256")
+    if rec.get("sign_statement") and record_level(rec) < 2:
+        rej.append("sign_statement needs Level 2 (whole proof and the reference export reproduced)")
+    # growth + speed against this build's last accepted record
+    prev_raw, since = None, started
+    if prev is not None:
+        try:
+            prev_raw = decode_bitmap(prev["bitmap_b64"])
+            since = parse_ts(prev["recorded"])
+        except (KeyError, ValueError) as e:
+            rej.append(f"previous accepted record unreadable: {e}")
+    if prev_raw is not None:
+        if recorded <= since: rej.append(f"recorded {rec['recorded']} is not after the last accepted record {prev['recorded']}")
+        if not is_superset(raw, prev_raw):
+            lost = popcount(bytes(a & ~b & 0xFF for a, b in zip(prev_raw, raw)))
+            rej.append(f"bitmap shrank: {lost:,} modules from the last accepted record are missing")
+    new = pop - (popcount(prev_raw) if prev_raw is not None else 0)
+    hours = max((recorded - since).total_seconds(), 1) / 3600
+    rate = max(new, 0) / hours
+    if rate > SPEED_REJECT:
+        rej.append(f"speed implausible: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (limit {SPEED_REJECT:,}/h)")
+    elif rate > SPEED_FLAG:
+        flags.append(f"fast: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (flag above {SPEED_FLAG:,}/h)")
+    # digest (off until M0)
+    if check_digest and not rej:
+        try:
+            want = reference_digest(raw)
+            if rec["olean_digest"].lower() != want:
+                rej.append(f"olean_digest {rec['olean_digest'][:16]}... != reference {want[:16]}... for this bitmap")
+        except LookupError as e:
+            flags.append(f"PENDING digest: {e}")
+    return rej, flags, raw
+
+
+# ---- aggregate ----------------------------------------------------------------------------------------------
+def load_accepted(dirs, check_digest=False, now=None, log=print):
+    """(login, build_id) -> (repo_path, record, bitmap): the newest valid version of each build across dirs."""
+    out = {}
+    dirs = [Path(d) for d in dirs if Path(d).exists()]
+    for d in dirs:
+        for f in sorted(d.glob("*/*.json")):
+            login, rp = f.parent.name, f"submissions/{f.parent.name}/{f.name}"
+            try:
+                r = load_record(f)
+                # logins=None: names were judged when the version was accepted and are not re-judged here
+                rej, _, raw = check_record(r, login, rp, None, check_digest=check_digest, now=now)
+            except Exception as e:
+                rej, raw = [f"unreadable: {e}"], None
+            if rej:
+                log(f"skip {f}: {'; '.join(rej)}", file=sys.stderr)
+                continue
+            key = (login, r["build_id"])
+            if key not in out or r["recorded"] > out[key][1]["recorded"]:
+                out[key] = (rp, r, raw)
+    return out
+
+
+def mach(r):
+    return r["machine"].get("cpu") or r["machine"].get("os", "")
+
+
+def build_data(dirs, now=None, anon_map=None, signed_map=None) -> dict:
+    """anon_map: login -> n for "anonymous #n"; updated in place (new anonymous people get the next numbers,
+    in order of their first build's start), so numbers stay stable when the caller persists it.
+    signed_map: login -> time their signing version was accepted (the bot records it); people missing from it get
+    the signing record's `recorded` time (aggregate without the bot's ledger)."""
+    signed_map = {} if signed_map is None else signed_map
+    signatures = []
+    mods = modules()
+    people = {}
+    for (login, build_id), v in load_accepted(dirs, now=now).items():
+        people.setdefault(login, {})[build_id] = v
+    anon_map = {} if anon_map is None else anon_map
+    ident = {}                                         # login -> (name, who): the choice in their newest record
+    for login, builds in people.items():
+        newest = max((v[1] for v in builds.values()), key=lambda r: r["recorded"])
+        if newest.get("anonymous"):
+            ident[login] = None
+        elif newest.get("display_name"):
+            ident[login] = (clean_display_name(newest["display_name"]), None)
+        else:
+            ident[login] = (login, login)
+    for login in sorted((l for l, v in ident.items() if v is None and l not in anon_map),
+                        key=lambda l: (min(v[1]["started"] for v in people[l].values()), l)):
+        anon_map[login] = max(anon_map.values(), default=0) + 1
+    for login, v in ident.items():
+        if v is None:
+            ident[login] = (f"anonymous #{anon_map[login]}", None)
+    counts = bytearray(N)
+    rows, latest, running = [], None, []
+    for who, builds in sorted(people.items()):
+        name, shown = ident[who]
+        union = 0                                      # the person = union of their builds
+        for _, _, raw in builds.values():
+            union |= int.from_bytes(raw, "little")
+        raw = union.to_bytes((N + 7) // 8, "little")
+        for i in indices(raw):                         # one person counts once per module, however many builds
+            if counts[i] < BUILDERS_CAP:
+                counts[i] += 1
+        recs = [v[1] for v in builds.values()]
+        wholes = sorted((r for r in recs if r["whole_proof"]), key=lambda r: r["recorded"])
+        whole = wholes[0] if wholes else None          # first whole build
+        largest = max(recs, key=lambda r: (r["modules_compiled"], r["recorded"]))
+        level = max(record_level(r) for r in recs)
+        signing = sorted((r for r in recs if r.get("sign_statement") and record_level(r) >= 2), key=lambda r: r["recorded"])
+        if signing:
+            signed_map.setdefault(who, signing[0]["recorded"])
+            signatures.append({"who": shown, "name": name, "signed": signed_map[who], "machine": mach(signing[0]),
+                               "level": level, "checkers": sorted({c["name"] for r in recs for c in r.get("checkers") or []
+                                                                   if c.get("result") == "accept" and c.get("name") in KNOWN_CHECKERS})})
+        rows.append({"name": name, "who": shown, "_login": who, "level": level, "modules": popcount(raw), "whole_proof": whole is not None,
+                     "build_hours": round(whole["busy_seconds"] / 3600, 1) if whole else None,
+                     "finished": whole["recorded"] if whole else None,
+                     "machine": mach(largest), "computers": len(builds),
+                     "since": min(r["started"] for r in recs),
+                     "_first_whole": whole["recorded"] if whole else None})
+        for build_id, (_, r, _) in builds.items():
+            if not r["whole_proof"] and not r.get("final"):   # running: not whole, not finished (page hides stale)
+                e = {"name": name, "who": shown, "build_id": build_id, "machine": mach(r),
+                     "modules": r["modules_compiled"], "recorded": r["recorded"]}
+                if shown is None:
+                    del e["build_id"]                  # display-name/anonymous people: build_id would link to the login
+                running.append(e)
+            if latest is None or r["recorded"] > latest["recorded"]:
+                latest = {"name": name, "who": shown, "modules": r["modules_compiled"], "recorded": r["recorded"], "machine": mach(r)}
+    for rank, row in enumerate(sorted((x for x in rows if x["_first_whole"]), key=lambda x: x["_first_whole"]), 1):
+        row["first_whole_proof_rank"] = rank
+    for row in rows:
+        row.setdefault("first_whole_proof_rank", None)
+        del row["_first_whole"]
+    # modules desc; among whole proofs, who finished first; otherwise earliest since
+    rows.sort(key=lambda x: (-x["modules"], x["first_whole_proof_rank"] or 0, x["since"], x.pop("_login")))
+    libs, prev = [], None
+    for i, m in enumerate(mods):
+        top = m.split(".")[0]
+        if top != prev:
+            libs.append([top, i]); prev = top
+    return {
+        "generated": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "n": N,
+        "libraries": libs,
+        "builders_b64": encode_bitmap(bytes(counts)),
+        "summary": {"people": len(rows), "whole_proofs": sum(r["whole_proof"] for r in rows),
+                    "modules_built_once": sum(1 for c in counts if c >= 1),
+                    "modules_built_3x": sum(1 for c in counts if c >= 3)},
+        "leaderboard": rows,
+        "latest": latest,
+        "running": sorted(running, key=lambda x: (-x["modules"], x["recorded"], x["name"], x.get("build_id", ""))),
+        "signatures": sorted(signatures, key=lambda x: (x["signed"], x["name"])),
+        "validated": VALIDATED,
+    }
+
+
+def write_json_backed_up(path: Path, obj, backup=True):
+    if backup and path.exists():
+        shutil.copy2(path, path.with_name(path.name + ".bak"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=1) + "\n")
+    os.replace(tmp, path)
+
+
+def content_hash(data) -> str:
+    return hashlib.sha256(json.dumps({k: v for k, v in data.items() if k != "generated"}, sort_keys=True).encode()).hexdigest()
+
+
+# ---- poll ---------------------------------------------------------------------------------------------------
+LIST_QUERY = """query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $after, orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number isDraft author { login } headRefName headRefOid changedFiles
+              files(first: 5) { nodes { path changeType } } } } } }"""
+
+
+class GitHubSource:
+    """Real PRs through gh. Reads (always): GraphQL list + batched file contents. Writes (only with --live):
+    comment, close, merge, git commit/push in the clone. Without --live every write is printed, not run."""
+    def __init__(self, repo, live, workdir):
+        self.repo, self.live, self.workdir = repo, live, workdir
+        self.owner, self.name = repo.split("/", 1)
+
+    def _graphql(self, query, **vars):
+        args = ["api", "graphql", "-f", f"query={query}"]
+        for k, v in vars.items():
+            args += ["-F", f"{k}={v}"]
+        out = subprocess.run(["gh", *args], capture_output=True, text=True)
+        if out.returncode != 0:
+            raise RuntimeError(f"gh api graphql: {out.stderr.strip()[:500]}")
+        d = json.loads(out.stdout)
+        if d.get("errors"):
+            raise RuntimeError(f"graphql: {d['errors']}")
+        return d["data"]
+
+    def prs(self):
+        out, after = [], None
+        while True:
+            v = {"owner": self.owner, "name": self.name}
+            if after: v["after"] = after
+            page = self._graphql(LIST_QUERY, **v)["repository"]["pullRequests"]
+            for n in page["nodes"]:
+                if n["isDraft"]:
+                    continue
+                files = [{"path": f["path"], "changeType": f["changeType"]} for f in n["files"]["nodes"]]
+                files += [{"path": "...", "changeType": "MODIFIED"}] * max(0, n["changedFiles"] - len(files))
+                out.append({"number": n["number"], "author": (n["author"] or {}).get("login", ""),
+                            "branch": n["headRefName"], "head": n["headRefOid"], "files": files})
+            if not page["pageInfo"]["hasNextPage"]:
+                return out
+            after = page["pageInfo"]["endCursor"]
+
+    def contents(self, wanted):
+        """wanted: [(pr, path)] -> {number: bytes}; 25 PRs per GraphQL request, read from each PR's head commit."""
+        got = {}
+        for i in range(0, len(wanted), 25):
+            parts = []
+            for pr, path in wanted[i:i + 25]:
+                expr = json.dumps(f"{pr['head']}:{path}")
+                parts.append(f'p{int(pr["number"])}: pullRequest(number: {int(pr["number"])}) {{ headRepository {{ '
+                             f'object(expression: {expr}) {{ ... on Blob {{ text byteSize isBinary }} }} }} }}')
+            q = f'query {{ repository(owner: {json.dumps(self.owner)}, name: {json.dumps(self.name)}) {{ {" ".join(parts)} }} }}'
+            repo = self._graphql(q)["repository"]
+            for pr, _ in wanted[i:i + 25]:
+                obj = ((repo.get(f"p{pr['number']}") or {}).get("headRepository") or {}).get("object")
+                if obj and not obj.get("isBinary") and obj.get("text") is not None:
+                    got[pr["number"]] = obj["text"].encode()
+        return got
+
+    def _gh(self, args):
+        print("    $ gh " + " ".join(a if len(a) < 60 else a[:57] + "..." for a in args))
+        if self.live:
+            subprocess.run(["gh", *args, "--repo", self.repo], check=True, capture_output=True, text=True)
+
+    def _git(self, *args):
+        print("    $ git " + " ".join(args))
+        if self.live:
+            subprocess.run(["git", "-C", str(self.workdir), *args], check=True, capture_output=True, text=True)
+
+    def sync(self):
+        self._git("pull", "--ff-only", "-q")
+
+    def comment(self, pr, body):
+        self._gh(["pr", "comment", str(pr["number"]), "--body", body])
+
+    def close(self, pr, body):
+        self._gh(["pr", "close", str(pr["number"]), "--comment", body])
+
+    def merge(self, pr, sha):
+        self._gh(["pr", "merge", str(pr["number"]), "--squash", "--match-head-commit", sha])
+        self.sync()
+
+    def commit_files(self, paths, msg):
+        self._git("add", *paths)
+        self._git("commit", "-q", "-m", msg)
+        self._git("push", "-q")
+
+
+class FixtureSource:
+    """DIR/rounds.json: [{"now": "...Z", "prs": [{number, author, branch, head, files: [{path, changeType}],
+    content_file}]}]. Writes go to SCRATCH/repo (plays main) and are printed; no gh, no git."""
+    def __init__(self, fdir: Path, rnd: int, repo: Path):
+        self.dir, self.repo = fdir, repo
+        self.round = json.loads((fdir / "rounds.json").read_text())[rnd - 1]
+        self.now = parse_ts(self.round["now"])
+        self._by_number = {p["number"]: p for p in self.round["prs"]}
+
+    def prs(self):
+        return [dict(p) for p in self.round["prs"]]
+
+    def contents(self, wanted):
+        return {pr["number"]: (self.dir / self._by_number[pr["number"]]["content_file"]).read_bytes() for pr, _ in wanted}
+
+    def sync(self): pass
+    def comment(self, pr, body): print(f"    (fixture) gh pr comment {pr['number']}")
+    def close(self, pr, body): print(f"    (fixture) gh pr close {pr['number']} --comment")
+
+    def merge(self, pr, sha):
+        print(f"    (fixture) gh pr merge {pr['number']} --squash --match-head-commit {sha}")
+        f = self._by_number[pr["number"]]
+        dest = self.repo / f["files"][0]["path"]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes((self.dir / f["content_file"]).read_bytes())
+
+    def commit_files(self, paths, msg):
+        print(f"    (fixture) git add {' '.join(paths)} && git commit -m {msg!r} && git push")
+
+
+def comment_body(rejects, flags, kept):
+    lines = ["This version of your build record was not accepted:", ""] + [f"- {r}" for r in rejects]
+    if flags:
+        lines += ["", "Also noted:"] + [f"- {f}" for f in flags]
+    lines += ["", f"The leaderboard keeps {kept}. The next update that passes replaces it; no need to open a new PR.",
+              "", "(rahbot)"]
+    return "\n".join(lines)
+
+
+def close_body(reason):
+    return "\n".join([f"Closing: {reason}.", "",
+                      "`riemann-at-home submit` opens one PR per computer that adds only "
+                      "submissions/<your-login>/<build_id>.json. Run it again to open a correct one.", "", "(rahbot)"])
+
+
+class State:
+    """STATE/state.json + STATE/accepted/<login>/<build_id>.json (last accepted version of each open PR's build)."""
+    def __init__(self, d: Path, persist: bool):
+        self.dir, self.persist = d, persist
+        f = d / "state.json"
+        self.data = json.loads(f.read_text()) if f.exists() else {"prs": {}, "last_publish": None, "published_hash": None}
+        self.mem = {}                                   # dry run: accepted versions held in memory only
+        sf = d / "signatures.json"                      # login -> time the signing version was accepted
+        self.signed = json.loads(sf.read_text()) if sf.exists() else {}
+
+    def pr(self, n):
+        return self.data["prs"].setdefault(str(n), {})
+
+    def accepted(self, rp):
+        if rp in self.mem: return self.mem[rp]
+        f = self.dir / "accepted" / rp.removeprefix("submissions/")
+        return json.loads(f.read_text()) if f.exists() else None
+
+    def set_accepted(self, rp, body: bytes):
+        self.mem[rp] = json.loads(body)
+        if self.persist:
+            f = self.dir / "accepted" / rp.removeprefix("submissions/")
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(body)
+
+    def drop(self, n):
+        st = self.data["prs"].pop(str(n), {})
+        rp = st.get("path")
+        if rp and self.persist:
+            f = self.dir / "accepted" / rp.removeprefix("submissions/")
+            if f.exists():
+                f.unlink()                              # bot's own state copy; the record lives on in git / main
+
+    def save(self):
+        if self.persist:
+            write_json_backed_up(self.dir / "signatures.json", self.signed, backup=False)
+            write_json_backed_up(self.dir / "state.json", self.data, backup=False)
+
+
+def identity_problem(pr, repo: Path, open_builds: dict):
+    """Reasons to CLOSE (identity/path); None if fine. Returns (problem, path)."""
+    files = pr["files"]
+    if len(files) != 1:
+        return f"the PR changes {len(files)} files; it must change only submissions/<login>/<build_id>.json", None
+    path = files[0]["path"]
+    m = PATH_RE.match(path)
+    if not m:
+        return f"{path} is not submissions/<github-login>/<build_id>.json", None
+    if m.group(1).lower() != pr["author"].lower():
+        return f"the file is under {m.group(1)!r} but the PR author is {pr['author']!r}", None
+    if (repo / path).exists():                         # merged = whole or final; one PR per build for life
+        return f"build {m.group(2)} is already merged (whole proof or final); a new build needs a new build_id", None
+    other = open_builds.setdefault(path.lower(), pr["number"])
+    if other != pr["number"]:
+        return f"build {m.group(2)} already has an open PR (#{other}); updates go to that PR", None
+    return None, path
+
+
+def cmd_poll(a):
+    workdir = Path(a.workdir).resolve()
+    if a.fixtures:
+        if a.round == 1 and workdir.exists():
+            shutil.rmtree(workdir)                      # scratch only (fixture mode)
+        if a.lose_state and (workdir / "state").exists():   # recovery test: the bot's state is gone
+            os.replace(workdir / "state", workdir / f"state.lost-round{a.round}")
+        if a.lose_backups and (workdir / "state-backups").exists():
+            os.replace(workdir / "state-backups", workdir / f"state-backups.lost-round{a.round}")
+        repo, state_dir = workdir / "repo", workdir / "state"
+        repo.mkdir(parents=True, exist_ok=True)
+        src = FixtureSource(Path(a.fixtures).resolve(), a.round, repo)
+        now, persist, mode = src.now, True, f"fixtures round {a.round}"
+    else:
+        if not a.repo:
+            sys.exit("poll needs --repo OWNER/NAME or --fixtures DIR --round K")
+        repo = workdir
+        if not (repo / ".git").exists():
+            sys.exit(f"--workdir {repo} must be a git clone of {a.repo}")
+        state_dir = Path(a.state).resolve() if a.state else HERE / "state"
+        src = GitHubSource(a.repo, a.live, repo)
+        now, persist, mode = datetime.now(timezone.utc), a.live, "LIVE" if a.live else "dry run (nothing written)"
+    print(f"rahbot poll ({mode}) now={now:%Y-%m-%dT%H:%M:%SZ}")
+    if persist and not (state_dir / "state.json").exists() and not (a.fixtures and a.round == 1):
+        restore_state(state_dir)
+    st = State(state_dir, persist)
+    src.sync()
+    prs = sorted(src.prs(), key=lambda p: p["number"])
+    open_numbers = {str(p["number"]) for p in prs}
+    for n in [n for n in st.data["prs"] if n not in open_numbers]:
+        print(f"#{n}: no longer open; dropping its unmerged version from the board")
+        st.drop(n)
+
+    open_builds, todo, paths = {}, [], {}
+    for pr in prs:
+        problem, path = identity_problem(pr, repo, open_builds)
+        if problem:
+            print(f"#{pr['number']} {pr['author']}: CLOSE ({problem})")
+            src.close(pr, close_body(problem))
+            st.drop(pr["number"])
+            continue
+        paths[pr["number"]] = path
+        s = st.pr(pr["number"])
+        s.setdefault("path", path)
+        if s.get("seen_sha") != pr["head"]:
+            todo.append((pr, path))
+    bodies = src.contents(todo) if todo else {}
+    logins = ({f.parent.name for d in (repo / "submissions", state_dir / "accepted") if d.exists() for f in d.glob("*/*.json")}
+              | {p["author"] for p in prs})            # every participant, for the display_name rule
+
+    for pr in prs:
+        n, author = pr["number"], pr["author"]
+        if n not in paths:
+            continue
+        path, s = paths[n], st.pr(n)
+        prev = st.accepted(path)                       # None after state loss: head re-checked as a first version
+        if s.get("seen_sha") != pr["head"]:            # a new version on the branch
+            s["seen_sha"], s["seen_at"] = pr["head"], now.strftime("%Y-%m-%dT%H:%M:%SZ")
+            body = bodies.get(n)
+            try:
+                if body is None: raise ValueError("file not found at the PR head")
+                if len(body) > MAX_RECORD_BYTES: raise ValueError("record is too large")
+                rec = json.loads(body)
+            except Exception as e:
+                rec, rejects, flags = None, [f"record unreadable: {e}"], []
+            if rec is not None:
+                rejects, flags, _ = check_record(rec, author, path, prev, check_digest=a.check_digest, now=now,
+                                                 logins=logins)
+            pending = not rejects and any(f.startswith("PENDING") for f in flags)
+            if rejects:
+                kept = f"your last accepted version ({prev['modules_compiled']:,} modules)" if prev else "nothing yet for this build"
+                if s.get("last_comment") != rejects:   # comment once per distinct failure, not every poll
+                    print(f"#{n} {author}: REJECT version {pr['head'][:8]}, comment" + "".join(f"\n    - {r}" for r in rejects))
+                    src.comment(pr, comment_body(rejects, flags, kept))
+                    s["last_comment"] = rejects
+                else:
+                    print(f"#{n} {author}: REJECT version {pr['head'][:8]} (same reasons, already commented)")
+            elif pending:
+                print(f"#{n} {author}: PENDING version {pr['head'][:8]}" + "".join(f"\n    {f}" for f in flags))
+            else:
+                st.set_accepted(path, body)
+                if rec.get("sign_statement") and record_level(rec) >= 2:
+                    st.signed.setdefault(author, now.strftime("%Y-%m-%dT%H:%M:%SZ"))   # time the signing version was accepted
+                s["accepted_sha"], s["last_comment"] = pr["head"], None
+                prev = rec
+                print(f"#{n} {author}: ACCEPT version {pr['head'][:8]} ({rec['modules_compiled']:,} modules)"
+                      + "".join(f"\n    FLAG {f}" for f in flags))
+        else:
+            print(f"#{n} {author}: unchanged since {s.get('seen_at')}")
+        # merge?
+        if prev is None:
+            continue
+        why = "whole proof" if prev["whole_proof"] else "final" if prev.get("final") else None   # no time-based merge
+        if not why:
+            continue
+        try:
+            if s.get("accepted_sha") == pr["head"]:
+                print(f"#{n} {author}: MERGE ({why})")
+                src.merge(pr, pr["head"])              # --match-head-commit: fails if the branch moved meanwhile
+            else:                                      # rare: branch moved to a failing version before the merge
+                print(f"#{n} {author}: MERGE last accepted version ({why}; the PR head failed checks)")
+                if persist:
+                    write_json_backed_up(repo / path, prev, backup=False)
+                src.commit_files([path], f"{path}: last accepted version ({why})")
+                src.close(pr, f"Merged your last accepted version ({prev['modules_compiled']:,} modules) to main; "
+                              f"the newer versions on this branch did not pass checks. (rahbot)")
+        except Exception as e:                         # retried next poll; the accepted version stays on the board
+            print(f"#{n} {author}: merge failed, will retry: {e}")
+            continue
+        st.drop(n)
+
+    # data.json: merged builds on main + accepted versions of open PRs; republish at most every 10 minutes
+    if not persist:
+        print("dry run: data.json not rebuilt")
+        return 0
+    anon_file = state_dir / "anonymous.json"         # login -> n; private to the bot (never published)
+    anon_map = json.loads(anon_file.read_text()) if anon_file.exists() else {}
+    data = build_data([repo / "submissions", state_dir / "accepted"], now=now, anon_map=anon_map, signed_map=st.signed)
+    write_json_backed_up(anon_file, anon_map, backup=False)
+    published = False
+    h = content_hash(data)
+    last = st.data.get("last_publish")
+    if h == st.data.get("published_hash"):
+        print("data.json: unchanged")
+    elif last and now - parse_ts(last) < PUBLISH_EVERY:
+        print(f"data.json: changed, publish deferred (last publish {last}, at most every {PUBLISH_EVERY.seconds // 60} min)")
+    else:
+        write_json_backed_up(repo / "data.json", data, backup=False)   # git keeps history
+        shutil.copyfile(MODULES_TXT, repo / "modules.txt")             # CONTRACT: published next to index.html
+        src.commit_files(["data.json", "modules.txt"], f"data.json: {data['summary']['people']} people")
+        st.data["last_publish"], st.data["published_hash"] = now.strftime("%Y-%m-%dT%H:%M:%SZ"), h
+        print(f"data.json: published {data['summary']}; running {len(data['running'])}; signatures {len(data['signatures'])}")
+        published = True
+    st.save()
+    if published:
+        backup_state(state_dir, now)
+    return 0
+
+
+def backup_state(state_dir: Path, now):
+    """Timestamped copy of the whole bot state (accepted versions, state.json, anonymous.json, signatures.json)
+    in STATE/../state-backups/, newest 20 kept."""
+    root = state_dir.parent / "state-backups"
+    dest = root / now.strftime("%Y%m%dT%H%M%SZ")
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(state_dir, dest)
+    old = sorted(p for p in root.iterdir() if p.is_dir())[:-BACKUPS_KEPT]
+    for p in old:
+        shutil.rmtree(p)                               # the bot's own old backups only
+    print(f"state backed up to {dest.name} ({min(len(list(root.iterdir())), BACKUPS_KEPT)} kept)")
+
+
+def restore_state(state_dir: Path):
+    """State lost: restore the newest backup; with none, the poll falls back to re-checking heads as first versions."""
+    root = state_dir.parent / "state-backups"
+    backups = sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
+    if not backups:
+        print("state missing and no backup: rebuilding from open PR heads, each checked as a first version")
+        return
+    shutil.copytree(backups[-1], state_dir)
+    print(f"state missing: restored newest backup {backups[-1].name}")
+
+
+# ---- commands -----------------------------------------------------------------------------------------------
+def cmd_check(a):
+    p = Path(a.record)
+    try:
+        rec = load_record(p)
+    except Exception as e:
+        print(f"REJECT\n  - record unreadable: {e}"); return 1
+    prev = None
+    if a.prev != "none":
+        prev = load_record(Path(a.prev))
+    rp = a.path or "/".join(p.resolve().parts[-3:])
+    logins = set(filter(None, (a.logins or "").split(",")))
+    rejects, flags, _ = check_record(rec, a.author, rp, prev, check_digest=a.check_digest, logins=logins)
+    pending = not rejects and any(f.startswith("PENDING") for f in flags)
+    print("REJECT" if rejects else "PENDING" if pending else "ACCEPT")
+    for r in rejects: print(f"  - {r}")
+    for f in flags: print(f"  FLAG {f}")
+    return 1 if rejects else 2 if pending else 0
+
+
+def cmd_reference_digest(a):
+    text = Path(a.bitmap).read_text().strip()
+    b64 = json.loads(text)["bitmap_b64"] if text.startswith("{") else text
+    raw = decode_bitmap(b64)
+    try:
+        print(reference_digest(raw))
+    except LookupError as e:
+        print(f"error: {e}", file=sys.stderr); return 1
+    return 0
+
+
+def cmd_reference_snapshot(a):
+    mods = modules()
+    out = bytearray(32 * N)
+    have = 0
+    for i, m in enumerate(mods):
+        h = olean_sha256(REFERENCE, m)
+        if h:
+            out[32 * i:32 * i + 32] = h; have += 1
+    p = Path(a.out)
+    if p.exists():
+        shutil.copy2(p, p.with_name(p.name + ".bak"))
+    p.write_bytes(bytes(out))
+    print(f"{a.out}: {have:,} of {N:,} reference modules hashed")
+    return 0
+
+
+def cmd_aggregate(a):
+    anon = Path(a.anon_map) if a.anon_map else None
+    anon_map = json.loads(anon.read_text()) if anon and anon.exists() else {}
+    sig = Path(a.signed_map) if a.signed_map else None
+    signed_map = json.loads(sig.read_text()) if sig and sig.exists() else {}
+    data = build_data([Path(d) for d in a.dirs], anon_map=anon_map, signed_map=signed_map)
+    if sig:
+        write_json_backed_up(sig, signed_map)
+    if anon:
+        write_json_backed_up(anon, anon_map)
+    write_json_backed_up(Path(a.out), data)
+    mt = Path(a.out).resolve().with_name("modules.txt")       # CONTRACT: modules.txt travels with data.json
+    if mt != MODULES_TXT.resolve():
+        shutil.copyfile(MODULES_TXT, mt)
+    s = data["summary"]
+    print(f"{a.out}: {s['people']} people, {s['whole_proofs']} whole proofs, "
+          f"{s['modules_built_once']:,} modules built once, {s['modules_built_3x']:,} three times")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="rahbot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("check")
+    c.add_argument("record"); c.add_argument("--author", required=True); c.add_argument("--prev", required=True)
+    c.add_argument("--path", help="the record's path in the repo (default: last 3 parts of RECORD's path)")
+    c.add_argument("--logins", help="comma-separated GitHub logins of the other participants (display_name rule)")
+    c.add_argument("--check-digest", action="store_true", help="require olean_digest == reference (off until M0)")
+    c.add_argument("--reference-hashes", help="frozen snapshot from reference-snapshot (default: live build folder)")
+    r = sub.add_parser("reference-digest"); r.add_argument("bitmap"); r.add_argument("--reference-hashes")
+    s = sub.add_parser("reference-snapshot"); s.add_argument("--out", required=True)
+    g = sub.add_parser("aggregate"); g.add_argument("dirs", nargs="+"); g.add_argument("--out", required=True)
+    g.add_argument("--anon-map", help="login -> number file for stable 'anonymous #n' (read, then updated)")
+    g.add_argument("--signed-map", help="login -> signed time (the bot's ledger); default: signing record's recorded")
+    p = sub.add_parser("poll")
+    p.add_argument("--repo"); p.add_argument("--workdir", required=True)
+    p.add_argument("--live", action="store_true", help="really merge / comment / push (default: print only)")
+    p.add_argument("--state", help="bot state dir (default: next to rahbot)")
+    p.add_argument("--fixtures", help="read fake PRs from DIR/rounds.json; never calls gh or git")
+    p.add_argument("--round", type=int, default=1, help="fixture round (1-based; 1 starts fresh)")
+    p.add_argument("--lose-state", action="store_true", help="fixtures only: move the bot state away first (recovery test)")
+    p.add_argument("--lose-backups", action="store_true", help="fixtures only: also move the state backups away")
+    p.add_argument("--check-digest", action="store_true"); p.add_argument("--reference-hashes")
+    a = ap.parse_args()
+    use_snapshot(getattr(a, "reference_hashes", None))
+    if a.cmd == "poll" and a.fixtures and a.live:
+        sys.exit("--fixtures and --live are exclusive")
+    fn = {"check": cmd_check, "reference-digest": cmd_reference_digest,
+          "reference-snapshot": cmd_reference_snapshot, "aggregate": cmd_aggregate, "poll": cmd_poll}[a.cmd]
+    sys.exit(fn(a) or 0)
+
+
+if __name__ == "__main__":
+    main()
