@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300"><title>Riemann@home</title>
+<html><head><meta charset="utf-8"><title>Riemann@home</title>
 <meta name="viewport" content="width=1000">
 <style>
   html,body{margin:0;background:#000;color:#fff;font:bold 12px Arial,Helvetica,sans-serif;overflow:auto}
@@ -249,6 +249,18 @@ let sum = DATA.summary, cur = DATA.latest, board = DATA.leaderboard || [];
 board = board.slice().sort((a, b) => b.modules - a.modules || String(a.since).localeCompare(String(b.since))
                                     || (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9));
 let maxVal = 1; for (const h of heights) if (h > maxVal) maxVal = h;
+// Replay: modules that gained a builder since the bot's previous update ("recent", delta-coded) start one lower and
+// grow back in one by one over the next ~10 minutes, so the map shows the last update's work as it happened.
+// (#demo makes up a few hundred from the sample so the animation can be seen.)
+const RECENT = (() => {
+  let idx = [];
+  if (DATA.recent && Array.isArray(DATA.recent.gaps)) { let i = 0; for (const g of DATA.recent.gaps) { i += g; idx.push(i); } }
+  else if (DEMO) { for (let k = 0; k < 600; k++) { const i = Math.floor(Math.random() * N); if (heights[i]) idx.push(i); } }
+  idx = [...new Set(idx)].filter(i => i >= 0 && i < N && heights[i] > 0);
+  for (let k = idx.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [idx[k], idx[j]] = [idx[j], idx[k]]; }
+  for (const i of idx) heights[i]--;
+  return idx;
+})();
 // Step reached on the modules (derived on the page, no bot field yet): a whole build covers every module, and an
 // export covers the whole proof, so one such entry lifts every bar's cap. 0 built only · 1 gold · 2 green · 3 cyan.
 const STEP = (DATA.signatures || []).some(g => g.level >= 3) ? 3 : (DATA.signatures || []).some(g => g.level >= 2) ? 2
@@ -456,6 +468,52 @@ function terrain() {
 }
 $("cap").textContent = "";
 stars(); terrain();
+
+// ---------- replay of the last update: each module grows in white, then fades into its color ----------
+{
+  const OV = ctx2d("overlay"), TG = $("terrain").getContext("2d");
+  const W = Math.min(600, Math.max(120, (Date.parse(DATA.generated) + 600e3 - Date.now()) / 1000)) * 1000;   // until the next update
+  const t0 = performance.now(), GROW = 700, FADE = 5000, live = [];
+  let next = 0;
+  const w = Math.max(1, sx * 0.85);
+  const colGeom = i => {                       // the bar holding module i, as drawn by terrain(): x, base y, height, hue, L
+    const [c, r] = cell(i), col = r * C + c, [i0, slots, , s2] = column(col), depth = r / R;
+    return [px(c, r), py(r), Math.max(STACK > 1 ? 1.5 : 3, barH(s2, slots)), HL >= 0 ? Math.round(libHue(HL)) : Math.round(hueOf(i0) / 5) * 5, 60 - 26 * depth];
+  };
+  const solid = (g, i) => {                    // paint i's bar onto the base map (same look as terrain())
+    if (HL >= 0 && LIB[i] !== HL) return;
+    const [x, y, h, hue, L] = colGeom(i);
+    g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fillRect(x - w / 2, y - h, w * 0.45, h);
+    g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fillRect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
+    g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fillRect(x - w / 2, y - h, w, 1.5);
+  };
+  function frame(now) {
+    while (next < RECENT.length && now - t0 >= next * W / RECENT.length) {        // its turn: one more builder
+      const i = RECENT[next++]; heights[i]++; live.push({i, at: now, folded: false});
+    }
+    OV.clearRect(0, 0, 1000, 680);
+    for (let k = live.length - 1; k >= 0; k--) {
+      const s = live[k], el = now - s.at;
+      if (el >= GROW + FADE) { live.splice(k, 1); continue; }
+      if (HL >= 0 && LIB[s.i] !== HL) { if (!s.folded) { s.folded = true; solid(TG, s.i); } continue; }
+      const [x, y, h] = colGeom(s.i);
+      if (el < GROW) { const m = el / GROW, hh = h * (1 - (1 - m) * (1 - m));
+        OV.fillStyle = "rgba(255,255,255,0.9)"; OV.fillRect(x - w / 2, y - hh, w, hh); continue; }
+      if (!s.folded) { s.folded = true; solid(TG, s.i); }
+      const q = (el - GROW) / FADE;
+      OV.fillStyle = `rgba(255,255,255,${0.9 * (1 - q * q * (3 - 2 * q))})`; OV.fillRect(x - w / 2, y - h, w, h);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  // New data from the bot: reload once this update's replay is done (or after 12 minutes at most).
+  setInterval(async () => {
+    try {
+      const d = await (await fetch((DEMO ? "realistic-sample.json?" : "data.json?") + Date.now())).json();
+      if (d.generated !== DATA.generated && (next >= RECENT.length || performance.now() - t0 > 720e3)) location.reload();
+    } catch (e) {}
+  }, 60000);
+}
 
 // ---------- hover: module number and name ----------
 let NAMES = null, loading = false;
