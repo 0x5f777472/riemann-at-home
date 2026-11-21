@@ -444,6 +444,15 @@ var TIMES = null;
 const LIVE = true;
 let L = null, Lat = 0, IDX = null, shownMode = null;
 const SPEEDS = [["full", "Full"], ["gentle", "Gentle"], ["paused", "Pause"]];
+// When the build would finish at the current speed: a weekday + time if within 6 days, else the date + how far away.
+function finishText(hours) {
+  const d = new Date(Date.now() + hours * 3.6e6), days = hours / 24;
+  if (days < 6) return d.toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit"});
+  const away = days < 14 ? `${Math.round(days)} days` : days < 60 ? `${Math.round(days / 7)} weeks`
+             : days < 730 ? `${Math.round(days / 30.4)} months` : `${(days / 365).toFixed(0)} years`;
+  return d.toLocaleDateString("en-US", {month: "short", day: "numeric", year: d.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined})
+         + ` · in about ${away}`;
+}
 const ETA = {mode: null, at: 0, rate: null, eta: "–"};
 let SHOWN = null, SHOWN_F = null, lastFrame = 0;   // counter runs at the measured build speed, corrected by real counts
 function tickCount(t) {
@@ -548,8 +557,7 @@ function renderLive() {
   const modeNow = L.paused ? "paused" : !L.running ? "off" : L.mode;
   if (modeNow !== ETA.mode || Date.now() - ETA.at > 300000 || (ETA.rate == null && L.rate)) {
     ETA.mode = modeNow; ETA.at = Date.now(); ETA.rate = L.rate;
-    ETA.eta = L.rate && run ? new Date(Date.now() + (N - done) / L.rate * 3.6e6)
-      .toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit"}) : "–";
+    ETA.eta = L.rate && run ? finishText((N - done) / L.rate) : "–";
   }
   set("vspd", L.paused ? "paused" : !L.running ? "–" : ETA.rate ? `${fmt(ETA.rate)} modules/hr` : "measuring…");
   set("veta", ETA.eta);
