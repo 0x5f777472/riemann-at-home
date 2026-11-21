@@ -359,7 +359,7 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
 // Stacked (default, #stack=5): one continuous bar per STACK neighbouring modules (733 across x 48 deep);
 // bar height = builders summed over its modules / (STACK x most builders anywhere), so with one builder
 // a fully built bar reaches the top. Pale top only while some of its modules have no builder yet.
-const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 5));
+const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
 const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
 const left = 96, base = 434, spanX = 640, depthX = 230, depthY = 150, maxH = 170;
 const sx = spanX / C, kx = depthX / R, ky = depthY / R;
@@ -453,8 +453,7 @@ function terrain() {
     lastX = x + tw * Math.cos(0.45) * 0.55;
   }
 }
-$("cap").textContent = STACK > 1 ? `everyone · one bar per ${STACK} neighbouring modules · height = people who built them`
-                                 : "everyone · one spike per module · height = people who built it";
+$("cap").textContent = "";
 stars(); terrain();
 
 // ---------- hover: module number and name ----------
