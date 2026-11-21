@@ -51,7 +51,8 @@ NAME_NOTICE = ("This hides your username on the Riemann@home page. "
                "Your pull request is still public on GitHub under your account.")
 PAGE_PORT = 8642
 SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
-MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "3"))           # stop the build below this much free disk
+MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "20"))          # stop the build below this much free disk
+WHOLE_BUILD_GB = 150                                                   # plan for this much free for a whole build
 DISK_CHECK_SECONDS = float(os.environ.get("RAH_DISK_CHECK_SECONDS", "30"))
 AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # update the build's PR ~every 10 min
 AUTOSUBMIT = os.environ.get("RAH_AUTOSUBMIT", "dry-run")   # dry-run | off. Real PRs are not enabled in this build.
@@ -569,6 +570,7 @@ def mathlib_cache_present(folder: Path) -> bool:
 
 
 def cmd_setup(ctx: Ctx, a):
+    disk_heads_up(ctx)
     folder = ctx.folder
     if folder.exists():
         tc = toolchain_of(folder)
@@ -620,9 +622,25 @@ def free_gb(folder: Path) -> float:
 
 
 def disk_message(ctx: Ctx) -> str:
-    return (f"only {free_gb(ctx.folder):.1f} GB free on the build disk (minimum {MIN_FREE_GB:g} GB; a whole build "
-            "writes about 88 GB). Free some space, then `riemann-at-home build` continues from here. "
+    return (f"only {free_gb(ctx.folder):.1f} GB free on the build disk, so the build stopped to leave "
+            f"{MIN_FREE_GB:g} GB for the rest of your computer (a whole build needs about {WHOLE_BUILD_GB} GB). "
+            "Free some space, then `riemann-at-home build` continues from here. "
             "`record` and `submit` still work for what is built.")
+
+
+def disk_heads_up(ctx: Ctx) -> None:
+    """Said before setup and every build: what the whole thing takes, and what this computer can do."""
+    folder = ctx.folder if ctx.folder.exists() else ctx.folder.parent
+    while not folder.exists() and folder != folder.parent:
+        folder = folder.parent
+    free = shutil.disk_usage(folder).free / 1e9
+    print(f"Heads up: building the whole proof takes about 2 days on a fast computer (a week or more on a laptop) and "
+          f"needs about {WHOLE_BUILD_GB} GB of free disk. This computer has {free:.0f} GB free.")
+    if free < WHOLE_BUILD_GB:
+        print(f"That's not enough for the whole proof, and that's fine: the build stops by itself when "
+              f"{MIN_FREE_GB:g} GB are left, so your computer always keeps room, and every module you built still "
+              "counts on the leaderboard.")
+    print("Pause any time with `riemann-at-home pause`; `riemann-at-home stop` keeps everything built so far.\n")
 
 
 def stored_mode(ctx: Ctx) -> str:
@@ -653,6 +671,7 @@ def cmd_build(ctx: Ctx, a):
         raise Fail("lake not found; run: riemann-at-home setup")
     if free_gb(ctx.folder) < MIN_FREE_GB:
         raise Fail(disk_message(ctx))
+    disk_heads_up(ctx)
     if a.submit_repo:
         ctx.set_conf(repo=str(Path(a.submit_repo).expanduser().resolve()))
     ctx.mode_file.write_text(mode)

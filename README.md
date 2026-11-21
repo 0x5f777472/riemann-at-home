@@ -20,8 +20,8 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 
 ## Join by hand
 
-Needs macOS or Linux, Python 3, git, about 100 GB free for a full build (less is fine: the build stops safely when
-free space runs low and you still get credit for what you built).
+Needs macOS or Linux, Python 3, git, about 150 GB free for the whole proof (less is fine: the build stops by itself at 20 GB free, so your
+computer always keeps room, and every module you built still counts).
 
 1. **GitHub CLI.** Install `gh` (macOS: `brew install gh`) and log in yourself: `gh auth login`.
    The tool never asks for or handles your password or token.

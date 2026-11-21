@@ -12,7 +12,7 @@ and this README (`sign` prints the joint statement from it).
    computer's random `build_id`. Running it again skips whatever is already done.
 2. `riemann-at-home build [--gentle|--full] [--submit-repo DIR]`: the official `lake build Main`, unchanged, in the
    background at nice 19 (gentle = macOS background policy / Linux SCHED_IDLE). `pause`, `resume`, `stop`, `status`.
-   The build stops safely when the build disk has less than 3 GB free (a whole build writes about 88 GB). Everything
+   The build stops by itself when the build disk gets down to 20 GB free, so your computer always keeps room (a whole build needs about 150 GB free). Everything
    compiled so far is kept, and `record` / `submit` still work for the partial build.
 3. While it builds, about every 10 minutes the tool writes a record and updates this computer's one pull request
    (branch `rah/<build_id>`, file `submissions/<login>/<build_id>.json`). In this version that step is a dry run and
