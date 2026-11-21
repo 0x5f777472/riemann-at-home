@@ -2,7 +2,7 @@
 
 Build the Lean proof of the Riemann Hypothesis on your own computer, and add your build to a global map.
 
-**Global leaderboard:** https://titojankowski.github.io/riemann-at-home/
+**Global leaderboard:** https://riemann-at-home.github.io/riemann-at-home/
 
 A proof of the Riemann Hypothesis, written with AI and checked in Lean, was published on 2026-11-20 by Levent Alpöge
 (https://alpo.ge). Several people have already built the whole proof and confirmed it checks. Riemann@home lets anyone
@@ -14,7 +14,7 @@ one, who is building right now, and who has built the whole thing.
 Paste this into Claude, ChatGPT, or another assistant that can run commands:
 
 > I'd like to help build the Lean proof of the Riemann hypothesis through Riemann@home. Please clone
-> https://github.com/titojankowski/riemann-at-home, read its README, and walk me through the volunteer steps:
+> https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 > "riemann-at-home setup", then "riemann-at-home build", then "riemann-at-home submit" to send my build record.
 > Ask me before installing anything, and show me the build record before submitting it.
 

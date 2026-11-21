@@ -61,7 +61,7 @@
 // Riemann@home: this computer's build of the Lean proof of the Riemann hypothesis.
 // Served by `riemann-at-home page` (localhost only): data.json (regenerated every minute), modules.txt,
 // live.json (what is compiling now, every 2 s), times.json (how long each module took), POST mode.
-const GLOBAL_URL = "https://titojankowski.github.io/riemann-at-home/";
+const GLOBAL_URL = "https://riemann-at-home.github.io/riemann-at-home/";
 const VIEW = "local";
 document.title = "Riemann@home · This Computer";
 const DATA = await (await fetch("data.json?" + Date.now())).json();

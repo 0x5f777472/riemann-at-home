@@ -144,7 +144,7 @@
 
   <div class="extra panel navy joinview" style="left:22px;top:540px;width:956px;height:250px">
     <h3>Join in</h3>
-    <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/titojankowski/riemann-at-home">github.com/titojankowski/riemann-at-home</a></div>
+    <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/riemann-at-home/riemann-at-home">github.com/riemann-at-home/riemann-at-home</a></div>
     <div class="line">Or paste this into your AI assistant (Claude, ChatGPT, …) and it will walk you through it:</div>
     <div class="prompt" id="prompt"></div>
     <span class="btn" id="copy">COPY</span>
@@ -272,7 +272,7 @@ $("stat").innerHTML = `<b>${fmt(once)}</b> of ${fmt(N)} modules built · <b>${fm
 
 // ---------- join, leaderboard, whole-proof checks ----------
 const prompt = `I'd like to help build the Lean proof of the Riemann Hypothesis through Riemann@home.
-Please clone https://github.com/titojankowski/riemann-at-home, read its README, and walk me through the volunteer steps:
+Please clone https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 "riemann-at-home setup", then "riemann-at-home build", then "riemann-at-home submit" to send my build record.
 If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
 Ask me before installing anything, and show me the build record before submitting it.`;

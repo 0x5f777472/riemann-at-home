@@ -24,7 +24,7 @@ and this README (`sign` prints the joint statement from it).
    GitHub login (1 to 32 characters, no control characters). Records then carry `"display_name"` or
    `"anonymous": true`. Your pull request is still public on GitHub under your account.
 7. `riemann-at-home page`: this computer's page at http://localhost:8642/ ("This computer": its terrain, what is
-   compiling now, speed). Its "Global dashboard" button opens https://titojankowski.github.io/riemann-at-home/.
+   compiling now, speed). Its "Global dashboard" button opens https://riemann-at-home.github.io/riemann-at-home/.
 
 ## Levels
 
