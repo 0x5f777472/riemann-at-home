@@ -618,6 +618,49 @@ def cmd_setup(ctx: Ctx, a):
 
 # ---------------------------------------------------------------- build control
 
+def sweep_setup_files(ctx: "Ctx") -> tuple:
+    """Delete Lake's per-module scratch files (.lake/build/ir/<Module>.setup.json, ~6 MB each) once their module is
+    done. Lake writes one just before compiling a module, hands it to Lean, and never reads it again: whether a module
+    is up to date is decided from its .trace, not this file (Lake 4.33.1, Build/Module.lean + Build/Actions.lean).
+    A module counts as done when its .trace is newer than its scratch file (the .trace is written last). Without this
+    sweep a whole build needs about 1.2 TB; with it about 160 GB. Returns (files deleted, bytes freed)."""
+    ir, lib, n, freed = ctx.folder / ".lake/build/ir", ctx.lib, 0, 0
+    if not ir.is_dir():
+        return 0, 0
+    for root, _, files in os.walk(ir):
+        rel = os.path.relpath(root, ir)
+        for f in files:
+            if not f.endswith(".setup.json"):
+                continue
+            stem, sp = f[:-len(".setup.json")], os.path.join(root, f)
+            tp = lib / ("" if rel == "." else rel) / (stem + ".trace")
+            try:
+                st = os.stat(sp)
+                if os.stat(tp).st_mtime >= st.st_mtime:
+                    os.unlink(sp); n += 1; freed += st.st_size
+            except OSError:
+                continue                       # not built yet (no .trace), or already gone
+    return n, freed
+
+
+def setup_sweeper(ctx: "Ctx", stop: "threading.Event", every: float = 60):
+    """Background thread: sweep_setup_files every minute until `stop` is set."""
+    def loop():
+        while True:
+            try:
+                sweep_setup_files(ctx)
+            except Exception:
+                pass
+            if stop.wait(every):
+                return
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def cmd_sweep(ctx: Ctx, a):
+    n, freed = sweep_setup_files(ctx)
+    print(f"deleted {n:,} finished modules' scratch files, freed {freed / 1e9:.1f} GB")
+
+
 def free_gb(folder: Path) -> float:
     p = folder
     while not p.exists():
@@ -748,6 +791,7 @@ def cmd_run(ctx: Ctx, a):
                 on_term(None, None)
                 return
     threading.Thread(target=disk_guard, daemon=True).start()
+    setup_sweeper(ctx, stopping)              # keeps a whole build near 160 GB instead of 1.2 TB
 
     (ctx.logs / "supervisor.features").write_text(f"{os.getpid()} autosubmit-v2\n")   # rereads interval/config
 
@@ -1831,7 +1875,7 @@ def page_data(ctx: Ctx):
     local = compiled_sizes(ctx.lib) if ctx.lib.exists() else {}
     lo, hi = math.log(1e3), math.log(5e7)
     local_b = bytes(0 if m not in local else
-                    max(1, min(255, 1 + round(254 * (math.log(max(local[m], 1e3)) - lo) / (hi - lo)))) for m in mods)
+                    max(1, min(254, 1 + round(254 * (math.log(max(local[m], 1e3)) - lo) / (hi - lo)))) for m in mods)   # 255 = failed
     index = {m: i for i, m in enumerate(mods)}
 
     def bounds(depth):
@@ -1866,17 +1910,96 @@ def write_page(ctx: Ctx) -> Path:
     return out
 
 
+RATE_WINDOW = 600     # live speed: modules finished in the last 10 minutes (by .trace time)
+
+
 class Live:
-    """live.json: what this computer's build is doing now. The folder walk runs at most every 15 s."""
+    """live.json: what this computer's build is doing now. The folder walk runs at most every second; only modules
+    not seen before are stat'ed. Each finished module gets a sequence number, so the page can ask for the ones
+    finished since its last look (`live.json?since=N`) and draw their spikes one by one."""
     def __init__(self, ctx):
         self.ctx, self.lock, self.count, self.count_at = ctx, threading.Lock(), 0, 0.0
         self.times, self.times_size = {}, -1
+        self.known, self.seq = {}, 0          # module -> (seq, finish time = .trace mtime, .olean bytes)
+        self.fit, self.fit_at = None, 0.0     # log(.olean bytes) ~ a + b*log(.lean bytes), refit every 10 min
 
-    def get(self) -> dict:
+    def _src(self, name):
+        root = self.ctx.lib.parents[3]        # <project>/.lake/build/lib/lean -> <project>
+        for base in (root / "src", root):
+            p = base / (name.replace(".", os.sep) + ".lean")
+            if p.exists():
+                return p
+        return None
+
+    def predict(self, name):
+        """Expected .olean bytes of a module still compiling, from its source size (fit on this computer's finished
+        modules). Used only to draw its bar before it is done; the real size replaces it when it finishes."""
+        if self.fit is None or time.time() - self.fit_at > 600:
+            pts = []
+            for n, (_, _, b) in list(self.known.items())[-3000:]:
+                p = self._src(n)
+                if p and b > 0:
+                    pts.append((math.log(p.stat().st_size or 1), math.log(b)))
+            if len(pts) >= 50:
+                mx = sum(x for x, _ in pts) / len(pts); my = sum(y for _, y in pts) / len(pts)
+                vx = sum((x - mx) ** 2 for x, _ in pts)
+                bb = sum((x - mx) * (y - my) for x, y in pts) / vx if vx else 0
+                self.fit = (my - bb * mx, bb)
+            self.fit_at = time.time()
+        p = self._src(name)
+        if not self.fit or not p:
+            return None
+        return round(math.exp(self.fit[0] + self.fit[1] * math.log(p.stat().st_size or 1)))
+
+    def scan(self):
+        lib, found, new = self.ctx.lib, set(), []
+        for root, _, files in os.walk(lib):
+            rel = os.path.relpath(root, lib)
+            fs = set(files)
+            for f in files:
+                if f.endswith(".olean") and f[:-6] + ".trace" in fs:
+                    name = (f[:-6] if rel == "." else f"{rel}/{f[:-6]}").replace(os.sep, ".")
+                    found.add(name)
+                    if name not in self.known:
+                        try:
+                            t = os.stat(os.path.join(root, f[:-6] + ".trace")).st_mtime
+                            new.append((t, name, os.stat(os.path.join(root, f)).st_size))
+                        except OSError:
+                            found.discard(name)
+        for gone in set(self.known) - found:  # removed (cleaned or being rebuilt)
+            del self.known[gone]
+        for t, name, size in sorted(new):
+            self.seq += 1
+            self.known[name] = (self.seq, t, size)
+        self.count = len(found)
+
+    def finished(self, since) -> list:
+        """[[module, .olean bytes, finish time]] after cursor `since` (a sequence number); since < 0: the last 2 min."""
+        if since is None:
+            return []
+        now = time.time()
+        sel = [(q, n, b, t) for n, (q, t, b) in self.known.items() if (q > since if since >= 0 else t >= now - 120)]
+        return [[n, b, round(t, 2)] for q, n, b, t in sorted(sel)[-3000:]]
+
+    def rate(self, running: bool, started):
+        """Modules per hour from finishes in the last 10 minutes (or since this session started, if later)."""
+        if not running or not self.known:
+            return None
+        now = time.time()
+        win = min(RATE_WINDOW, now - started) if started else RATE_WINDOW
+        if win < 60:
+            return None
+        n = sum(1 for _, t, _ in self.known.values() if t >= now - win)
+        return n / win * 3600 if n >= 3 else None
+
+    def get(self, since=None) -> dict:
         ctx = self.ctx
         with self.lock:
-            if time.time() - self.count_at > 1:      # cheap (0.04 s); the page rolls the counter up between readings
-                self.count, self.count_at = (count_compiled(ctx.lib) if ctx.lib.exists() else 0), time.time()
+            if time.time() - self.count_at > 1:      # the page rolls the counter up between readings
+                if ctx.lib.exists():
+                    self.scan()
+                self.count_at = time.time()
+            fin, cursor = self.finished(since), self.seq
         sup = supervisor(ctx)
         running = bool(sup) or bool(outside_build(ctx))
         paused = bool(sup) and is_paused(ctx)
@@ -1890,11 +2013,15 @@ class Live:
                         recent.append([m[1], parse_secs(m[2])])
         except OSError:
             pass
-        r = rate_per_hour(ctx)
-        return {"compiled": self.count, "running": running, "paused": paused,
+        with self.lock:
+            r = self.rate(running and not paused, started)
+        if r is None and running and not paused:
+            r = rate_per_hour(ctx)
+        return {"compiled": self.count, "running": running, "paused": paused, "cursor": cursor, "finished": fin,
                 "mode": "paused" if paused else stored_mode(ctx), "ours": bool(sup),
                 "started": iso(started) if started else None, "rate": round(r) if r else None,
-                "active": [{"name": m, "secs": s} for m, s in compiling_now(ctx)], "recent": recent[-5:]}
+                "active": [{"name": m, "secs": s, "bytes": self.predict(m)} for m, s in compiling_now(ctx)],
+                "recent": recent[-5:]}
 
     def build_times(self) -> dict:
         try:
@@ -1939,7 +2066,8 @@ def make_handler(ctx: Ctx, root: Path, live: Live):
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/live.json":
-                return self.send_json(live.get())
+                m = re.search(r"[?&]since=(-?\d+)", self.path)
+                return self.send_json(live.get(int(m[1]) if m else None))
             if path == "/times.json":
                 return self.send_json(live.build_times())
             return super().do_GET()
@@ -1983,6 +2111,7 @@ def cmd_page(ctx: Ctx, a):
             except Exception as e:         # keep serving
                 print(f"refresh failed: {e}", file=sys.stderr)
     threading.Thread(target=refresher, daemon=True).start()
+    setup_sweeper(ctx, threading.Event())   # also while only the page runs (e.g. a build started by an older version)
     print(f"serving {url} (this computer only; Ctrl-C to stop)")
     try:
         srv.serve_forever()
@@ -2019,6 +2148,7 @@ def main(argv=None):
     sub.add_parser("pause", parents=[hidden], help="freeze the build in place")
     sub.add_parser("stop", parents=[hidden], help="stop the build (resumable)")
     sub.add_parser("status", parents=[hidden], help="progress, running or not, speed")
+    sub.add_parser("sweep", parents=[hidden], help="delete scratch files of finished modules (frees disk)")
     r = sub.add_parser("record", parents=[hidden], help="write a build record to ~/.riemann-at-home/records/")
     r.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     u = sub.add_parser("submit", parents=[hidden], help="open / update this computer's pull request with the latest record")
@@ -2071,7 +2201,7 @@ def main(argv=None):
     try:
         ctx = Ctx(a)
         fn = {"setup": cmd_setup, "build": cmd_build, "pause": cmd_pause, "resume": cmd_resume, "stop": cmd_stop,
-              "status": cmd_status, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
+              "status": cmd_status, "sweep": cmd_sweep, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
               "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_autosubmit": cmd_autosubmit,
               "_autosubmit_loop": cmd_autosubmit_loop,
               "_run": cmd_run}[a.cmd]

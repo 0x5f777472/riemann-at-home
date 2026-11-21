@@ -21,8 +21,11 @@
   .v.y{color:#ffd23f}.v.g{color:#7dff95}.v.r{color:#ff6b6b}
   .line{padding:6px 9px 0;color:#b9d0ff}
   .mod{padding:1px 9px;color:#7dff95;font-family:"Courier New",monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:clip}
-  #mods{columns:2;column-gap:14px}
-  #mods .mod{display:flex;gap:8px;break-inside:avoid}
+  #mods{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(var(--rows,11),13px);grid-auto-flow:column;column-gap:14px}
+  #mods .mod{display:flex;gap:8px;transition:opacity .4s ease,transform .4s ease}
+  #mods .mod.in{opacity:0;transform:translateX(-10px)}
+  #mods .mod.out{opacity:0;transform:translateX(12px)}
+  .last{transition:opacity .25s ease}.last.fade{opacity:0}
   #mods .nm{flex:1;overflow:hidden;text-overflow:clip}
   #mods .t{color:#ffd23f}
   .last{float:right;color:#9fd8ae;font-size:10px;font-weight:normal;padding-right:9px}
@@ -48,11 +51,11 @@
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub"></div>
   <div class="nav" id="nav"></div>
-  <div class="panel blue"  style="left:22px;top:556px;width:300px;height:100px"><h3 id="h1"></h3><div id="p1"></div></div>
-  <div class="panel navy"  style="left:22px;top:666px;width:300px;height:76px"><h3 id="h3"></h3><div id="p3"></div></div>
+  <div class="panel blue"  style="left:22px;top:642px;width:300px;height:100px"><h3 id="h1"></h3><div id="p1"></div></div>
+  <div class="panel navy"  style="left:22px;top:556px;width:300px;height:76px"><h3 id="h3"></h3><div id="p3"></div></div>
   <div class="panel green" style="left:340px;top:556px;width:638px;height:186px;overflow:hidden"><h3 id="h2"></h3><div id="p2"></div></div>
   <div class="cap" id="cap"></div>
-  <div class="stat" id="stat"></div>
+  <div class="stat" id="stat" style="display:none"></div>
   <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
        border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
 
@@ -69,10 +72,18 @@ const T = DATA.terrain, N = T.n;
 const fmt = n => n.toLocaleString("en-US");
 const $ = id => document.getElementById(id);
 const DPR = Math.max(1, window.devicePixelRatio || 1);
-function ctx2d(id) {                       // draw at full screen resolution (Retina = 2x)
+const CTX = {};
+function ctx2d(id) {                       // draw at full screen resolution (Retina = 2x); sized once, never reset
+  if (CTX[id]) return CTX[id];
   const cv = $(id); cv.style.width = "1000px"; cv.style.height = "780px";
   cv.width = 1000 * DPR; cv.height = 780 * DPR;
-  const g = cv.getContext("2d"); g.scale(DPR, DPR); return g;
+  const g = cv.getContext("2d"); g.scale(DPR, DPR); return CTX[id] = g;
+}
+let OFF = null;                            // offscreen canvas for full terrain redraws, swapped in with one drawImage
+function offscreen() {
+  if (!OFF) { const cv = document.createElement("canvas"); cv.width = 1000 * DPR; cv.height = 780 * DPR;
+              OFF = cv.getContext("2d"); OFF.scale(DPR, DPR); }
+  OFF.clearRect(0, 0, 1000, 780); return OFF;
 }
 const kv = rows => `<div class="kv">${rows.map(([k, v, c]) => `<div class="k">${k}</div><div class="v ${c||""}">${v}</div>`).join("")}</div>`;
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -114,7 +125,7 @@ const names = active.map(i => null);   // names are filled from the module list 
   $("h2").textContent = "Compiling now";
   $("p2").innerHTML = `<div class="line">${active.length} modules in progress<span class="blink">_</span></div><div id="mods"></div>`;
   $("h3").textContent = "Progress";
-  $("p3").innerHTML = `<div class="line">Whole proof, compiled on this computer</div><div class="bar"><i style="width:${Math.max(0.3, p * 100).toFixed(2)}%"></i></div>` +
+  $("p3").innerHTML = `<div class="bar"><i style="width:${Math.max(0.3, p * 100).toFixed(2)}%"></i></div>` +
                       `<div class="pct">${(p * 100).toFixed(2)}% of ${fmt(N)} modules</div>`;
   $("stat").innerHTML = `<b>${fmt(T.local_compiled)}</b> of ${fmt(N)} modules compiled on this computer · Lean 4.33.1 · archive 9631b4f0…c7fc`;
   $("mods").innerHTML = (T.active_names || []).map(n => `<div class="mod" title="${n}">${libTag(n)}${short(n, 30)}</div>`).join("");
@@ -164,12 +175,15 @@ function stars() {
     g.fillStyle = `rgba(255,255,255,${a * a})`; g.fillRect(rnd() * 1000, rnd() * 780, rnd() < 0.08 ? 2 : 1, rnd() < 0.08 ? 2 : 1); }
 }
 
+const fail0 = v => v === 255;
 let HL = -1;                                // highlighted library (hovering its label), -1 = none
 const libEnd = k => k + 1 < T.libraries.length ? T.libraries[k + 1][1] : N;
 const libHue = k => hueOf((T.libraries[k][1] + libEnd(k)) / 2);   // the label's color
 const labelBoxes = [];                      // [library index, x0, y0, x1, y1] hover areas of the labels
+let TG = null;                              // the base terrain canvas (full redraws + spikes folded in one by one)
 function terrain() {
-  const g = ctx2d("terrain"); labelBoxes.length = 0;
+  TG = ctx2d("terrain");
+  const g = offscreen(); labelBoxes.length = 0;
   g.fillStyle = "rgba(40,40,70,.55)";
   g.beginPath(); g.moveTo(px(0,0), py(0)); g.lineTo(px(C,0), py(0)); g.lineTo(px(C,R), py(R)); g.lineTo(px(0,R), py(R)); g.closePath(); g.fill();
   // Each spike is a little lit bar: bright face, darker left side, pale top cap; deeper rows sink into
@@ -181,18 +195,18 @@ function terrain() {
       const col = r * C + c; let k = 0, slots = 0, i0 = -1;
       for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i < 0) continue; slots++; if (i0 < 0) i0 = i; if (heights[i]) k++; }
       if (i0 < 0) continue;
-      if (!k) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }
+      if (!k || (HL >= 0 && LIB[i0] !== HL)) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // hidden while another library is highlighted: plain floor
       const key = HL < 0 ? `${Math.round(hueOf(i0) / 5) * 5}` : LIB[i0] === HL ? `${Math.round(libHue(HL))}` : "f0";
       let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
       const x = px(c, r), y = py(r), h = k * LH;
       b.side.rect(x - w / 2, y - h, w * 0.45, h);
       b.face.rect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
-      if (k < slots) b.cap.rect(x - w / 2, y - h, w, 1.5);           // pale top only while the column is unfinished
+      // (stacked view: no pale top; it read as a stuck beacon)
     }
     if (STACK < 2) for (let c = 0; c < C; c++) for (let z = 0; z < STACK; z++) {
       const i = grid[(r * C + c) * STACK + z]; if (i < 0) continue;
       const v = heights[i];
-      if (!v) { if (z === 0) todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // still to do: a faint dot on the floor
+      if (!v || (HL >= 0 && LIB[i] !== HL && !fail0(v))) { if (z === 0) todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // still to do (or not highlighted): plain floor dot
       const fail = v === 255;
       const h = STACK > 1 ? LH - 1.2 : fail ? maxH : Math.max(3, v / maxVal * maxH);   // stacked: one equal block per module
       const key = fail ? "fail" : HL < 0 ? `${Math.round(hueOf(i) / 5) * 5}`
@@ -209,7 +223,7 @@ function terrain() {
       if (key === "fail") { g.fillStyle = "#fff"; g.shadowColor = "#f00"; g.shadowBlur = 8; g.fill(b.face); g.fill(b.side); g.shadowBlur = 0; continue; }
       const faded = key[0] === "f", hue = +key.replace("f", "");
       if (faded) {                                        // outside the highlighted library: dim grey
-        g.globalAlpha = 0.018; g.fillStyle = "#6b7080"; g.fill(b.face); g.fill(b.side); g.globalAlpha = 1; continue;
+        continue;                                         // (not drawn: thousands of faint greys piled up into dark streaks)
       }
       g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fill(b.side);
       g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fill(b.face);
@@ -239,22 +253,135 @@ function terrain() {
     labelBoxes.push([k, x + 2, py(0) + 16, tw]);           // origin + width of the slanted text
     lastX = x + tw * Math.cos(0.45) * 0.55;
   }
+  TG.save(); TG.setTransform(1, 0, 0, 1, 0, 0); TG.clearRect(0, 0, 1000 * DPR, 780 * DPR);   // swap in one step
+  TG.drawImage(g.canvas, 0, 0); TG.restore();
+}
+
+// One spike drawn on its own (a module that just finished): same look as terrain(), `f` = 0..1 of its height.
+function spike(g, i, v, f) {
+  const [c, r] = cell(i), depth = r / R, L = 60 - 26 * depth, w = Math.max(1, sx * 0.85);
+  const h = Math.max(3, v / maxVal * maxH) * f, x = px(c, r), y = py(r);
+  if (h <= 0.2) return;
+  if (HL >= 0 && LIB[i] !== HL) return;          // outside the highlighted library: not drawn
+  const hue = HL >= 0 ? Math.round(libHue(HL)) : Math.round(hueOf(i) / 5) * 5;
+  g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fillRect(x - w / 2, y - h, w * 0.45, h);
+  g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fillRect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
+  if (f >= 1) { g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fillRect(x - w / 2, y - h, w, 1.5); }   // pale top only once fully grown
+}
+// Modules that just finished: each grows in on the overlay (~600 ms), then is painted into the base canvas.
+const GROW_MS = 1000, growing = [];            // {i, v, at}
+let stackDirty = 0;
+const FINV = new Map();                        // finished module -> its spike value (so its beacon can take that height)
+const PENDING = new Map();                    // finished module -> {v, at}: switches to its real spike on the next beat
+function addFinished(i, v, at) {
+  if (i === undefined || heights[i] || PENDING.has(i) || FADE.some(f => f.i === i)) return;
+  const t = performance.now();
+  PENDING.set(i, {v, at: t + (CYCLE - t % CYCLE)});        // keep filling until the current cycle ends
+}
+let GROWN = 0;
+function foldIn(s) {
+  heights[s.i] = s.v; document.body.dataset.grown = ++GROWN;     // (count of spikes grown in, for headless checks)
+  if (STACK > 1) { if (TG) addBlock(TG, s.i); return; }   // stacked view: one new block on top of its column
+  if (TG) spike(TG, s.i, s.v, 1);
+}
+function addBlock(G, i) {                     // stacked view: grow i's column by one block, in place
+  const [c, r] = cell(i), col = r * C + c; let k = 0, slots = 0;
+  for (let z = 0; z < STACK; z++) { const j = grid[col * STACK + z]; if (j < 0) continue; slots++; if (heights[j]) k++; }
+  if (!k) return;
+  const depth = r / R, L = 60 - 26 * depth, w = Math.max(1, sx * 0.85), x = px(c, r), y = py(r);
+  const top = y - k * LH, bot = y - (k - 1) * LH;
+  const hue = HL >= 0 ? Math.round(libHue(HL)) : Math.round(hueOf(grid[col * STACK]) / 5) * 5;
+  G.fillStyle = `hsl(${hue},95%,${L - 24}%)`; G.fillRect(x - w / 2, top, w * 0.45, bot - top + 1.6);
+  G.fillStyle = `hsl(${hue},100%,${L}%)`;     G.fillRect(x - w / 2 + w * 0.45, top, w * 0.55, bot - top + 1.6);
+  for (let z = 0; z < STACK; z++) { const j = grid[col * STACK + z]; if (j >= 0 && heights[j]) LEVEL[j] = Math.min(LEVEL[j] < 0 ? 99 : LEVEL[j], 99); }
 }
 
 // modules compiling on this computer right now: steady beacons that pulse in place (this-computer view only)
-let g = null;
+let g = null, BT = 0;
+let TYPICAL_H = 44, typAt = -Infinity;                 // median height of compiled spikes (refreshed every few seconds)
+function typicalHeight() {
+  const v = []; for (let i = 0; i < heights.length && v.length < 4000; i += 7) if (heights[i] && heights[i] < 255) v.push(heights[i]);
+  if (v.length) { v.sort((a, b) => a - b); TYPICAL_H = Math.max(3, v[v.length >> 1] / maxVal * maxH); }
+}
+function doneBelow(i) {                       // stacked view: the next empty block of i's column = where its block will land
+  if (STACK < 2) return 0;
+  const [c, r] = cell(i), col = r * C + c; let k = 0;
+  for (let z = 0; z < STACK; z++) { const j = grid[col * STACK + z]; if (j >= 0 && heights[j]) k++; }
+  return k;
+}
+const BEAM = new Map(), GONE = new Map(), JOIN = new Map();   // GONE: module -> time it finished                       // module -> beacon opacity 0..1
+// Demo (page only, the real build is untouched): #demo=Development simulates modules compiling in that library.
+const DEMO = (() => {
+  const m = location.hash.match(/demo=([A-Za-z0-9_]+)/); if (!m) return null;
+  const k = T.libraries.findIndex(l => l[0] === m[1]); if (k < 0) return null;
+  const lo = T.libraries[k][1], hi = libEnd(k), on = new Map();
+  setInterval(() => {
+    const t = performance.now();
+    for (const [i, end] of on) if (t >= end) { on.delete(i); addFinished(i, PRED.get(i), t); }
+    while (on.size < 6) {
+      const i = lo + Math.floor(Math.random() * (hi - lo));
+      if (heights[i] || on.has(i)) continue;
+      PRED.set(i, 60 + Math.floor(Math.random() * 150)); on.set(i, t + 3000 + Math.random() * 6000);
+      if (!active.includes(i)) active.push(i);
+    }
+  }, 250);
+  return on;
+})();
+const PRED = new Map();   // compiling module -> predicted spike value (from its source size)
+const FADE = [], CYCLE = 1000, MORPH_MS = 700, HOLD_MS = 0, FADE_MS = 5000;     // white grows, white to dark, dark brightens    // fill cycle for compiling modules; white-to-color fade when done
 function overlay(t) {
   g = g || ctx2d("overlay");
+  if (t - typAt > 5000) { typAt = t; typicalHeight(); }
   g.clearRect(0, 0, 1000, 780);
-  if (VIEW === "local" && HL < 0) active.forEach((i, k) => {     // beacons hide while a library is highlighted
-    const [c, r] = cell(i), x = px(c, r), y = py(r) - Math.max(0, LEVEL[i]) * LH, phase = 0.5 + 0.5 * Math.sin(t / 200 + k * 1.7);
-    g.strokeStyle = `rgba(255,255,255,${0.15 + 0.85 * phase})`; g.lineWidth = 1.5;
-    if (STACK > 1) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - LH); g.stroke(); }   // same thin pulsing line, one slot tall
-    else { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 44); g.stroke(); }
-  });
+  const w = Math.max(1.5, sx * 0.85), now = performance.now();
+  const shape = (i, k) => {                    // [x, bottom y, height] of i's spike (plain) or of its block slot (stacked)
+    const [c, r] = cell(i), x = px(c, r);
+    return STACK > 1 ? [x, py(r) - (k - 1) * LH, LH] : [x, py(r), null];
+  };
+  // on the beat: finished modules become their real spike (white, fading to color)
+  for (const [i, pd] of PENDING) if (now >= pd.at) {
+    PENDING.delete(i);
+    FADE.push({i, v: pd.v, at: now, k: STACK > 1 ? doneBelow(i) + 1 : 0, from: PRED.has(i) ? Math.max(3, PRED.get(i) / maxVal * maxH) : TYPICAL_H, folded: false});
+    active = active.filter(a => a !== i); BEAM.delete(i); JOIN.delete(i);
+  }
+  // finished: a pale version of its color grows from the floor to the real height, then fades into the final color
+  for (let n = FADE.length - 1; n >= 0; n--) {
+    const f = FADE[n], el = now - f.at;
+    if (el >= MORPH_MS + HOLD_MS + FADE_MS) { FADE.splice(n, 1); continue; }
+    if (HL >= 0 && LIB[f.i] !== HL) { if (!f.folded && el >= MORPH_MS + HOLD_MS) { f.folded = true; foldIn({i: f.i, v: f.v}); } continue; }
+    const [x, yb, hs] = shape(f.i, f.k), real = hs ?? Math.max(3, f.v / maxVal * maxH);
+    const [c, r] = cell(f.i), hue = Math.round(hueOf(STACK > 1 ? grid[(r * C + c) * STACK] : f.i) / 5) * 5;
+    const pale = a => `rgba(255,255,255,${0.9 * a})`;   // white fading into its color   // finish color: a much darker version, brightening into its own
+    if (el < MORPH_MS + HOLD_MS) {                                // done: white grows up to its final height (same rise as
+      const m = Math.min(1, el / MORPH_MS), h = real * (1 - Math.pow(1 - m, 2));   // the compiling fills), then sits a beat
+      if (el < MORPH_MS) { g.fillStyle = "rgba(255,255,255,0.9)"; g.fillRect(x - w / 2, yb - h, w, h); continue; }  // white grows up
+      continue;
+    }
+    if (!f.folded) { f.folded = true; foldIn({i: f.i, v: f.v}); }      // final colored spike underneath
+    const q = (el - MORPH_MS - HOLD_MS) / FADE_MS;
+    g.fillStyle = pale(1 - q * q * (3 - 2 * q)); g.fillRect(x - w / 2, yb - real, w, real);
+  }
+  // compiling: a white fill rises up the spike's shape, once a second, all in step; new ones join at the next cycle
+  const dt = BT ? Math.min(0.1, (t - BT) / 1000) : 0; BT = t;
+  const nextStart = t + (CYCLE - t % CYCLE), f = (t % CYCLE) / CYCLE;
+  if (VIEW === "local") for (const i of [...active, ...PENDING.keys()]) if (!BEAM.has(i)) { BEAM.set(i, 0); JOIN.set(i, nextStart); }
+  const want = new Set(VIEW === "local" && HL < 0 ? [...active, ...PENDING.keys()] : []);
+  for (const [i, a0] of BEAM) {
+    const waiting = JOIN.has(i) && t < JOIN.get(i);
+    const a = Math.max(0, Math.min(1, a0 + (want.has(i) ? (waiting ? 0 : dt / 0.6) : -dt / 0.4)));
+    if (a <= 0 && !want.has(i)) { BEAM.delete(i); JOIN.delete(i); continue; }
+    BEAM.set(i, a); if (waiting) continue;
+    const [x, yb, hs] = shape(i, doneBelow(i) + 1), h = hs ?? (PRED.has(i) ? Math.max(3, PRED.get(i) / maxVal * maxH) : TYPICAL_H);
+    g.fillStyle = `rgba(255,255,255,${0.16 * a})`; g.fillRect(x - w / 2, yb - h, w, h);          // the faint outline of its spot
+    const RISE = 0.7, up = Math.min(1, f / RISE);                                           // rise for 70% of the beat,
+    const fh = h * (1 - Math.pow(1 - up, 2));                                                  // then fade out before the
+    const fade = f < RISE ? 1 : 1 - (f - RISE) / (1 - RISE);                                    // next rise starts
+    g.fillStyle = `rgba(255,255,255,${0.9 * a * fade})`; g.fillRect(x - w / 2, yb - fh, w, fh);
+  }
   requestAnimationFrame(overlay);
 }
 
+{ const m = location.hash.match(/hl=([A-Za-z0-9_]+)/); if (m) HL = T.libraries.findIndex(l => l[0] === m[1]); }
 settle(); stars(); terrain(); requestAnimationFrame(overlay);
 
 // ---------- hover: module number and name ----------
@@ -317,46 +444,158 @@ var TIMES = null;
 const LIVE = true;
 let L = null, Lat = 0, IDX = null, shownMode = null;
 const SPEEDS = [["full", "Full"], ["gentle", "Gentle"], ["paused", "Pause"]];
+const ETA = {mode: null, at: 0, rate: null, eta: "–"};
+let SHOWN = null, SHOWN_F = null, lastFrame = 0;   // counter runs at the measured build speed, corrected by real counts
+function tickCount(t) {
+  if (L) {
+    const dt = lastFrame ? (t - lastFrame) / 1000 : 0; lastFrame = t;
+    const running = L.running && !L.paused, perSec = running && L.rate ? L.rate / 3600 : 0;
+    if (SHOWN_F === null || L.compiled < SHOWN_F - 25) SHOWN_F = L.compiled;      // first reading / big correction
+    SHOWN_F += perSec * dt;                                                         // steady pace between readings
+    if (SHOWN_F < L.compiled) SHOWN_F += (L.compiled - SHOWN_F) * Math.min(1, dt * 1.5);   // catch up smoothly
+    SHOWN_F = Math.min(SHOWN_F, L.compiled + Math.max(3, perSec * 20));            // never run far ahead of reality
+    if (!running) SHOWN_F = Math.max(Math.min(SHOWN_F, L.compiled), SHOWN ?? 0);
+    const n = Math.max(SHOWN ?? 0, Math.floor(SHOWN_F));                           // never backwards
+    if (n !== SHOWN) { SHOWN = n; renderCount(); }
+    const bi = document.querySelector("#p3 .bar i");                              // bar slides continuously
+    if (bi) bi.style.width = `${Math.max(0.3, Math.max(SHOWN, SHOWN_F) / N * 100).toFixed(3)}%`;
+  }
+  requestAnimationFrame(tickCount);
+}
+requestAnimationFrame(tickCount);
+function renderCount() {                // update just the numbers (cheap), not the whole panel
+  const done = SHOWN, p = done / N, el = document.getElementById("cnum");
+  if (el) el.textContent = `${fmt(done)} of ${fmt(N)}`;
+  const pc = document.getElementById("cpct"); if (pc) pc.textContent = `${(p * 100).toFixed(2)}% of ${fmt(N)} modules`;
+  const sb = document.getElementById("cstat"); if (sb) sb.textContent = fmt(done);
+}
+// The panels are built once; after that only text and classes change (no innerHTML rebuilds, nothing jumps).
+const set = (id, v) => { const e = $(id); if (e && e.textContent !== v) e.textContent = v; };
+$("p1").innerHTML = `<div class="kv"><div class="k">Compiled</div><div class="v y" id="cnum">${fmt(T.local_compiled)} of ${fmt(N)}</div>` +
+  `<div class="k">Running for</div><div class="v" id="vrun">–</div><div class="k">Speed</div><div class="v" id="vspd">measuring…</div>` +
+  `<div class="k">Finishes</div><div class="v y" id="veta">–</div></div>`;
+$("p2").innerHTML = `<div class="line"><span id="nact"></span><span class="blink" id="cur">_</span><span class="last" id="last"></span></div><div id="mods"></div>`;
+$("p3").innerHTML = `<div class="bar"><i style="width:${Math.max(0.3, T.local_compiled / N * 100).toFixed(2)}%"></i></div>` +
+                    `<div class="pct" id="cpct">${(T.local_compiled / N * 100).toFixed(2)}% of ${fmt(N)} modules</div>`;
+$("stat").innerHTML = `<b id="cstat">${fmt(T.local_compiled)}</b> of ${fmt(N)} modules compiled on this computer · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+
+// Compiling now: one row per module in a fixed slot for its whole compile (no re-sorting). A finished module
+// slides out, a newly started one fades into the free slot. Timers tick in place.
+// Rows per column: room for this computer's cores + 4 (lake runs one module per core; +4 covers the moment a
+// finished row is still sliding out while new ones start).
+const PER = Math.ceil(((navigator.hardwareConcurrency || 18) + 4) / 2);
+$("mods").style.setProperty("--rows", PER);
+const ROWS = new Map(), SLOTS = [];          // name -> {el, t0 (ms, when it started), slot}; slot -> name
+// Readings arrive once a second; to keep the list calm, a reading's arrivals and departures are spread over the
+// next second instead of landing together, and each timer ticks on its own beat (ps gives whole seconds, so the
+// true start is somewhere in that second: a fixed per-module fraction of it keeps timers from flipping in unison).
+const STARTING = new Set();
+const phase = name => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 1000) / 1000; };
+function addRow(name, secs) {
+  const box = $("mods"), t0 = Date.now() - (secs + phase(name)) * 1000;
+  let slot = SLOTS.findIndex(x => x === null || x === undefined);
+  if (slot < 0) slot = SLOTS.length;
+  SLOTS[slot] = name;
+  const el = document.createElement("div");
+  el.className = "mod in"; el.title = name;
+  el.style.gridColumn = String(1 + Math.floor(slot / PER)); el.style.gridRow = String(1 + slot % PER);
+  el.innerHTML = `<span class="nm">${libTag(name)}${short(name, 26)}</span><span class="t"></span>`;
+  box.appendChild(el);
+  const r = {el, t0, slot, t: el.querySelector(".t")}; ROWS.set(name, r);
+  r.t.textContent = dur((Date.now() - t0) / 1000);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("in")));
+}
+function syncMods() {
+  const now = Date.now(), live = new Map(L.active.map(a => [a.name, a.secs]));
+  const gone = [...ROWS].filter(([name, row]) => !live.has(name) && !row.out);
+  gone.forEach(([name, row], k) => {
+    row.out = true;
+    setTimeout(() => {
+      row.el.classList.add("out");
+      setTimeout(() => { row.el.remove(); ROWS.delete(name); if (SLOTS[row.slot] === name) SLOTS[row.slot] = null; }, 420);
+    }, k * 900 / gone.length);
+  });
+  const fresh = [];
+  for (const [name, secs] of live) {
+    const row = ROWS.get(name);
+    if (row) { const t0 = now - (secs + phase(name)) * 1000; if (Math.abs(row.t0 - t0) > 2500) row.t0 = t0; continue; }
+    if (!STARTING.has(name)) fresh.push([name, secs]);
+  }
+  fresh.forEach(([name, secs], k) => {
+    const wait = k * 900 / fresh.length; STARTING.add(name);
+    setTimeout(() => { STARTING.delete(name); if (L.active.some(a => a.name === name) && !ROWS.has(name)) addRow(name, secs + wait / 1000); }, wait);
+  });
+}
+let frozenAt = null;
+function tickTimers() {                      // every 200 ms: only the timer text of each row
+  if (!L) return;
+  const stop = L.paused || !L.running, now = stop ? (frozenAt ??= Date.now()) : (frozenAt = null, Date.now());
+  for (const r of ROWS.values()) if (!r.out) { const v = dur((now - r.t0) / 1000); if (r.t.textContent !== v) r.t.textContent = v; }
+  const st = L.started ? new Date(L.started) : null;
+  set("vrun", !L.running ? "not running" : st ? dur((Date.now() - st) / 1000) : "–");
+}
+setInterval(tickTimers, 200);
+let lastShown = "";
 function renderLive() {
   if (!L) return;
-  const age = L.paused || !L.running ? 0 : (Date.now() - Lat) / 1000;   // timers tick between readings
-  const done = L.compiled, p = done / N, st = L.started ? new Date(L.started) : null;
   if (shownMode !== L.mode) {
     shownMode = L.mode;
     $("h1").innerHTML = `This computer's build<span class="speed">` +
       SPEEDS.map(([m, l]) => `<a data-m="${m}" class="${L.mode === m ? "on" : ""}">${l}</a>`).join("") + `</span>`;
   }
-  $("p1").innerHTML = kv([["Compiled", `${fmt(done)} of ${fmt(N)}`, "y"],
-    ["Running for", !L.running ? "not running" : st ? dur((Date.now() - st) / 1000) : "–"],
-    ["Speed", L.paused ? "paused" : !L.running ? "–" : L.rate ? `${fmt(L.rate)} modules/hr` : "measuring…"],
-    ["Finishes", L.rate && L.running && !L.paused
-       ? new Date(Date.now() + (N - done) / L.rate * 3.6e6).toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit"})
-       : "–", "y"]]);
-  const last = L.recent[L.recent.length - 1];
-  $("p2").innerHTML = `<div class="line">${L.paused ? `paused · ${L.active.length} modules waiting` : !L.running ? "build not running"
-      : `${L.active.length} modules in progress<span class="blink">_</span>`}` +
-    (last ? `<span class="last">just finished: ${libTag(last[0])}${short(last[0], 26)} · ${dur(last[1])}</span>` : "") + `</div>` +
-    `<div id="mods">${L.active.map(a => `<div class="mod" title="${a.name}"><span class="nm">${libTag(a.name)}${short(a.name, 26)}</span><span class="t">${dur(a.secs + age)}</span></div>`).join("")}</div>`;
-  $("p3").innerHTML = `<div class="line">Whole proof, compiled on this computer</div><div class="bar"><i style="width:${Math.max(0.3, p * 100).toFixed(2)}%"></i></div>` +
-                      `<div class="pct">${(p * 100).toFixed(2)}% of ${fmt(N)} modules</div>`;
-  $("stat").innerHTML = `<b>${fmt(done)}</b> of ${fmt(N)} modules compiled on this computer · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+  const done = SHOWN ?? L.compiled, run = L.running && !L.paused;
+  // speed + finish time change only every 5 minutes, or right away when the mode (Full / Gentle / Pause) changes
+  const modeNow = L.paused ? "paused" : !L.running ? "off" : L.mode;
+  if (modeNow !== ETA.mode || Date.now() - ETA.at > 300000 || (ETA.rate == null && L.rate)) {
+    ETA.mode = modeNow; ETA.at = Date.now(); ETA.rate = L.rate;
+    ETA.eta = L.rate && run ? new Date(Date.now() + (N - done) / L.rate * 3.6e6)
+      .toLocaleString("en-US", {weekday: "short", hour: "numeric", minute: "2-digit"}) : "–";
+  }
+  set("vspd", L.paused ? "paused" : !L.running ? "–" : ETA.rate ? `${fmt(ETA.rate)} modules/hr` : "measuring…");
+  set("veta", ETA.eta);
+  set("nact", L.paused ? `paused · ${L.active.length} modules waiting` : !L.running ? "build not running"
+                       : `${L.active.length} modules in progress`);
+  $("cur").style.display = run ? "" : "none";
+  syncMods(); tickTimers();
+  const last = L.recent[L.recent.length - 1], key = last ? last[0] + "|" + last[1] : "";
+  if (key !== lastShown) {                   // "just finished": cross-fade to the new one
+    lastShown = key; const el = $("last");
+    el.classList.add("fade");
+    setTimeout(() => { el.innerHTML = last ? `just finished: ${libTag(last[0])}${short(last[0], 26)} · ${dur(last[1])}` : "";
+                       el.classList.remove("fade"); }, 250);
+  }
 }
+const sizeToV = b => /height=flat/.test(location.hash) ? 254       // same log scale as data.json (1 kB .. 50 MB)
+  : Math.max(1, Math.min(254, 1 + Math.round(254 * (Math.log(Math.max(b, 1e3)) - Math.log(1e3)) / (Math.log(5e7) - Math.log(1e3)))));
+let CURSOR = -1, polling = false;
 async function poll() {
+  if (polling) return; polling = true;
   try {
-    const r = await fetch("live.json");
+    const r = await fetch(`live.json?since=${CURSOR}`);
     if (!r.ok) return;
-    L = await r.json(); Lat = Date.now();
-    if (IDX) { active = L.active.map(a => IDX.get(a.name)).filter(i => i !== undefined); settle(); }
+    const d = await r.json(); L = d; Lat = Date.now();
+    if (IDX) {
+      for (const a of L.active) if (a.bytes && IDX.has(a.name)) PRED.set(IDX.get(a.name), sizeToV(a.bytes));
+      active = L.active.map(a => IDX.get(a.name)).filter(i => i !== undefined); settle();
+      const fin = d.finished || [], base = performance.now();
+      fin.forEach(([name, bytes], k) =>          // spread a poll's finishes over the next second: one by one
+        addFinished(IDX.get(name), sizeToV(bytes), base + (fin.length > 1 ? k * 900 / fin.length : 0)));
+      active = active.filter(i => !heights[i] && !growing.some(s => s.i === i));
+      if (DEMO) active = active.concat([...DEMO.keys()]);
+      CURSOR = d.cursor;
+    }
     renderLive();
-  } catch (e) {}
+  } catch (e) {} finally { polling = false; }
 }
-async function refreshTerrain() {     // new spikes: redraw the field when data.json is regenerated (every minute)
+async function refreshTerrain() {     // full redraw from data.json (every minute): puts every spike in proper depth order
   try {
     const d = await (await fetch("data.json?" + Date.now())).json();
     if (d.terrain.generated !== T.generated) {
       Object.assign(T, d.terrain);
-      heights = b64(T.local_b64);
-      if (/height=flat/.test(location.hash)) heights = heights.map(v => v ? 254 : 0);
+      const fresh = b64(T.local_b64);
+      for (let i = 0; i < N; i++) if (!fresh[i] && heights[i]) fresh[i] = heights[i];   // keep spikes added since
+      heights = /height=flat/.test(location.hash) ? fresh.map(v => v ? 254 : 0) : fresh;
+      for (const s of growing) heights[s.i] = 0;                                        // still growing: not yet
       settle(); terrain();
     }
     const t = await fetch("times.json"); if (t.ok) TIMES = await t.json();
@@ -370,10 +609,10 @@ if (LIVE) {
     try {
       const r = await fetch("mode", {method: "POST", headers: {"Content-Type": "application/json", "X-Riemann-At-Home": "1"},
                                      body: JSON.stringify({mode: m})});
-      if (r.ok) { L = await r.json(); Lat = Date.now(); renderLive(); }
+      if (r.ok) { const d = await r.json(); d.finished = []; d.cursor = CURSOR; L = d; Lat = Date.now(); renderLive(); }
     } catch (e) {}
   });
-  poll(); setInterval(poll, 2000); setInterval(renderLive, 1000);
+  setInterval(poll, 1000);
   refreshTerrain(); setInterval(refreshTerrain, 60000);
 }
 </script></body></html>

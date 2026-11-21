@@ -818,14 +818,18 @@ def cmd_poll(a):
     published = False
     h = content_hash(data)
     last = st.data.get("last_publish")
-    if h == st.data.get("published_hash"):
+    on_disk = repo / "docs" / "data.json"                  # what the site actually serves
+    try: disk_h = content_hash(json.loads(on_disk.read_text()))
+    except (OSError, ValueError): disk_h = None
+    if h == st.data.get("published_hash") and h == disk_h:
         print("data.json: unchanged")
     elif last and now - parse_ts(last) < PUBLISH_EVERY:
         print(f"data.json: changed, publish deferred (last publish {last}, at most every {PUBLISH_EVERY.total_seconds() / 60:g} min)")
     else:
-        write_json_backed_up(repo / "data.json", data, backup=False)   # git keeps history
-        shutil.copyfile(MODULES_TXT, repo / "modules.txt")             # CONTRACT: published next to index.html
-        src.commit_files(["data.json", "modules.txt"], f"data.json: {data['summary']['people']} people")
+        site = repo / "docs"                                           # GitHub Pages serves main:/docs
+        write_json_backed_up(site / "data.json", data, backup=False)   # git keeps history
+        shutil.copyfile(MODULES_TXT, site / "modules.txt")             # CONTRACT: published next to index.html
+        src.commit_files(["docs/data.json", "docs/modules.txt"], f"data.json: {data['summary']['people']} people")
         st.data["last_publish"], st.data["published_hash"] = now.strftime("%Y-%m-%dT%H:%M:%SZ"), h
         print(f"data.json: published {data['summary']}; running {len(data['running'])}; signatures {len(data['signatures'])}")
         published = True
