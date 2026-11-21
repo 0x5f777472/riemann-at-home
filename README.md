@@ -20,7 +20,7 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 
 ## Join by hand
 
-Needs macOS or Linux, Python 3, git, about 150 GB free for the whole proof (less is fine: the build stops by itself at 20 GB free, so your
+Needs macOS or Linux, Python 3, git, roughly 160 GB free for the whole proof (our estimate from builds so far; nobody has measured a finished build yet) (less is fine: the build stops by itself at 20 GB free, so your
 computer always keeps room, and every module you built still counts).
 
 1. **GitHub CLI.** Install `gh` (macOS: `brew install gh`) and log in yourself: `gh auth login`.

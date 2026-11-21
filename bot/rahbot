@@ -1,7 +1,7 @@
 #!/usr/bin/env -S python3 -I
 """rahbot: the Riemann@home v1 bot. Checks volunteers' build records and keeps data.json.
 
-Spec: ../CONTRACT.md (formats + acceptance rules). Python 3 stdlib only; run with `python3 -I`.
+Spec: ../../shardcheck/CONTRACT.md (formats + acceptance rules). Python 3 stdlib only; run with `python3 -I`.
 One PR per computer (build): it adds submissions/<login>/<build_id>.json and the volunteer's tool overwrites that
 file on the same branch every ~10 min. The bot checks each new version against that build's last accepted version,
 shows accepted versions of open PRs in data.json without merging, and merges only when the accepted version is whole or final
@@ -70,7 +70,7 @@ PATH_RE = re.compile(r"^submissions/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([0-9a-f
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
-# Public full checks of the whole proof, as each person reported it.
+# Public full checks of the whole proof, as each person reported it (copied from shardcheck/ui/riemann-at-home.html).
 VALIDATED = [
     {"who": "Andrew Sutherland (MIT)", "what": "full build, 175,187 modules, 0 errors; leanchecker, nanoda, lean4lean and con-leche all accept", "url": "https://math.mit.edu/~drew/grh"},
     {"who": "Simon DeDeo", "what": "native kernel replay of the whole proof (3 h 22 min)", "url": "https://github.com/leecrossley/riemann-rev"},

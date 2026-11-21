@@ -3,3 +3,8 @@ bot/state/
 bot/repo/
 .DS_Store
 docs/*.prev.*
+bot/tests/out/*
+!bot/tests/out/.gitkeep
+__pycache__/
+cli/tmp/
+bot/sample-data.json*

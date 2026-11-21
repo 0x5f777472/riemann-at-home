@@ -53,7 +53,7 @@ NAME_NOTICE = ("This hides your username on the Riemann@home page. "
 PAGE_PORT = 8642
 SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
 MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "20"))          # stop the build below this much free disk
-WHOLE_BUILD_GB = 150                                                   # plan for this much free for a whole build
+WHOLE_BUILD_GB = 160                                                   # plan for this much free for a whole build
 DISK_CHECK_SECONDS = float(os.environ.get("RAH_DISK_CHECK_SECONDS", "30"))
 AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # default; `submit --interval` overrides
 MIN_INTERVAL = 30                 # shortest auto-submit interval (seconds)
@@ -682,7 +682,7 @@ def disk_heads_up(ctx: Ctx) -> None:
         folder = folder.parent
     free = shutil.disk_usage(folder).free / 1e9
     print(f"Heads up: building the whole proof takes about 2 days on a fast computer (a week or more on a laptop) and "
-          f"needs about {WHOLE_BUILD_GB} GB of free disk. This computer has {free:.0f} GB free.")
+          f"needs roughly {WHOLE_BUILD_GB} GB of free disk (estimated from builds so far). This computer has {free:.0f} GB free.")
     if free < WHOLE_BUILD_GB:
         print(f"That's not enough for the whole proof, and that's fine: the build stops by itself when "
               f"{MIN_FREE_GB:g} GB are left, so your computer always keeps room, and every module you built still "

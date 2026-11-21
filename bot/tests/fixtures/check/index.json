@@ -1,0 +1,188 @@
+{
+ "alice1": {
+  "file": "tests/fixtures/check/versions/alice1.json",
+  "path": "submissions/alice/7eec4904a145d203.json"
+ },
+ "alice2": {
+  "file": "tests/fixtures/check/versions/alice2.json",
+  "path": "submissions/alice/7eec4904a145d203.json"
+ },
+ "alice3_shrink": {
+  "file": "tests/fixtures/check/versions/alice3_shrink.json",
+  "path": "submissions/alice/7eec4904a145d203.json"
+ },
+ "alice4_shrink": {
+  "file": "tests/fixtures/check/versions/alice4_shrink.json",
+  "path": "submissions/alice/7eec4904a145d203.json"
+ },
+ "aliceB1": {
+  "file": "tests/fixtures/check/versions/aliceB1.json",
+  "path": "submissions/alice/2e90ccec795d2f5b.json"
+ },
+ "aliceB2": {
+  "file": "tests/fixtures/check/versions/aliceB2.json",
+  "path": "submissions/alice/2e90ccec795d2f5b.json"
+ },
+ "aliceB_shrink": {
+  "file": "tests/fixtures/check/versions/aliceB_shrink.json",
+  "path": "submissions/alice/2e90ccec795d2f5b.json"
+ },
+ "bob": {
+  "file": "tests/fixtures/check/versions/bob.json",
+  "path": "submissions/bob/81b637d8fcd2c6da.json"
+ },
+ "bob_final": {
+  "file": "tests/fixtures/check/versions/bob_final.json",
+  "path": "submissions/bob/81b637d8fcd2c6da.json"
+ },
+ "bob_after_final": {
+  "file": "tests/fixtures/check/versions/bob_after_final.json",
+  "path": "submissions/bob/81b637d8fcd2c6da.json"
+ },
+ "carol_whole": {
+  "file": "tests/fixtures/check/versions/carol_whole.json",
+  "path": "submissions/carol/4c26d9074c27d89e.json"
+ },
+ "dave_fast": {
+  "file": "tests/fixtures/check/versions/dave_fast.json",
+  "path": "submissions/dave/61ea0803f8853523.json"
+ },
+ "eve_too_fast": {
+  "file": "tests/fixtures/check/versions/eve_too_fast.json",
+  "path": "submissions/eve/85262adf74518bbb.json"
+ },
+ "erin": {
+  "file": "tests/fixtures/check/versions/erin.json",
+  "path": "submissions/erin/7cbccb0c4caadf9f.json"
+ },
+ "wrong_archive": {
+  "file": "tests/fixtures/check/versions/wrong_archive.json",
+  "path": "submissions/frank/77646f5a4f316663.json"
+ },
+ "bad_count": {
+  "file": "tests/fixtures/check/versions/bad_count.json",
+  "path": "submissions/grace/e010fd1ce1acc173.json"
+ },
+ "whole_no_axioms": {
+  "file": "tests/fixtures/check/versions/whole_no_axioms.json",
+  "path": "submissions/heidi/05a331a7f4f1929f.json"
+ },
+ "whole_partial": {
+  "file": "tests/fixtures/check/versions/whole_partial.json",
+  "path": "submissions/ivan/cd0b9452fc376fc4.json"
+ },
+ "bad_digest": {
+  "file": "tests/fixtures/check/versions/bad_digest.json",
+  "path": "submissions/judy/71db428976f15f4f.json"
+ },
+ "dn_ok": {
+  "file": "tests/fixtures/check/versions/dn_ok.json",
+  "path": "submissions/ada/96c5f1929a5e9960.json"
+ },
+ "dn_own_login": {
+  "file": "tests/fixtures/check/versions/dn_own_login.json",
+  "path": "submissions/alice/70b2ccc9bc127818.json"
+ },
+ "dn_is_login": {
+  "file": "tests/fixtures/check/versions/dn_is_login.json",
+  "path": "submissions/x1/652cbc982fcd5968.json"
+ },
+ "dn_is_login2": {
+  "file": "tests/fixtures/check/versions/dn_is_login2.json",
+  "path": "submissions/x1/652cbc982fcd5968.json"
+ },
+ "dn_too_long": {
+  "file": "tests/fixtures/check/versions/dn_too_long.json",
+  "path": "submissions/x2/6b3d3263b1abfa35.json"
+ },
+ "dn_control": {
+  "file": "tests/fixtures/check/versions/dn_control.json",
+  "path": "submissions/x3/cbb80c6d6bc46d82.json"
+ },
+ "dn_and_anon": {
+  "file": "tests/fixtures/check/versions/dn_and_anon.json",
+  "path": "submissions/x4/560bc9d5aaf22417.json"
+ },
+ "dn_nfkc": {
+  "file": "tests/fixtures/check/versions/dn_nfkc.json",
+  "path": "submissions/x5/1c1ae9ae616e1910.json"
+ },
+ "dn_padded": {
+  "file": "tests/fixtures/check/versions/dn_padded.json",
+  "path": "submissions/x6/719440b94d2a4154.json"
+ },
+ "dn_blank": {
+  "file": "tests/fixtures/check/versions/dn_blank.json",
+  "path": "submissions/x7/eb1bdd7c83c2072b.json"
+ },
+ "anon_ok": {
+  "file": "tests/fixtures/check/versions/anon_ok.json",
+  "path": "submissions/anon/acf710a2364372be.json"
+ },
+ "zed_is_carol": {
+  "file": "tests/fixtures/check/versions/zed_is_carol.json",
+  "path": "submissions/zed/ae8f5080a348fbfe.json"
+ },
+ "dn_fake_anon": {
+  "file": "tests/fixtures/check/versions/dn_fake_anon.json",
+  "path": "submissions/x8/1468fac6208b3f1e.json"
+ },
+ "level2_sign": {
+  "file": "tests/fixtures/check/versions/level2_sign.json",
+  "path": "submissions/lv/3a51c53c3c2928b7.json"
+ },
+ "export_wrong": {
+  "file": "tests/fixtures/check/versions/export_wrong.json",
+  "path": "submissions/lv/102e6eef1e0c9752.json"
+ },
+ "export_bytes_wrong": {
+  "file": "tests/fixtures/check/versions/export_bytes_wrong.json",
+  "path": "submissions/lv/53fe9b66aa64ea4b.json"
+ },
+ "export_not_whole": {
+  "file": "tests/fixtures/check/versions/export_not_whole.json",
+  "path": "submissions/lv/e41d58fe4f7bd128.json"
+ },
+ "sign_level1": {
+  "file": "tests/fixtures/check/versions/sign_level1.json",
+  "path": "submissions/lv/0f7982f0c92d9af1.json"
+ },
+ "sign_whole_no_export": {
+  "file": "tests/fixtures/check/versions/sign_whole_no_export.json",
+  "path": "submissions/lv/f784cf56c52c69ba.json"
+ },
+ "checker_malformed": {
+  "file": "tests/fixtures/check/versions/checker_malformed.json",
+  "path": "submissions/lv/6d1dcc16f9c80aee.json"
+ },
+ "checker_rejects": {
+  "file": "tests/fixtures/check/versions/checker_rejects.json",
+  "path": "submissions/lv/34bc1f3be9c0c846.json"
+ },
+ "unknown_tool": {
+  "file": "tests/fixtures/check/versions/unknown_tool.json",
+  "path": "submissions/mallory/c0a497761b175379.json"
+ },
+ "build_A": "7eec4904a145d203",
+ "build_B": "2e90ccec795d2f5b",
+ "real_cli": {
+  "file": "tests/fixtures/check/versions/real_cli.json",
+  "path": "submissions/volunteer/033c1dbeb3753536.json"
+ },
+ "whole_sorry": {
+  "file": "tests/fixtures/check/versions/whole_sorry.json",
+  "path": "submissions/whole/484aab2f2cd0f77b.json"
+ },
+ "whole_dup_axioms": {
+  "file": "tests/fixtures/check/versions/whole_dup_axioms.json",
+  "path": "submissions/whole/9eb6203435cb3e00.json"
+ },
+ "whole_reordered": {
+  "file": "tests/fixtures/check/versions/whole_reordered.json",
+  "path": "submissions/whole/625dbdd35aabb266.json"
+ },
+ "regzipped": {
+  "file": "tests/fixtures/check/versions/regzipped.json",
+  "path": "submissions/regzipped/7eec4904a145d203.json"
+ }
+}

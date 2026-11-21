@@ -1,0 +1,24 @@
+{
+ "format": "rah/build/1",
+ "tool": "riemann-at-home 1.0.0",
+ "archive_sha256": "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc",
+ "toolchain": "leanprover/lean4:v4.33.1",
+ "mathlib_rev": "0df444a360eaa60ab8c11dca51a86af692955474",
+ "build_folder": "/Users/Shared/riemann-at-home/lean",
+ "machine": {
+  "os": "Darwin 25.4.0",
+  "arch": "arm64",
+  "cpu": "Intel Core i9-13900K",
+  "cores": 18
+ },
+ "started": "2026-11-16T00:00:00Z",
+ "recorded": "2026-11-21T10:00:00Z",
+ "busy_seconds": 3600,
+ "modules_compiled": 800,
+ "bitmap_b64": "H4sIAAAAAAAC/+3bPUvDQBjA8eeuaW0HSxAH0cEbBB07CdahKbi5qJNbXcTFzcHBwSDOIviF/AIiirtuzrq0UG1MUtNXW6umVuz/N4TL3eXucrnwkISIoD/VTOpYG54SJ2g+He6Yel6QI27Q1bSotY0oO0bOstideZlelY0/ICVaFdf3Tmyrb7v10wjHLmINMhKrMZ0WqwwAAAAAAAAAAADAf+GqXiXRp1HT2M11lDQ5zaTd/ZG32+ynNVKxn+lpwh+ZpYc3lfZXKhuWHnrdcr9Lx7Geh0zFc9cBAAAAwN+W/tmTo2EGgTFzKbatvnVkJfvJW9KdoHnFFGPInHQQ/O60uFZLKLRNa1xz/Qwd/NLWxlV+SEwsiqONk3ckfMk5I1I0H//55dg32bnO3lNRR/t6SQ8aiDFaC0nmAAAAABgbE1LxGubdB39bLYQlL14hety78kqHyd3cxfPR1u3mU1i14AXFbpDMD96byaw8rp5t69L1QarsFar3r7X3riflvOa1KXvHXB4AAAAAwAi9AbbozMmLVQAA",
+ "olean_digest": "32bbcf989d95761af2ce64afd327d9220fd2d967e240339339a11adcf5f718ec",
+ "whole_proof": false,
+ "axioms": null,
+ "build_id": "7cbccb0c4caadf9f",
+ "anonymous": true
+}

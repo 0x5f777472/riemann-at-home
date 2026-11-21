@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300"><title>Riemann@home · Global Leaderboard</title>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="300"><title>Riemann@home</title>
 <meta name="viewport" content="width=1000">
 <style>
   html,body{margin:0;background:#000;color:#fff;font:bold 12px Arial,Helvetica,sans-serif;overflow:auto}
@@ -298,7 +298,7 @@ const sigs = (DATA.signatures || []).slice().sort((a, b) => String(a.signed).loc
     `<div class="funnel">${labels.map((l, k) => `<span class="fl">${l}</span><span class="ft">` +
       (c[k] ? `<i style="width:${Math.max(1, c[k] / Math.max(1, c[0]) * 100).toFixed(1)}%"></i>` : "") +
       `</span><span class="fc">${fmt(c[k])}</span>`).join("")}</div>`; }
-{ const setTitle = () => document.title = /statement/.test(location.hash) ? "Riemann@home · Joint Statement" : "Riemann@home · Global Leaderboard";
+{ const setTitle = () => document.title = /statement/.test(location.hash) ? "Riemann@home · Joint Statement" : "Riemann@home";
   setTitle(); addEventListener("hashchange", setTitle);
   const n = (DATA.signatures || []).length; const jc = $("jscount"); if (jc) jc.textContent = n ? ` (${n} signature${n === 1 ? "" : "s"} so far)` : "";
   const jl = $("jslink"); if (jl && /demo/.test(location.hash)) jl.href = "#demo&statement"; }
@@ -403,7 +403,7 @@ function terrain() {
     for (let c = 0; c < C; c++) {
       const [i0, slots, k, s] = column(r * C + c);
       if (i0 < 0) continue;
-      if (!k) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // nobody yet: a faint dot on the floor
+      if (!k || (HL >= 0 && LIB[i0] !== HL)) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // nobody yet (or not highlighted): plain floor
       const key = HL < 0 ? `${Math.round(hueOf(i0) / 5) * 5}` : LIB[i0] === HL ? `${Math.round(libHue(HL))}` : "f0";
       let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
       const x = px(c, r), y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots));
@@ -416,7 +416,7 @@ function terrain() {
     const L = 60 - 26 * depth;                                   // depth haze
     for (const [key, b] of buckets) {
       if (key[0] === "f") {                                     // outside the highlighted library: dim grey
-        g.globalAlpha = 0.018; g.fillStyle = "#6b7080"; g.fill(b.face); g.fill(b.side); g.globalAlpha = 1; continue;
+        continue;                                               // (not drawn: faint greys piled up into dark streaks)
       }
       const hue = +key;
       g.fillStyle = `hsl(${hue},95%,${L - 24}%)`; g.fill(b.side);

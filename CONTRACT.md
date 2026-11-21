@@ -78,7 +78,8 @@ by whoever publishes data.json (the bot), unchanged from the reference list.
 - `build_folder` is one of the two fixed folders. `tool` is an exact known release string ("riemann-at-home 1.0.0").
 - `olean_digest` = lowercase hex sha256 over the concatenation of the 32-byte raw sha256 of each compiled module's
   `.olean`, in module-index order.
-- Speed: new modules ÷ wall-clock hours since the previous accepted record (first record: since `started`).
+- Speed: new modules ÷ wall-clock hours since the previous accepted record (first record: since `started`), with the
+  gap counted as at least 10 minutes, so frequent updates aren't judged on a few seconds of bursty finishes.
 - The digest reference is a frozen hash table (`rahbot reference-snapshot`), not the live build folder, which changes
   while a build runs. Kept by the bot; can be published.
 
