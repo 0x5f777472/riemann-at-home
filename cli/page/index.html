@@ -331,6 +331,7 @@ const DEMO = (() => {
   return on;
 })();
 const PRED = new Map();   // compiling module -> predicted spike value (from its source size)
+const BIG = 5;            // compiling white bars drawn 5x wide (normal height)
 const FADE = [], CYCLE = 1000, MORPH_MS = 700, HOLD_MS = 0, FADE_MS = 5000;     // white grows, white to dark, dark brightens    // fill cycle for compiling modules; white-to-color fade when done
 function overlay(t) {
   g = g || ctx2d("overlay");
@@ -374,12 +375,12 @@ function overlay(t) {
     const a = Math.max(0, Math.min(1, a0 + (want.has(i) ? (waiting ? 0 : dt / 0.6) : -dt / 0.4)));
     if (a <= 0 && !want.has(i)) { BEAM.delete(i); JOIN.delete(i); continue; }
     BEAM.set(i, a); if (waiting) continue;
-    const [x, yb, hs] = shape(i, doneBelow(i) + 1), h = hs ?? (PRED.has(i) ? Math.max(3, PRED.get(i) / maxVal * maxH) : TYPICAL_H);
-    g.fillStyle = `rgba(255,255,255,${0.16 * a})`; g.fillRect(x - w / 2, yb - h, w, h);          // the faint outline of its spot
+    const [x, yb, hs] = shape(i, doneBelow(i) + 1), h = hs ?? (PRED.has(i) ? Math.max(3, PRED.get(i) / maxVal * maxH) : TYPICAL_H), bw = BIG * w;
+    g.fillStyle = `rgba(255,255,255,${0.16 * a})`; g.fillRect(x - bw / 2, yb - h, bw, h);   // BIG: 5x wide so a first-time visitor sees them          // the faint outline of its spot
     const RISE = 0.7, up = Math.min(1, f / RISE);                                           // rise for 70% of the beat,
     const fh = h * (1 - Math.pow(1 - up, 2));                                                  // then fade out before the
     const fade = f < RISE ? 1 : 1 - (f - RISE) / (1 - RISE);                                    // next rise starts
-    g.fillStyle = `rgba(255,255,255,${0.9 * a * fade})`; g.fillRect(x - w / 2, yb - fh, w, fh);
+    g.fillStyle = `rgba(255,255,255,${0.9 * a * fade})`; g.fillRect(x - bw / 2, yb - fh, bw, fh);
   }
   requestAnimationFrame(overlay);
 }
