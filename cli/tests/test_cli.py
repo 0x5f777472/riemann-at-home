@@ -12,6 +12,7 @@ from pathlib import Path
 CLI_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = CLI_DIR / "riemann-at-home"
 TMP = CLI_DIR / "tmp"
+TMP.mkdir(parents=True, exist_ok=True)          # not in a fresh checkout (GitHub Actions)
 loader = importlib.machinery.SourceFileLoader("rah", str(SCRIPT))
 spec = importlib.util.spec_from_loader("rah", loader)
 rah = importlib.util.module_from_spec(spec)
