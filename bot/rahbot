@@ -812,7 +812,7 @@ def identity_problem(pr, repo: Path, open_builds: dict):
     if m.group(1).lower() != pr["author"].lower():
         return f"the file is under {m.group(1)!r} but the PR author is {pr['author']!r}", None
     if (repo / path).exists():                         # merged = whole or final; one PR per build for life
-        return f"build {m.group(2)} is already merged (whole proof or final); a new build needs a new build_id", None
+        return f"build {m.group(2)} is already merged (final); a new build needs a new build_id", None
     other = open_builds.setdefault(path.lower(), pr["number"])
     if other != pr["number"]:
         return f"build {m.group(2)} already has an open PR (#{other}); updates go to that PR", None
@@ -842,8 +842,9 @@ def cmd_poll(a):
         src = GitHubSource(a.repo, a.live, repo)
         now, persist, mode = datetime.now(timezone.utc), a.live, "LIVE" if a.live else "dry run (nothing written)"
     print(f"rahbot poll ({mode}) now={now:%Y-%m-%dT%H:%M:%SZ}")
+    rebuilding = False                                  # state AND backups lost: signed times fall back to recorded
     if persist and not (state_dir / "state.json").exists() and not (a.fixtures and a.round == 1):
-        restore_state(state_dir)
+        rebuilding = not restore_state(state_dir)
     st = State(state_dir, persist)
     src.sync()
     prs = sorted(src.prs(), key=lambda p: p["number"])
@@ -903,7 +904,8 @@ def cmd_poll(a):
             else:
                 st.set_accepted(path, body)
                 if rec.get("sign_statement") and record_level(rec) >= 2:
-                    st.signed.setdefault(author, now.strftime("%Y-%m-%dT%H:%M:%SZ"))   # time the signing version was accepted
+                    st.signed.setdefault(author, rec["recorded"] if rebuilding           # acceptance time unknown after total loss
+                                         else now.strftime("%Y-%m-%dT%H:%M:%SZ"))   # time the signing version was accepted
                 if s.get("last_comment"):   # it was rejected before: say so on the PR, once
                     src.comment(pr, f"Your latest version ({rec['modules_compiled']:,} modules) was accepted and is on the "
                                     "leaderboard. The earlier rejections above no longer apply.\n\n(rahbot)")
@@ -916,7 +918,9 @@ def cmd_poll(a):
         # merge?
         if prev is None:
             continue
-        why = "whole proof" if prev["whole_proof"] else "final" if prev.get("final") else None   # no time-based merge
+        # Only `finish` (final) merges. A whole-proof PR stays open so its export progress and Level 2/3 result
+        # (export_sha256, checkers, sign_statement) can still arrive on it (2026-11-22). No time-based merge.
+        why = "final" if prev.get("final") else None
         if not why:
             continue
         try:
@@ -996,9 +1000,10 @@ def restore_state(state_dir: Path):
     backups = sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
     if not backups:
         print("state missing and no backup: rebuilding from open PR heads, each checked as a first version")
-        return
+        return False
     shutil.copytree(backups[-1], state_dir)
     print(f"state missing: restored newest backup {backups[-1].name}")
+    return True
 
 
 # ---- commands -----------------------------------------------------------------------------------------------

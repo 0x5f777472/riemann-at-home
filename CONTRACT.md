@@ -162,7 +162,9 @@ by whoever publishes data.json (the bot), unchanged from the reference list.
 
 ## No stale merge (2026-11-21) — supersedes the 7-day merge and "Resuming after a merge"
 
-- The bot merges a build's PR only when its accepted version is whole_proof or `"final": true`. No time-based merge.
+- The bot merges a build's PR only when its accepted version is `"final": true` (`riemann-at-home finish`). No time-based merge.
+  (2026-11-22: a whole-proof PR is no longer merged automatically; it stays open so the export progress and the
+  Level 2/3 result can arrive on it. Run `finish` when you're done.)
   Abandoned PRs simply stay open. Follow-up PRs are therefore not needed: a build has one PR for its whole life.
 - If the bot's state is lost, it rebuilds by re-reading every open PR's head and re-checking it from scratch
   (no previous version → checked as a first version).

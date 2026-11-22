@@ -192,5 +192,8 @@ rounds = [
     # run with --lose-state --lose-backups: no backup either, so heads are re-checked as first versions
     {"now": "2026-11-28T11:00:00Z", "prs": OPEN5},
 ]
+for r in rounds[1:]:                     # carol's whole proof stays open (only `finish` merges, 2026-11-22)
+    if not any(x["number"] == 3 for x in r["prs"]):
+        r["prs"] = sorted(r["prs"] + [pr(3, "carol", "carol_whole")], key=lambda x: x["number"])
 (FX / "poll/rounds.json").write_text(json.dumps(rounds, indent=1) + "\n")
 print("fixtures written to", FX)

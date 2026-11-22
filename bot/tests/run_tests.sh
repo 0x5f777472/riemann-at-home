@@ -97,7 +97,7 @@ for r in 1 2 3 4 5 6 7 8; do
   [[ $r == 7 ]] && cp $W/state/signatures.json tests/out/signatures-after-round7.json
 done
 print "=== poll expectations"
-expect 1 "#1 alice: ACCEPT version" "#2 alice: ACCEPT version" "#3 carol: MERGE (whole proof)" \
+expect 1 "#1 alice: ACCEPT version" "#2 alice: ACCEPT version" "#3 carol: ACCEPT version" \
          "#4 mallory: CLOSE (the file is under 'bob'" "#5 dave: CLOSE (the PR changes 2 files" \
          "#9 alice: CLOSE (build 7eec4904a145d203 already has an open PR (#1)" "data.json: published"
 expect 2 "#1 alice: ACCEPT version" "#2 alice: unchanged" "data.json: published"
@@ -108,7 +108,7 @@ expect 4 "#1 alice: REJECT version 1-alice4 (same reasons, already commented)" "
          "#11 zed: REJECT version" "display_name 'Carol' is another participant's GitHub login" \
          "#11 zed: REJECT version" "display_name 'Carol' is another participant's GitHub login"
 expect 5 "data.json: published" "#11: no longer open"
-expect 6 "#12 bob: CLOSE (build 81b637d8fcd2c6da is already merged (whole proof or final)" "data.json: unchanged"
+expect 6 "#12 bob: CLOSE (build 81b637d8fcd2c6da is already merged (final)" "data.json: unchanged"
 expect 1 "signatures 1" "state backed up to 20261120T000000Z"
 expect 7 "state missing: restored newest backup 20261121T104500Z" "#1 alice: unchanged" "#2 alice: unchanged" \
          "#6 eve: unchanged" "data.json: unchanged"
@@ -130,7 +130,7 @@ for r in 6 7 8; do
   if grep -q "MERGE" tests/out/round$r.txt; then echo "--> TEST FAILED round $r merged something (no time-based merge)"; fails=$((fails+1))
   else echo "--> ok   round $r: nothing merged by time"; fi
 done
-print "=== poll end state: main = merged builds (whole/final), bot state = rebuilt from open PR heads"
+print "=== poll end state: main = merged builds (final only), bot state = rebuilt from open PR heads"
 python3 -I -c '
 import json, sys
 from pathlib import Path
@@ -140,8 +140,8 @@ acc = {str(p.relative_to(W / "state/accepted")): p.read_bytes() for p in (W / "s
 heads = {pr["files"][0]["path"].removeprefix("submissions/"): (F / pr["content_file"]).read_bytes()
          for pr in json.loads((F / "rounds.json").read_text())[7]["prs"] if pr["number"] != 6}   # eve never passes
 print("main:", main); print("rebuilt state:", sorted(acc))
-assert len(main) == 2 and acc == heads, "state must equal the open heads that pass as first versions"
-' $W tests/fixtures/poll && echo "--> ok   2 merged on main; rebuilt state = the 4 passing open heads" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+assert len(main) == 1 and acc == heads, "state must equal the open heads that pass as first versions"
+' $W tests/fixtures/poll && echo "--> ok   1 merged on main (final); rebuilt state = the 5 passing open heads (carol's whole proof stays open)" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 python3 -I tests/check_aggregate.py $W/repo/docs/data.json $W/repo/submissions $W/state/accepted && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
 
