@@ -487,6 +487,7 @@ stars(); terrain();
     g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fillRect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
     g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fillRect(x - w / 2, y - h, w, 1.5);
   };
+  const bw = 5 * w;                            // new modules' white bars: 5x wider so first-time visitors see them
   function frame(now) {
     while (next < RECENT.length && now - t0 >= next * W / RECENT.length) {        // its turn: one more builder
       const i = RECENT[next++]; heights[i]++; live.push({i, at: now, folded: false});
@@ -498,10 +499,10 @@ stars(); terrain();
       if (HL >= 0 && LIB[s.i] !== HL) { if (!s.folded) { s.folded = true; solid(TG, s.i); } continue; }
       const [x, y, h] = colGeom(s.i);
       if (el < GROW) { const m = el / GROW, hh = h * (1 - (1 - m) * (1 - m));
-        OV.fillStyle = "rgba(255,255,255,0.9)"; OV.fillRect(x - w / 2, y - hh, w, hh); continue; }
+        OV.fillStyle = "rgba(255,255,255,0.9)"; OV.fillRect(x - bw / 2, y - hh, bw, hh); continue; }
       if (!s.folded) { s.folded = true; solid(TG, s.i); }
       const q = (el - GROW) / FADE;
-      OV.fillStyle = `rgba(255,255,255,${0.9 * (1 - q * q * (3 - 2 * q))})`; OV.fillRect(x - w / 2, y - h, w, h);
+      OV.fillStyle = `rgba(255,255,255,${0.9 * (1 - q * q * (3 - 2 * q))})`; OV.fillRect(x - bw / 2, y - h, bw, h);
     }
     requestAnimationFrame(frame);
   }
