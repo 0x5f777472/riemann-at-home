@@ -1,0 +1,8 @@
+# Riemann@home
+
+> Volunteers build Levent Alpöge's Lean proof of the Riemann Hypothesis (175,187 modules) on their own computers and report progress through public GitHub pull requests.
+
+- [The homepage as markdown](https://riemann-at-home.github.io/riemann-at-home/index.md): live totals, who is building now, leaderboard, how to join, joint statement (updated about every 10 minutes)
+- [Raw data](https://riemann-at-home.github.io/riemann-at-home/data.json): the same, as JSON
+- [Code and instructions](https://github.com/riemann-at-home/riemann-at-home): README, volunteer tool, CONTRACT.md (data format and every rule the bot applies)
+- [Discuss on Hacker News](https://news.ycombinator.com/item?id=50594006)

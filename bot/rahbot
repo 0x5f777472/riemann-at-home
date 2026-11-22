@@ -493,6 +493,89 @@ def content_hash(data) -> str:
                                      sort_keys=True).encode()).hexdigest()
 
 
+SITE_URL = "https://riemann-at-home.github.io/riemann-at-home/"
+HN_URL = "https://news.ycombinator.com/item?id=50594006"
+
+
+def _page_parts(index_html: str):
+    """The join prompt and the joint statement, taken from the homepage itself so the wording never drifts."""
+    import html as _html
+    m = re.search(r"const prompt = `(.*?)`;", index_html, re.S)
+    prompt = m[1].strip() if m else ""
+    stmt = ""
+    i = index_html.find('<div class="stmt">')
+    j = index_html.find('<div class="sofar"', i)
+    if i >= 0 and j > i:
+        t = index_html[i:j]
+        t = re.sub(r"<code>(.*?)</code>", r"`\1`", t)
+        t = re.sub(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', r"[\2](\1)", t)
+        t = re.sub(r"<h4>(.*?)</h4>", r"", t)
+        n = iter(range(1, 50))
+        t = re.sub(r"<li>(.*?)</li>", lambda mm: f"\n{next(n)}. {mm[1]}", t, flags=re.S)
+        t = re.sub(r"<p>(.*?)</p>", r"\n\n\1\n\n", t, flags=re.S)
+        t = re.sub(r"<[^>]+>", "", t)
+        stmt = re.sub(r"\n[ \t]*\n[\s]*", "\n\n", _html.unescape(t)).strip()
+        stmt = re.sub(r"\n\n(\d+\. )", r"\n\1", stmt)
+    return prompt, stmt
+
+
+def homepage_markdown(data: dict, index_html: str) -> str:
+    """docs/index.md: the homepage as plain markdown for AI assistants and other readers (rewritten on each publish)."""
+    prompt, stmt = _page_parts(index_html)
+    n, sm = data["n"], data["summary"]
+    f = lambda x: f"{x:,}"
+    pct = lambda m: f"{m / n * 100:.1f}%"
+    who = lambda r: r["name"] + (f" (github.com/{r['who']})" if r.get("who") and r["who"] != r["name"] else
+                                 (f" (github.com/{r['who']})" if r.get("who") else ""))
+    out = [
+        "# Riemann@home",
+        "",
+        "Every independent build of the AI proof of the Riemann Hypothesis.",
+        "",
+        f"Levent Alpöge's Lean proof of the Riemann Hypothesis has {f(n)} modules. Volunteers build it on their own "
+        "computers with the official tools, and each computer reports its progress through a public GitHub pull "
+        "request. A bot checks every report and publishes this page.",
+        "",
+        f"- Live page: {SITE_URL}",
+        "- Code and instructions: https://github.com/riemann-at-home/riemann-at-home",
+        f"- Discuss on Hacker News: {HN_URL}",
+        f"- Raw data: {SITE_URL}data.json (format: CONTRACT.md in the repository)",
+        f"- Updated: {data.get('generated', 'unknown')}",
+        "",
+        "## Totals",
+        "",
+        f"- Builders: {f(sm['people'])}",
+        f"- Modules built at least once: {f(sm['modules_built_once'])} of {f(n)} ({pct(sm['modules_built_once'])})",
+        f"- Modules built 3 or more times: {f(sm['modules_built_3x'])}",
+        f"- Whole proofs finished: {f(sm['whole_proofs'])}",
+        "",
+        "## Running now",
+        "",
+    ]
+    run = sorted(data.get("running") or [], key=lambda r: -r["modules"])
+    out += [f"- {who(r)}: {f(r['modules'])} modules ({pct(r['modules'])})" + (f", {r['machine']}" if r.get("machine") else "")
+            for r in run] or ["No builds reported recently."]
+    out += ["", "## Leaderboard: finished the whole proof", ""]
+    whole = sorted((r for r in data.get("leaderboard") or [] if r.get("whole_proof")),
+                   key=lambda r: r.get("first_whole_proof_rank") or 10**9)
+    out += [f"{k}. {who(r)}: all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else "")
+            + (f", {r['machine']}" if r.get("machine") else "") for k, r in enumerate(whole, 1)] or ["No one has finished yet."]
+    val = data.get("validated") or []
+    if val:
+        out += ["", "## Also checked independently by", ""]
+        out += [f"- {v['who']}: {v['what']} ({v['url']})" for v in val]
+        out += ["", "As each person reported it publicly."]
+    out += ["", "## Join in", "",
+            "Paste this into an AI assistant that can run commands (Claude, ChatGPT, ...):", "", "```", prompt, "```", "",
+            "What becomes public: your GitHub username (on the commits and the pull request), your computer's OS, chip "
+            "and number of cores, and which modules you've built. Nothing is posted until you agree."]
+    if stmt:
+        sigs = data.get("signatures") or []
+        out += ["", "## Joint statement", "", stmt, "", f"Signatures so far: {len(sigs)}."]
+        out += [f"- {g.get('name') or g.get('who')}, signed {str(g.get('signed', ''))[:10]}" for g in sigs]
+    return "\n".join(out).rstrip() + "\n"
+
+
 RECENT_MAX = 20000   # most modules listed in data.json "recent" (the page replays them; more would just be noise)
 
 
@@ -846,7 +929,13 @@ def cmd_poll(a):
             data["recent"] = rec
         write_json_backed_up(site / "data.json", data, backup=False)   # git keeps history
         shutil.copyfile(MODULES_TXT, site / "modules.txt")             # CONTRACT: published next to index.html
-        src.commit_files(["docs/data.json", "docs/modules.txt"], f"data.json: {data['summary']['people']} people")
+        files = ["docs/data.json", "docs/modules.txt"]
+        try:                                                           # the homepage as markdown, for AI readers
+            (site / "index.md").write_text(homepage_markdown(data, (site / "index.html").read_text()))
+            files.append("docs/index.md")
+        except Exception as e:
+            print(f"index.md not written: {e}")
+        src.commit_files(files, f"data.json: {data['summary']['people']} people")
         st.data["last_publish"], st.data["published_hash"] = now.strftime("%Y-%m-%dT%H:%M:%SZ"), h
         print(f"data.json: published {data['summary']}; running {len(data['running'])}; signatures {len(data['signatures'])}")
         published = True
