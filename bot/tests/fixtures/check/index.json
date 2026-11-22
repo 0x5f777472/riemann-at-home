@@ -184,5 +184,21 @@
  "regzipped": {
   "file": "tests/fixtures/check/versions/regzipped.json",
   "path": "submissions/regzipped/7eec4904a145d203.json"
+ },
+ "carol_exporting": {
+  "file": "tests/fixtures/check/versions/carol_exporting.json",
+  "path": "submissions/carol/4c26d9074c27d89e.json"
+ },
+ "export_progress_not_whole": {
+  "file": "tests/fixtures/check/versions/export_progress_not_whole.json",
+  "path": "submissions/alice/7eec4904a145d203.json"
+ },
+ "export_progress_bad": {
+  "file": "tests/fixtures/check/versions/export_progress_bad.json",
+  "path": "submissions/carol/4c26d9074c27d89e.json"
+ },
+ "export_progress_extra": {
+  "file": "tests/fixtures/check/versions/export_progress_extra.json",
+  "path": "submissions/carol/4c26d9074c27d89e.json"
  }
 }

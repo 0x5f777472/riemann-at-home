@@ -36,7 +36,7 @@ HERE = Path(__file__).resolve().parent
 
 # ---- CONTRACT constants -------------------------------------------------------------------------------------
 FORMAT = "rah/build/1"
-KNOWN_TOOLS = {"riemann-at-home 1.0.0"}
+KNOWN_TOOLS = {"riemann-at-home 1.0.0", "riemann-at-home 1.1.0"}
 ARCHIVE_SHA256 = "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc"
 TOOLCHAIN = "leanprover/lean4:v4.33.1"
 MATHLIB_REV = "0df444a360eaa60ab8c11dca51a86af692955474"
@@ -64,7 +64,10 @@ KNOWN_CHECKERS = {"nanoda", "con-leche", "lean4checker", "lean4lean"}
 BACKUPS_KEPT = 20
 OPTIONAL = {"export_sha256": str, "export_bytes": int, "checkers": list, "sign_statement": bool,
             "final": bool,           # set by `riemann-at-home finish`
-            "display_name": str}     # shown instead of the login (CONTRACT "Display names")
+            "display_name": str,     # shown instead of the login (CONTRACT "Display names")
+            "export_progress": dict}  # how far `riemann-at-home export` got (CONTRACT "Export progress")
+EXPORT_PROGRESS = {"bytes": int, "seconds": (int, float), "left_seconds": (int, float, type(None)),
+                   "peak_memory_gb": (int, float, type(None)), "done": bool}
 PUBLISH_EVERY = timedelta(minutes=float(os.environ.get("RAHBOT_PUBLISH_MINUTES", "10")))  # Pages: ~6 builds/hour
 SPEED_MIN_WINDOW = 600   # seconds: speed is never judged over less than 10 minutes (bursts are normal)
 MACHINE_FIELDS = {"os": str, "arch": str, "cpu": str, "cores": int}
@@ -340,6 +343,16 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
         if c["result"] == "reject":
             flags.append(f"CHECKER REJECTED THE EXPORT: {c['name']} {c['version']} (needs a human look)")
     if rec.get("checkers") and "export_sha256" not in rec: rej.append("checkers reported without an export_sha256")
+    ep = rec.get("export_progress")
+    if ep is not None:
+        if not rec["whole_proof"]: rej.append("export_progress is only meaningful with whole_proof")
+        if set(ep) != set(EXPORT_PROGRESS) or any(not isinstance(ep[k], t) or isinstance(ep[k], bool) != (t is bool)
+                                                  for k, t in EXPORT_PROGRESS.items()):
+            rej.append(f"export_progress must be {{{', '.join(EXPORT_PROGRESS)}}} with the right types")
+        elif not (0 <= ep["bytes"] <= REF_EXPORT_BYTES * 2 and ep["seconds"] >= 0
+                  and (ep["left_seconds"] is None or ep["left_seconds"] >= 0)
+                  and (ep["peak_memory_gb"] is None or 0 <= ep["peak_memory_gb"] <= 1 << 16)):
+            rej.append("export_progress numbers out of range")
     if rec.get("sign_statement") and record_level(rec) < 2:
         rej.append("sign_statement needs Level 2 (whole proof and the reference export reproduced)")
     # growth + speed against this build's last accepted record
@@ -404,6 +417,20 @@ def mach(r):
     return r["machine"].get("cpu") or r["machine"].get("os", "")
 
 
+def export_view(r):
+    """The page's view of a record's export: progress while it runs; when done, whether it matched (the bot decides
+    that from export_sha256, never from the volunteer's say-so)."""
+    ep = r.get("export_progress")
+    if not ep:
+        return None
+    v = {"bytes": ep["bytes"], "total": REF_EXPORT_BYTES, "seconds": int(ep["seconds"]), "done": ep["done"],
+         "left_seconds": None if ep["done"] or ep["left_seconds"] is None else int(ep["left_seconds"]),
+         "peak_memory_gb": None if ep["peak_memory_gb"] is None else round(ep["peak_memory_gb"], 1)}
+    if ep["done"]:
+        v["matches"] = record_level(r) >= 2
+    return v
+
+
 def build_data(dirs, now=None, signed_map=None) -> dict:
     """signed_map: login -> time their signing version was accepted (the bot records it); people missing from it get
     the signing record's `recorded` time (aggregate without the bot's ledger)."""
@@ -448,10 +475,16 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
                      "machine": mach(largest), "computers": len(builds),
                      "since": min(r["started"] for r in recs),
                      "_first_whole": whole["recorded"] if whole else None})
+        exp = max((r for r in recs if r.get("export_progress")), key=lambda r: r["recorded"], default=None)
+        if exp:
+            rows[-1]["export"] = export_view(exp)
         for build_id, (_, r, _) in builds.items():
-            if not r["whole_proof"] and not r.get("final"):   # running: not whole, not finished (page hides stale)
+            exporting = bool(r.get("export_progress")) and not r["export_progress"]["done"]
+            if (not r["whole_proof"] or exporting) and not r.get("final"):   # running: building, or exporting
                 e = {"name": name, "who": shown, "build_id": build_id, "machine": mach(r),
                      "modules": r["modules_compiled"], "recorded": r["recorded"]}
+                if exporting:
+                    e["export"] = export_view(r)
                 if shown is None:
                     del e["build_id"]                  # display-name people: build_id would link to the login
                 running.append(e)

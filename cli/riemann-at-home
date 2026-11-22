@@ -22,7 +22,7 @@ import secrets, unicodedata, shutil, signal, socket, subprocess, sys, tarfile, t
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 TOOL = f"riemann-at-home {VERSION}"
 FORMAT = "rah/build/1"
 ARCHIVE_SHA256 = "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc"
@@ -38,7 +38,10 @@ RECORD_KEYS = ["format", "tool", "archive_sha256", "toolchain", "mathlib_rev", "
                "recorded", "busy_seconds", "modules_compiled", "bitmap_b64", "olean_digest", "whole_proof", "axioms", "final"]
 NAME_KEYS = ["display_name"]                    # only when the volunteer chose one (`name`)
 LEVEL_KEYS = ["export_sha256", "export_bytes", "checkers", "sign_statement"]   # Levels 2-3 and the joint statement
-OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS
+PROGRESS_KEYS = ["export_progress"]           # how far `export` got: shown on the leaderboard while it runs
+OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS + PROGRESS_KEYS
+EXPORT_PROGRESS_FIELDS = ["bytes", "seconds", "left_seconds", "peak_memory_gb", "done"]
+EXPORT_STALE = 1800                             # an unfinished export not heard from in 30 min is dropped from records
 # Level 2: the raw proof export (lean4export, NDJSON) reproduces the reference made by Andrew Sutherland
 # (https://math.mit.edu/~drew/grh). Streamed into sha256 + a byte counter: the ~61 GB file is never written to disk.
 EXPORT_SHA256 = "5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e"
@@ -1242,7 +1245,7 @@ def validate_record(rec: dict):
     extra = [k for k in rec if k not in RECORD_KEYS]           # a set of keys: order does not matter
     if (not set(RECORD_KEYS) <= set(rec) or any(k not in OPTIONAL_KEYS for k in extra)
             or sum(k in rec for k in NAME_KEYS) > 1):
-        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS}, at most one of {NAME_KEYS})")
+        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS + PROGRESS_KEYS}, at most one of {NAME_KEYS})")
     if "display_name" in rec and name_problem(rec["display_name"]):
         errs.append(f"display_name: {name_problem(rec['display_name'])}")
     if "anonymous" in rec:
@@ -1787,11 +1790,15 @@ def level_fields(ctx: Ctx, rec: dict) -> dict:
     other export hash); checkers and the signature only on top of that."""
     if not rec.get("whole_proof"):
         return {}
+    out = {}
+    ep = export_progress(ctx, rec["olean_digest"])
+    if ep:
+        out["export_progress"] = ep
     lv = levels_state(ctx, rec["olean_digest"])
     ex = lv.get("export") or {}
     if ex.get("sha256") != EXPORT_SHA256:
-        return {}
-    out = {"export_sha256": ex["sha256"], "export_bytes": ex["bytes"]}
+        return out
+    out.update({"export_sha256": ex["sha256"], "export_bytes": ex["bytes"]})
     if lv.get("checkers"):
         out["checkers"] = lv["checkers"]
     if lv.get("sign_statement") is True:
@@ -1840,28 +1847,86 @@ def exporter_command(ctx: Ctx, a) -> list:
     return [which("lake") or "lake", "env", str(exe), "Main"]
 
 
-def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None) -> tuple:
+def export_progress(ctx: Ctx, digest: str):
+    """The record's export_progress for this build and olean digest: progress while `export` runs, the result once
+    done. An unfinished export not updated for EXPORT_STALE seconds (stopped, crashed) is left out."""
+    try:
+        p = json.loads((ctx.home / "export-progress.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if p.get("build_id") != ctx.build_id(create=False) or p.get("olean_digest") != digest:
+        return None
+    if not p.get("done") and time.time() - p.get("updated", 0) > EXPORT_STALE:
+        return None
+    return {k: p.get(k) for k in EXPORT_PROGRESS_FIELDS}
+
+
+def tree_memory_gb(root: int) -> float:
+    """Resident memory of a process and all its descendants, in GB (the exporter runs under nice and lake env)."""
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,rss="], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return 0.0
+    kids, rss = {}, {}
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) == 3 and all(x.isdigit() for x in f):
+            kids.setdefault(int(f[1]), []).append(int(f[0])); rss[int(f[0])] = int(f[2])
+    total, todo = 0, [root]
+    while todo:
+        p = todo.pop(); total += rss.get(p, 0); todo += kids.get(p, [])
+    return total / 2 ** 20                                   # ps reports KiB
+
+
+def fmt_dur(t: float) -> str:
+    t = int(t)
+    return f"{max(1, round(t / 60))} m" if t < 3600 else f"{t // 3600} h {round(t % 3600 / 60)} m"
+
+
+def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -> tuple:
     """Run the exporter in the build folder at nice 19 and read its stdout straight into sha256 and a byte counter
     (and into `sink`, a checker's stdin, if given). Nothing is written to disk. -> (exit code, sha256, bytes)."""
-    h, n, next_note = hashlib.sha256(), 0, 1 << 33
+    h, n = hashlib.sha256(), 0
     print("  $ " + shlex.join(map(str, cmd)) + f"   (in {ctx.folder}; output hashed, not stored)", file=sys.stderr)
     with open(log, "ab") as lf:
         p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=lf, env=lean_env())
+    t0 = time.time()
+    st = {"peak": 0.0, "next_mem": 0.0, "next_show": 0.0, "pct": -1}
+    tty = sys.stderr.isatty()
+
+    def show(final=False):
+        el = time.time() - t0
+        left = (EXPORT_BYTES - n) / (n / el) if n and el >= 60 and n < EXPORT_BYTES else None
+        pct = min(100, int(n * 100 / EXPORT_BYTES))
+        if on_progress:
+            on_progress(n, el, left, st["peak"], final)
+        if not tty and not final and pct == st["pct"]:      # logs: one line per percent
+            return
+        st["pct"] = pct
+        bar = "█" * (pct * 22 // 100) + "░" * (22 - pct * 22 // 100)
+        line = (f"  EXPORTING {pct}%  {bar}  {n / 1e9:,.1f} of {EXPORT_BYTES / 1e9:,.1f} GB · {n / 1e6 / max(el, 1):,.1f} MB/s"
+                + (f" · about {fmt_dur(left)} left" if left else "") + (f" · memory {st['peak']:,.0f} GB" if st["peak"] else ""))
+        print(("\r" + line.ljust(110)) if tty else line, end="" if tty and not final else "\n", file=sys.stderr, flush=True)
+
     try:
         for chunk in iter(lambda: p.stdout.read(1 << 20), b""):
             h.update(chunk)
             n += len(chunk)
             if sink is not None:
                 sink.write(chunk)
-            if n >= next_note:
-                print(f"  {n / 1e9:,.0f} GB of about {EXPORT_BYTES / 1e9:,.1f} GB", file=sys.stderr, flush=True)
-                next_note += 1 << 33
+            now = time.time()
+            if now >= st["next_mem"]:                         # peak memory of the exporter (and lake env) every 5 s
+                st["peak"], st["next_mem"] = max(st["peak"], tree_memory_gb(p.pid)), now + 5
+            if now >= st["next_show"]:
+                show(); st["next_show"] = now + (1 if tty else 30)
     except BrokenPipeError:                                   # the checker stopped reading
         p.kill()
     finally:
         p.stdout.close()
-    return p.wait(), h.hexdigest(), n
+    rc = p.wait()
+    show(final=True)
+    return rc, h.hexdigest(), n
 
 
 def cmd_export(ctx: Ctx, a):
@@ -1870,12 +1935,29 @@ def cmd_export(ctx: Ctx, a):
     cmd = exporter_command(ctx, a)
     ctx.logs.mkdir(parents=True, exist_ok=True)
     log = ctx.logs / "export.log"
-    print(f"exporting the proof (about {EXPORT_BYTES / 1e9:.1f} GB of output, hashed as it streams; takes hours)")
+    print(f"exporting the proof: {EXPORT_BYTES / 1e9:.1f} GB of output, hashed as it streams (nothing written to disk)")
     t0 = time.time()
-    rc, sha, n = stream_export(ctx, cmd, log)
+    pf = ctx.home / "export-progress.json"
+    base = {"build_id": rec["build_id"], "olean_digest": rec["olean_digest"]}
+    auto = AUTOSUBMIT != "off" and bool((ctx.conf().get("submit") or {}).get("auto"))
+    sent = {"at": time.time()}
+
+    def progress(n, el, left, peak, final):
+        pf.write_text(json.dumps({**base, "bytes": n, "seconds": int(el), "left_seconds": None if final or left is None
+                                  else int(left), "peak_memory_gb": round(peak, 2) if peak else None, "done": False,
+                                  "updated": int(time.time())}) + "\n")
+        if auto and not final and time.time() - sent["at"] >= autosubmit_interval(ctx):   # the leaderboard's gold bar
+            sent["at"] = time.time()
+            threading.Thread(target=autosubmit, args=(ctx, a, "export progress"), daemon=True).start()
+
+    rc, sha, n = stream_export(ctx, cmd, log, on_progress=progress)
     if rc != 0:
+        pf.unlink(missing_ok=True)
         raise Fail(f"the exporter exited with {rc}; see {log}")
     match = sha == EXPORT_SHA256 and n == EXPORT_BYTES
+    last = json.loads(pf.read_text())
+    pf.write_text(json.dumps({**last, "done": True, "left_seconds": None, "updated": int(time.time())}) + "\n")
+    peak = f", peak memory {last['peak_memory_gb']:,.0f} GB" if last.get("peak_memory_gb") else ""
     lv = levels_state(ctx, rec["olean_digest"])
     same = (lv.get("export") or {}).get("sha256") == sha
     ctx.set_conf(levels={"build_id": rec["build_id"], "olean_digest": rec["olean_digest"],
@@ -1884,11 +1966,14 @@ def cmd_export(ctx: Ctx, a):
                          "checkers": lv.get("checkers", []) if same else [],
                          "sign_statement": bool(lv.get("sign_statement")) and same and match})
     print(f"export sha256 {sha}\nexport bytes  {n:,}")
+    if auto:
+        autosubmit(ctx, a, "export done")                   # the leaderboard shows the result (and Level 2 if it matches)
     if not match:
         print(f"reference     {EXPORT_SHA256}, {EXPORT_BYTES:,} bytes (Andrew Sutherland, https://math.mit.edu/~drew/grh)")
         print("does not match the reference, so records do not carry it.")
         print(UNVERIFIED)
         return 1
+    print(f"export matches the reference ✓  ({fmt_dur(time.time() - t0)}{peak})")
     print("Level 2: matches the reference export (Andrew Sutherland, https://math.mit.edu/~drew/grh).")
     out = write_record(ctx, make_record(ctx, a))
     print(f"record with export_sha256: {out}")

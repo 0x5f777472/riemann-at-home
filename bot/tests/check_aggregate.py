@@ -64,7 +64,7 @@ name_of = {w: rows_by[w]["name"] for w in people}
 want = [(name_of[w], bid if rows_by[w]["who"] else None, m, t) for w, bid, m, t in want]
 got = [(e["name"], e.get("build_id"), e["modules"], e["recorded"]) for e in data["running"]]
 assert got == want, (got, want)
-assert all(set(e) == {"name", "who", "machine", "modules", "recorded"} | ({"build_id"} if e["who"] else set())
+assert all(set(e) - {"export"} == {"name", "who", "machine", "modules", "recorded"} | ({"build_id"} if e["who"] else set())
            for e in data["running"]), "running keys (build_id only for people shown by login)"
 assert {"name", "who"} <= set(data["latest"])
 print(f"  running: {len(got)} builds not whole and not final, modules desc  ok")

@@ -1,0 +1,30 @@
+{
+ "format": "rah/build/1",
+ "tool": "riemann-at-home 1.0.0",
+ "archive_sha256": "9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc",
+ "toolchain": "leanprover/lean4:v4.33.1",
+ "mathlib_rev": "0df444a360eaa60ab8c11dca51a86af692955474",
+ "build_folder": "/Users/Shared/riemann-at-home/lean",
+ "machine": {
+  "os": "Darwin 25.4.0",
+  "arch": "arm64",
+  "cpu": "Apple M5 Max",
+  "cores": 18
+ },
+ "started": "2026-11-19T08:00:00Z",
+ "recorded": "2026-11-19T14:00:00Z",
+ "busy_seconds": 19440,
+ "modules_compiled": 1500,
+ "bitmap_b64": "H4sIAAAAAAAC/+2aTWgTQRSA3/4k3ZYlWUIPUaEdSxEFDwGh9FDIFioI9VDwInhwD2Kv3mpBzFht04MHj57EY2969iCDFilSsXoQBcHUi0UKFXtoS5OO+5OsScwmm2bTjc37SpPJzOzMvDfvze6bHQCHDQm6GMH8YwC6mSSlf8H8UKwy2SoXrWqidwtyU/1FZUKiCbs/QbFziFNg5QC1uuoHYWKqmD1v9iyD0IqEupsYAa2ULslzLlVdvVgytMYs2YXxa9NzWn0RbVVZYxdlsAdLikphT4dA0SyhNGcUVk2N9oIsluTuJ7BU2NhJz2x95nz2d+bGy5F8fv3bIMhRp/H7lw1YBTjP9FfOVKiRdFQa7QUYWBBY3rLdMXbabNkRTQW4/WQ2ZqdzO+agksn49uzCc77Kb23zuz8Psl/4Hs+s8Gwc3t/hkwc9e+mlzcKPN18LO1waWLwCK8vPVJY3vmfcqSWK0gbDU/6ZHwruRD+udUUOECRctGYqy76LlGoHQBAkBJ9F/id0VAGCtHERFHGNQRUgSLshqAIEQRBcnhGkDmrFL9pjb53q1M+l1GuHVfAw+ahXQKT4dZTWXYddcL6Tf4VP+r/aWy/5eB0de+9ey02sEFrT2mg+3Drk6ynNp4Ck9OWtEaPRBNTZ19dDX23D3CD19EdX28T9mfK0v6IOc7YwPsQ52fCtteX29ITV5S/HSURrpAReW+lyt0lVDFO9xKScwBbtSpJtF2zQ/DibvZedJFNUvaks15v4Vu6+FXLHXM3W1jAJdLIC9cBo8Famt8t8o4Ga/5i92GfSLKQjKepRtqg2WvC14Kfv0A1Fgl48jYAVHZeOTDu6/weMUGIJ2hnD8M1xP3+G++ed99jVZuSOGUmoTq53XEPBEtJpJXYMVVljzcSzYN2BjCroQGi7p8U4uCiUx0FV/RkarFVmGwzOuINzsgWxPIakFc9aLY5fVxtE93JZqTFfZ1uA4Ak8BOmyW9pb0LTIoS7ejcm1QkbqPsrnOOdb+HSEtAm1tIXE+khKgU9ihMoJK15/IPeZuaMGwJQbWlIQNdNcE25soV6dS+yvC/Qh9ExTvc/QX+gUHon2K7txIpZu0hPDmmE2oZt2nNB07UPsVLW9j3xM7dqpTc6lOjdipIMYjqAOEARBEARBEORYU34KiJczSK29iv20XZLnaWB2duYdvz5TcKpIqD4EQRAEQRAEQRCkS/gD2Ejn8otVAAA=",
+ "olean_digest": "70d50ce4a413514874dab5b8fbc932058dfbe3b89b305edf286b900559f3b443",
+ "whole_proof": false,
+ "axioms": null,
+ "build_id": "7eec4904a145d203",
+ "export_progress": {
+  "bytes": 22800000000,
+  "seconds": 3060,
+  "left_seconds": 6000,
+  "peak_memory_gb": 41.2,
+  "done": false
+ }
+}

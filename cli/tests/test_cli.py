@@ -146,7 +146,7 @@ class Fast(unittest.TestCase):
         rec = json.loads(text)
         assert_private(self, text)
         self.assertEqual(rec["format"], "rah/build/1")
-        self.assertEqual(rec["tool"], "riemann-at-home 1.0.0")
+        self.assertEqual(rec["tool"], "riemann-at-home 1.1.0")
         self.assertEqual(rec["build_folder"], "unofficial")
         self.assertEqual(rec["modules_compiled"], 7)
         self.assertEqual(rec["busy_seconds"], 3600)
@@ -549,6 +549,34 @@ class Levels(unittest.TestCase):
         code, out, err = self.main("sign", stdin="y\n", ref=False)
         self.assertEqual(code, 1); self.assertIn("signing needs Level 2", err)
         self.assertNotIn("sign_statement", self.latest_record())
+
+    def test_export_progress_shown_and_recorded(self):
+        """1.1.0: a live progress line, peak memory, and export_progress in records (the leaderboard's gold bar)."""
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 0, err)
+        self.assertIn("EXPORTING 100%", err); self.assertIn("export matches the reference ✓", out)
+        p = json.loads((self.home / "export-progress.json").read_text())
+        self.assertTrue(p["done"]); self.assertEqual(p["bytes"], len(self.export)); self.assertIsNone(p["left_seconds"])
+        self.assertGreater(p["peak_memory_gb"], 0)                 # the stand-in exporter's own memory was measured
+        rec = self.latest_record()
+        ep = rec["export_progress"]
+        self.assertEqual(sorted(ep), sorted(rah.EXPORT_PROGRESS_FIELDS)); self.assertTrue(ep["done"])
+        from unittest import mock
+        with mock.patch.object(rah, "EXPORT_SHA256", self.sha):
+            self.assertEqual([e for e in rah.validate_record(rec) if e.startswith("keys")], [])   # export_progress is an allowed key
+        # an export that stopped half way and was not heard from for 30 min drops out of records
+        p.update(done=False, bytes=1000, left_seconds=60, updated=int(time.time()) - rah.EXPORT_STALE - 5)
+        (self.home / "export-progress.json").write_text(json.dumps(p))
+        self.main("record"); self.assertNotIn("export_progress", self.latest_record())
+        p["updated"] = int(time.time())
+        (self.home / "export-progress.json").write_text(json.dumps(p))
+        self.main("record"); self.assertEqual(self.latest_record()["export_progress"]["bytes"], 1000)
+
+    def test_export_progress_on_mismatch_is_done_without_level2(self):
+        code, out, err = self.main("export", "--exporter", self.exporter, ref=False)
+        self.assertEqual(code, 1)
+        self.main("record", ref=False); rec = self.latest_record()
+        self.assertTrue(rec["export_progress"]["done"]); self.assertNotIn("export_sha256", rec)   # page: "differs"
 
     def test_export_match_recheck_sign(self):
         code, out, err = self.main("export", "--exporter", self.exporter)

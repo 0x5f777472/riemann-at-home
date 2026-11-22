@@ -61,6 +61,10 @@ t "Level 2 + signs"                  0 check ${=$(ck level2_sign)} --author lv -
 t "export hash not the reference"    1 check ${=$(ck export_wrong)} --author lv --prev none
 t "export_bytes not the reference"   1 check ${=$(ck export_bytes_wrong)} --author lv --prev none
 t "export without whole_proof"       1 check ${=$(ck export_not_whole)} --author lv --prev none
+t "export progress (whole, running)"  0 check ${=$(ck carol_exporting)} --author carol --prev none
+t "export progress without whole"    1 check ${=$(ck export_progress_not_whole)} --author alice --prev none
+t "export progress, wrong type"      1 check ${=$(ck export_progress_bad)} --author carol --prev none
+t "export progress, self-declared match" 1 check ${=$(ck export_progress_extra)} --author carol --prev none
 t "sign_statement at Level 1"        1 check ${=$(ck sign_level1)} --author lv --prev none
 t "sign_statement, whole but no export" 1 check ${=$(ck sign_whole_no_export)} --author lv --prev none
 t "checkers entry malformed"         1 check ${=$(ck checker_malformed)} --author lv --prev none
@@ -162,6 +166,9 @@ assert len(names) == 20 and names[0] == "20261121T005000Z" and names[-1] == "202
 print("kept", len(names), names[0], "...", names[-1])' tests/out && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
 
+print "=== export progress on the page data"
+python3 -I tests/check_export.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+print
 print "=== aggregate sample (merged + open PRs) + leaderboard/terrain/running assertions"
 S=tests/fixtures/sample
 python3 -I ./rahbot aggregate $S/main $S/open --out sample-data.json || fails=$((fails+1))

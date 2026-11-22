@@ -193,3 +193,14 @@ Mathlib's RiemannHypothesis; proved theorem is exactly that statement) are their
   `"level"` (1–3).
 - Page: a "Joint statement" tab beside the leaderboard view: statement text (owner-approved wording, kept in the page),
   then the signatures list (avatar, name, date, machine, level badges). Empty state: "No signatures yet."
+
+## Export progress (2026-11-22, tool 1.1.0)
+
+- While `riemann-at-home export` runs, records carry `"export_progress"`: `{"bytes": int, "seconds": number,
+  "left_seconds": number|null, "peak_memory_gb": number|null, "done": bool}` (whole_proof only; exactly these keys).
+  The tool sends an update at the auto-submit interval during the export and one when it finishes. An unfinished
+  export not heard from for 30 minutes is left out of later records.
+- data.json: leaderboard rows and running entries get `"export"`: the same numbers plus `"total"` (reference bytes)
+  and, once done, `"matches"`, which the bot decides from `export_sha256` (Level 2), never from the record.
+  A whole-proof build whose export is in progress is listed in `running`.
+- Known tools: "riemann-at-home 1.0.0", "riemann-at-home 1.1.0".
