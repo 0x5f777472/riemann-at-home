@@ -64,7 +64,7 @@
   .cap{position:absolute;left:96px;top:86px;color:#7f9fdf;font-size:10px;letter-spacing:.4px}
   .legend{position:absolute;left:96px;top:100px;color:#7f9fdf;font-size:10px;letter-spacing:0;line-height:12px;display:none}
   .legend i{display:inline-block;width:10px;height:3px;margin:0 5px 2px 0;vertical-align:middle}
-  .stat{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
+  .stat{margin:0 0 40px;text-align:center;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
   .stat b{color:#ffd23f}
   .hnbtn{display:inline-block;padding:7px 16px;font:bold 12px Arial;letter-spacing:1px;text-transform:uppercase;color:#fff;text-decoration:none;background:#ff6600;border:1px solid #ffa366;box-shadow:0 0 12px rgba(255,102,0,.35)}
   .hnbtn:hover{background:#ff7a1f}
@@ -166,7 +166,7 @@
   .jsline{margin-top:8px;color:#ffd23f}
   #tab-statement{border-color:#ffd23f;color:#ffd23f}
   /* "I'm totally confused" explainer: normal flow under the dashboard, same look as the navy panels */
-  #confused{width:956px;box-sizing:border-box;margin:0 auto 40px;padding:4px 22px 14px;background:rgba(5,15,60,.72);
+  #confused{width:956px;box-sizing:border-box;margin:0 auto 24px;padding:4px 22px 14px;background:rgba(5,15,60,.72);
             border:1px solid rgba(120,160,255,.55);box-shadow:0 0 18px rgba(30,80,255,.25);
             color:#dfe7ff;font-weight:normal;font-size:14px;line-height:1.6}
   #confused h2{margin:14px 0 4px;font:bold 22px Arial,Helvetica,sans-serif;color:#ffd23f}
@@ -176,9 +176,9 @@
   #confused a{color:#7fd8ff}
   @media (max-width: 760px){#confused{width:auto;margin:16px 10px 32px;padding:4px 14px 12px;font-size:15px}
     #confused h2{font-size:20px}}
-  @media print{#confused{display:none !important}}
+  @media print{#confused,.stat{display:none !important}}
 </style></head>
-<body class="global"><div id="screen" style="height:1365px">
+<body class="global"><div id="screen" style="height:1334px">
   <div id="mcap">Each spike is one module of the proof · height = how many people built it</div>
   <div id="stagewrap"><div id="stage">
   <canvas id="stars" width="1000" height="680"></canvas>
@@ -197,7 +197,6 @@
   <div class="legend" id="legend" style="display:none!important"><div><i style="background:#ffd23f"></i>gold = whole proof built</div>
     <div><i style="background:#7dff95;box-shadow:0 0 5px #7dff95"></i>green = export reproduced</div>
     <div><i style="background:#7fd8ff;box-shadow:0 0 5px #7fd8ff"></i>cyan = re-checked independently</div></div>
-  <div class="stat" id="stat"></div>
   <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
        border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
 
@@ -238,8 +237,9 @@
      <h2>, <p>, <a>, <b> so the markdown conversion stays simple. -->
 <section id="confused">
   <h2>I’m totally confused what this website is 😭</h2>
-  <p>The Riemann Hypothesis is one of math’s most famous unsolved problems: a 160-year-old guess about where prime numbers fall, with a $1 million prize for proving it. On November 20, 2026, Levent Alpöge published a proof, written with help from AI in Lean, a language where a computer checks every step. The proof is so big (175,187 files) that checking it takes about two days on a fast computer, and many people independently running that check is one of the four reasons the Lean and Mathlib communities give in <a href="https://leanprover-community.github.io/blog/posts/riemann-hypothesis/" target="_blank" rel="noopener">their statement certifying the proof</a>. This site tracks everyone who runs that check on their own machine, because the more people who independently get the same result, the more we can trust it.</p>
+  <p>The <a href="https://en.wikipedia.org/wiki/Riemann_hypothesis" target="_blank" rel="noopener">Riemann Hypothesis</a> is one of math’s most famous unsolved problems: a 160-year-old guess about where prime numbers fall, with a <a href="https://www.claymath.org/millennium/riemann-hypothesis/" target="_blank" rel="noopener">$1 million prize</a> for proving it. On November 20, 2026, Levent Alpöge published a proof, written with help from AI in <a href="https://lean-lang.org/" target="_blank" rel="noopener">Lean</a>, a language where a computer checks every step. The proof is so big (175,187 files) that checking it takes about two days on a fast computer, and many people independently running that check is one of the four reasons the Lean and Mathlib communities give in <a href="https://leanprover-community.github.io/blog/posts/riemann-hypothesis/" target="_blank" rel="noopener">their statement certifying the proof</a>. This site tracks everyone who runs that check on their own machine, because the more people who independently get the same result, the more we can trust it.</p>
 </section>
+<div class="stat" id="stat"></div>
 <div id="printdoc"></div>
 <script type="module">
 // Riemann@home global dashboard (GitHub Pages). Reads data.json exactly as specified in CONTRACT.md:
@@ -422,7 +422,7 @@ $("board").innerHTML = (whole.length ? whole.map((p, k) => {
     `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
 // Desktop: the leaderboard grows (and the page with it) so up to 20 finishers show without scrolling inside the
 // panel (owner, 2026-11-22). Past 20 people it scrolls. The Running-now panel beside it grows to the same height.
-const BOARD_FIT = 20, BOARD_H = 446, BOARD_PANEL_PAD = 480 - 446, SCREEN_H = 1365;
+const BOARD_FIT = 20, BOARD_H = 446, BOARD_PANEL_PAD = 480 - 446, SCREEN_H = 1334;
 function fitBoard() {
   const b = $("board"), rows = b.querySelectorAll(".hr");
   b.style.height = "";
