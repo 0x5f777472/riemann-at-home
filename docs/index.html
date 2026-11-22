@@ -11,7 +11,7 @@
   @media (max-width: 760px) {
     body.global{min-width:0}
     #screen{width:auto !important;height:auto !important;display:flex;flex-direction:column;padding:0 0 24px}
-    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.35);overflow:hidden;order:3}
+    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.415);overflow:hidden;order:3}
     #mcap{display:block;order:2;color:#9fb6ff;font-size:13px;padding:6px 14px 0}
     #libkey{display:block;order:4;margin:2px 10px 0;border:1px solid rgba(120,160,255,.35)}
     #libkey .lk{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 12px;
@@ -422,7 +422,8 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
 // a fully built bar reaches the top. Pale top only while some of its modules have no builder yet.
 const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
 const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
-const left = 96, base = 434, spanX = 640, depthX = 230, depthY = 150, maxH = 170;
+// Phones: a front view (no sideways slant): the full width is module positions, rows recede straight up a little.
+const [left, base, spanX, depthX, depthY, maxH] = PHONE() ? [20, 440, 960, 0, 90, 300] : [96, 434, 640, 230, 150, 170];
 const sx = spanX / C, kx = depthX / R, ky = depthY / R;
 const px = (c, r) => left + c * sx + r * kx, py = r => base - r * ky;
 const cell = i => STACK > 1 ? [Math.floor(i / (R * STACK)), Math.floor((i % (R * STACK)) / STACK), i % STACK]
@@ -536,12 +537,12 @@ stars(); terrain();
     for (const r of $("libkey").querySelectorAll(".lk")) r.classList.toggle("on", +r.dataset.k === HL);
   }); }
 // Phones: scale the 1000x680 map to the screen width (the rest of the page is a normal column there).
-{ const TOP = 100, H = 350;                  // phones: show only the map's band (desktop title/summary areas trimmed)
+{ const TOP = 35, H = 415;                  // phones: show only the map's band (desktop title/summary areas trimmed)
   const fit = () => { const phone = innerWidth <= 760, k = phone ? $("stagewrap").clientWidth / 1000 : 1;
                       $("stage").style.transform = phone ? `scale(${k}) translateY(${-TOP}px)` : "";
                       $("stagewrap").style.height = phone ? `${Math.round(H * k)}px` : ""; };
   let wasPhone = PHONE();
-  fit(); addEventListener("resize", () => { fit(); if (PHONE() !== wasPhone) { wasPhone = PHONE(); terrain(); } }); }
+  fit(); addEventListener("resize", () => { fit(); if (PHONE() !== wasPhone) location.reload(); }); }   // other geometry: redraw from scratch
 
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
