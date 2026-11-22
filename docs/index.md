@@ -8,21 +8,21 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T08:24:20Z
+- Updated: 2026-11-22T08:34:39Z
 
 ## Totals
 
 - Builders: 7
-- Modules built at least once: 57,737 of 175,187 (33.0%)
-- Modules built 3 or more times: 26,090
+- Modules built at least once: 59,382 of 175,187 (33.9%)
+- Modules built 3 or more times: 26,604
 - Whole proofs finished: 0
 
 ## Running now
 
-- derek-blanchette (github.com/derek-blanchette): 57,275 modules (32.7%), AMD Ryzen 9 5950X 16-Core Processor
-- titojankowski (github.com/titojankowski): 49,402 modules (28.2%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 26,090 modules (14.9%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 14,041 modules (8.0%), AMD Ryzen 5 5600X 6-Core Processor
+- derek-blanchette (github.com/derek-blanchette): 58,920 modules (33.6%), AMD Ryzen 9 5950X 16-Core Processor
+- titojankowski (github.com/titojankowski): 50,567 modules (28.9%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 26,604 modules (15.2%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 15,406 modules (8.8%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 10,694 modules (6.1%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Ununhexium: 2,319 modules (1.3%), AMD Ryzen 7 5700G with Radeon Graphics
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
