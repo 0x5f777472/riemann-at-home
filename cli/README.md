@@ -27,10 +27,12 @@ and this README (`sign` prints the joint statement from it).
    `submit --disable-auto` turns it off.
 5. `riemann-at-home finish [--submit]`: done on this computer. Stops the build, writes a record with
    `"final": true` and submits it (always when auto-submit is on); the bot then merges the PR.
-6. `riemann-at-home name "Display Name"` / `name --anonymous` / `name --clear`: what the page shows instead of your
-   GitHub login (1 to 32 characters, no control characters). Records then carry `"display_name"` or
-   `"anonymous": true`. Your pull request is still public on GitHub under your account.
-7. `riemann-at-home update [--yes]`: get the newest version. The tool checks once a day (an anonymous `git fetch`
+6. `riemann-at-home name "Display Name"` / `name --clear`: a label the page shows instead of your GitHub login
+   (1 to 32 characters, no control characters). Records then carry `"display_name"`. It's only a label: your pull
+   request on GitHub always shows your username, so nobody here is anonymous.
+   Nothing is posted until you agree: `setup` asks once (in a terminal), or run `submit --agree [--name "..."]`.
+   The notice lists what becomes public: your GitHub username, OS, chip, core count, and which modules you built.
+7. `riemann-at-home update [--yes]`: get the newest version. The tool checks once a day (a `git fetch` with no login
    of main; only changes under `cli/` count) and says so on the local page and in `status`. `update` lists the
    changes, asks, fast-forwards your checkout, and restarts a running build (same speed; Lean resumes where it was) and
    this computer's local page. It never updates without being asked.

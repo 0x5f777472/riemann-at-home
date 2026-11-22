@@ -134,19 +134,23 @@ by whoever publishes data.json (the bot), unchanged from the reference list.
 
 ## Display names (2026-11-21)
 
-- Records may carry optional `"display_name"`: plain text, 1–32 chars, no control chars; or `"anonymous": true`.
-- The page shows display_name (or "anonymous #<n>", n = stable small number per person) instead of the login, and no
-  GitHub profile link. data.json leaderboard/running/latest entries carry `"name"` (what to show) and keep `"who"`
-  (login) only when the person did not choose a display name or anonymity; otherwise `"who": null`.
+- Records may carry optional `"display_name"`: plain text, 1–32 chars, no control chars. There is no anonymous
+  option (dropped 2026-11-21): the pull request always shows the GitHub username, so the bot rejects records with
+  `"anonymous"`.
+- The page shows display_name instead of the login, and no GitHub profile link. data.json leaderboard/running/latest
+  entries carry `"name"` (what to show) and keep `"who"` (login) only when the person did not choose a display name;
+  otherwise `"who": null`.
 - Bot rejects a display_name equal (case-insensitive) to another participant's GitHub login.
-- The CLI explains when setting it: "This hides your username on the Riemann@home page. Your pull request is still
-  public on GitHub under your account."
+- The CLI explains when setting it: "This is only a label on the Riemann@home page. Your pull request on GitHub
+  always shows your username, so nobody here is anonymous."
+- Consent (2026-11-21): nothing is submitted until the person agrees (`setup` asks once in a terminal; otherwise
+  `submit --agree`). The notice lists what becomes public: GitHub username, OS, chip, core count, modules built.
 - `running` excludes builds marked `"final": true`.
 - display_name validation (CLI and bot identical): trim ends, 1–32 chars, reject Unicode categories Cc, Cf, Zl, Zp.
   Impersonation check compares NFKC-normalised, casefolded text against every other participant's login.
 - Decisions: display names are validated when a record version is accepted; an accepted name is not re-judged later
   (a newcomer can't knock an existing name off the board). Display names may not start with "anonymous"
-  (case-insensitive), in CLI and bot. `running` entries of display-name/anonymous people omit `build_id`.
+  (case-insensitive), in CLI and bot. `running` entries of display-name people omit `build_id`.
 
 ## Resuming after a merge (2026-11-21)
 

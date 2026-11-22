@@ -54,7 +54,7 @@ t "display_name starts with anonymous" 1 check ${=$(ck dn_fake_anon)} --author x
 t "display_name kept from accepted prev is not re-judged" 0 check ${=$(ck dn_is_login2)} --author x1 --prev $(f dn_is_login) --logins alice,bob
 t "display_name trimmed, ends ok"    0 check ${=$(ck dn_padded)} --author x6 --prev none
 t "display_name only spaces"         1 check ${=$(ck dn_blank)} --author x7 --prev none
-t "anonymous: true"                  0 check ${=$(ck anon_ok)} --author anon --prev none
+t "anonymous: true (not offered)"    1 check ${=$(ck anon_ok)} --author anon --prev none
 # levels and the joint statement
 t "Level 3 + signs (whole, reference export, nanoda)" 0 check ${=$(ck carol_whole)} --author carol --prev none
 t "Level 2 + signs"                  0 check ${=$(ck level2_sign)} --author lv --prev none
@@ -163,16 +163,15 @@ print("kept", len(names), names[0], "...", names[-1])' tests/out && echo "--> ok
 print
 
 print "=== aggregate sample (merged + open PRs) + leaderboard/terrain/running assertions"
-S=tests/fixtures/sample; M=tests/out/anon-map.json
-[[ -f $M ]] && mv $M $M.bak
-python3 -I ./rahbot aggregate $S/main $S/open --out sample-data.json --anon-map $M || fails=$((fails+1))
+S=tests/fixtures/sample
+python3 -I ./rahbot aggregate $S/main $S/open --out sample-data.json || fails=$((fails+1))
 python3 -I tests/check_aggregate.py sample-data.json $S/main $S/open && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
-print "=== anonymous numbers stay stable when an earlier-started anonymous person joins"
-python3 -I ./rahbot aggregate $S/main $S/open $S/extra --out tests/out/sample-plus-erin.json --anon-map $M || fails=$((fails+1))
+print "=== a later joiner; only display names hide the login, nobody is anonymous"
+python3 -I ./rahbot aggregate $S/main $S/open $S/extra --out tests/out/sample-plus-erin.json || fails=$((fails+1))
 python3 -I tests/check_aggregate.py tests/out/sample-plus-erin.json $S/main $S/open $S/extra || fails=$((fails+1))
 got=$(python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" ".join(sorted(r["name"] for r in d["leaderboard"] if r["who"] is None)))' tests/out/sample-plus-erin.json)
-print "names without login: $got   map: $(cat $M | tr -d '\n ')"
-[[ $got == "Alice L. anonymous #1 anonymous #2" ]] && grep -q '"dave": 1' $M && echo "--> ok   dave stays #1, erin gets #2" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+print "names without login: $got"
+[[ $got == "Alice L." ]] && echo "--> ok   only Alice's display name hides her login" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
 print "FAILURES: $fails"
 exit $fails

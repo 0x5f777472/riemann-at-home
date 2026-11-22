@@ -6,7 +6,7 @@
 Nothing here writes to the real build folder or to GitHub.
 """
 import base64, getpass, gzip, hashlib, importlib.machinery, importlib.util, json, os, re, shutil, socket
-import subprocess, sys, tempfile, time, unittest
+import contextlib, io, subprocess, sys, tempfile, time, unittest, unittest.mock
 from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parents[1]
@@ -308,7 +308,7 @@ class Fast(unittest.TestCase):
                            env={**os.environ, "RAH_HOME": str(self.tmp / "h"), "PATH": f"{nogh}:/bin:/usr/bin"})
         self.assertEqual(r.returncode, 1); self.assertIn("run `gh auth login` yourself", r.stderr)
 
-    def test_name_display_anonymous_clear(self):
+    def test_name_display_clear_no_anonymous(self):
         fake_folder(self.tmp / "p")
         home = self.tmp / "h"
         rec_of = lambda: json.loads(Path(cli("record", "--folder", self.tmp / "p", "--test-unofficial-folder",
@@ -316,11 +316,10 @@ class Fast(unittest.TestCase):
         self.assertNotIn("display_name", rec_of())
         r = cli("name", "Ada L.", home=home)
         self.assertIn(rah.NAME_NOTICE, r.stdout)
-        self.assertIn("This hides your username on the Riemann@home page. Your pull request is still public on GitHub under your account.", r.stdout)
+        self.assertIn("This is only a label on the Riemann@home page. Your pull request on GitHub always shows your username", r.stdout)
         rec = rec_of(); self.assertEqual(rec["display_name"], "Ada L."); self.assertNotIn("anonymous", rec)
         self.assertEqual(list(rec)[:-1], rah.RECORD_KEYS)
-        r = cli("name", "--anonymous", home=home); self.assertIn(rah.NAME_NOTICE, r.stdout)
-        rec = rec_of(); self.assertIs(rec["anonymous"], True); self.assertNotIn("display_name", rec)
+        self.assertNotEqual(cli("name", "--anonymous", home=home, check=False).returncode, 0)   # not offered
         cli("name", "--clear", home=home)
         rec = rec_of(); self.assertNotIn("anonymous", rec); self.assertNotIn("display_name", rec)
         for bad in ("", "x" * 33, "Anonymous #3", "ANONYMOUSLY", "anonymous", "tab\there", "new\nline", "bell\x07", "zero\u200bwidth"):
@@ -333,7 +332,7 @@ class Fast(unittest.TestCase):
     def test_validate_optional_name_keys(self):
         rec = self._valid_record(self.tmp / "r.json")
         self.assertEqual(rah.validate_record({**rec, "display_name": "Ada"}), [])
-        self.assertEqual(rah.validate_record({**rec, "anonymous": True}), [])
+        self.assertTrue(rah.validate_record({**rec, "anonymous": True}))     # not offered: the PR shows the username
         self.assertTrue(rah.validate_record({**rec, "anonymous": False}))
         self.assertTrue(rah.validate_record({**rec, "display_name": "x" * 33}))
         self.assertTrue(rah.validate_record({**rec, "display_name": "Ada", "anonymous": True}))
@@ -715,6 +714,7 @@ class RealSubmit(unittest.TestCase):
                     "FAKE_GH_UPSTREAM_NAME": "riemann-at-home/riemann-at-home", "FAKE_FORK": str(self.tmp / "fork.git"),
                     "GIT_CONFIG_GLOBAL": str(self.tmp / "gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"}
         (self.tmp / "gitconfig").write_text("")
+        (self.home / "config.json").write_text(json.dumps({"consent": {"agreed": "2026-11-21T00:00:00Z"}}))   # said yes
         self.rec_path = self.tmp / "rec.json"
         self.rec = Fast._valid_record(None, self.rec_path)
 
@@ -1055,3 +1055,39 @@ class Slow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Consent(unittest.TestCase):
+    """Nothing is posted until the person agrees; the notice says what becomes public."""
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()); self.home = self.tmp / "h"; self.home.mkdir()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_notice_says_what_is_public(self):
+        for part in ("GitHub username", "OS, chip and number of cores", "pull request always shows your username",
+                     "Nothing is posted until you agree"):
+            self.assertIn(part, rah.CONSENT_NOTICE)
+        self.assertNotIn("anonymous", rah.CONSENT_NOTICE.lower())
+
+    def test_no_submit_or_auto_without_agreeing(self):
+        rp = self.tmp / "r.json"; rp.write_text(json.dumps(Fast._valid_record(None, rp)))
+        r = cli("submit", "--record", rp, "--login", "x-y", "--no-gh-check", home=self.home, check=False)
+        self.assertEqual(r.returncode, 1); self.assertIn("Nothing is posted until you agree", r.stderr)
+        self.assertIn("riemann-at-home submit --agree", r.stderr)
+        r = cli("submit", "--enable-auto", home=self.home, check=False)
+        self.assertEqual(r.returncode, 1); self.assertIn("Nothing is posted until you agree", r.stderr)
+
+    def test_ask_consent_without_terminal_only_prints(self):
+        ctx = rah.Ctx(type("A", (), {"folder": None, "logs": str(self.tmp / "logs")})())
+        os.environ["RAH_HOME"] = str(self.home)
+        try:
+            ctx = rah.Ctx(type("A", (), {"folder": None, "logs": str(self.tmp / "logs")})())
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), unittest.mock.patch("sys.stdin", io.StringIO("y\n")):
+                rah.ask_consent(ctx)
+        finally:
+            del os.environ["RAH_HOME"]
+        self.assertIn("To agree: riemann-at-home submit --agree", buf.getvalue())
+        self.assertFalse(rah.has_consent(ctx))           # an assistant can't answer for the person

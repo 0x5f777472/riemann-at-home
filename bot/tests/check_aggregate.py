@@ -19,18 +19,16 @@ for builds in people.values():
 expect_name = {}
 for w, builds in people.items():
     newest = max((recs[-1] for recs in builds.values()), key=lambda r: r["recorded"])
-    expect_name[w] = "anon" if newest.get("anonymous") else newest.get("display_name") or w
+    expect_name[w] = newest.get("display_name") or w
 rows_by = {}
 for row in data["leaderboard"]:
     if row["who"] is not None:
         assert row["name"] == row["who"], row
         rows_by[row["who"]] = row
     else:
-        w = next(w for w, n in expect_name.items() if n == row["name"] or (n == "anon" and row["name"].startswith("anonymous #")
-                                                                           and w not in rows_by))
+        w = next(w for w, n in expect_name.items() if n == row["name"])
         rows_by[w] = row
-anon_names = [r["name"] for r in data["leaderboard"] if r["name"].startswith("anonymous #")]
-assert len(anon_names) == len(set(anon_names)) == sum(n == "anon" for n in expect_name.values()), anon_names
+assert not any(r["name"].startswith("anonymous") for r in data["leaderboard"]), "nobody is anonymous"
 for w, n in expect_name.items():
     assert (rows_by[w]["who"] is None) == (n != w), (w, rows_by[w])
 print(f"  names: {sorted(r['name'] for r in data['leaderboard'])}; who hidden for {sum(r['who'] is None for r in data['leaderboard'])}  ok")

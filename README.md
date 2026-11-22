@@ -15,9 +15,9 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 
 > I'd like to help build the Lean proof of the Riemann hypothesis through Riemann@home. Please clone
 > https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
-> "riemann-at-home setup", then "riemann-at-home build", then "riemann-at-home submit" to send my build record.
+> "riemann-at-home setup", then "riemann-at-home build".
 > Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
-> Ask me before installing anything, and show me the build record before submitting it.
+> Ask me before installing anything. When the tool asks for my OK to post progress publicly, show me its notice word for word and wait for my answer.
 
 ## Join by hand
 
@@ -30,17 +30,20 @@ computer always keeps room, and every module you built still counts).
    Downloads the official archive from alpo.ge, checks its sha256
    (`9631b4f020199e580ba86178cb56c6e9b09f690c2369a80dc4334aa93f49c7fc`), unpacks it into a fixed folder
    (macOS `/Users/Shared/riemann-at-home/lean`, Linux `/opt/riemann-at-home/lean`), installs the pinned Lean
-   (4.33.1) and the Mathlib cache.
+   (4.33.1) and the Mathlib cache. At the end it asks once whether to post your progress publicly (see 4).
 3. **Build.** `python3 -I cli/riemann-at-home build --gentle` (or `--full`)
    Runs the official `lake build Main`, unchanged, at the lowest priority. `pause`, `resume`, `stop`, `status`.
    A full build is about two days on a fast Mac; any amount counts.
-4. **Post your progress.** `python3 -I cli/riemann-at-home submit`
-   Opens one pull request for this computer and keeps it updated about every 10 minutes while you build.
-5. **Optional name.** `riemann-at-home name "Your Name"` or `name --anonymous` shows that instead of your GitHub
-   username on the page. Your pull request is still public on GitHub under your account.
+4. **Post your progress.** Setup asks once; or later: `python3 -I cli/riemann-at-home submit --agree`.
+   From then on, one public pull request for this computer is updated about every 10 minutes while you build.
+   **What becomes public:** your GitHub username, your computer's OS, chip and number of cores, and which modules
+   you've built. Nothing is posted until you agree. Stop any time: `submit --disable-auto`.
+5. **Optional display name.** `riemann-at-home name "Your Name"` (or `submit --agree --name "Your Name"`) shows that
+   on the leaderboard instead of your GitHub username. It's only a label: your pull request on GitHub always shows
+   your username, so nobody here is anonymous.
 6. **See your own build.** `python3 -I cli/riemann-at-home page` opens a local page for this computer.
 7. **Done or stopping for good.** `python3 -I cli/riemann-at-home finish`
-8. **Updates.** The tool checks GitHub once a day (one anonymous fetch, nothing about you is sent). When there's a new
+8. **Updates.** The tool checks GitHub once a day (one fetch with no login; nothing about you is sent). When there's a new
    version, your local page and `status` say so. Run `python3 -I cli/riemann-at-home update`: it shows what changed,
    asks, then updates and restarts the build and page. Nothing built is lost. It never updates by itself.
 

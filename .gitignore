@@ -8,3 +8,5 @@ bot/tests/out/*
 __pycache__/
 cli/tmp/
 bot/sample-data.json*
+bot/tests/fixtures.bak/
+bot/tests/*.bak

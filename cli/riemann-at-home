@@ -9,7 +9,7 @@
   riemann-at-home submit [--dry-run]       open / update this computer's one PR with the latest record (`gh`)
   riemann-at-home submit --enable-auto [--interval S]   the running build updates its PR every S s (default 600)
   riemann-at-home finish [--submit]        done here: final record ("final": true), the bot merges the PR
-  riemann-at-home name "NAME" | --anonymous | --clear   what the page shows instead of your GitHub login
+  riemann-at-home name "NAME" | --clear     a label the page shows instead of your GitHub login
   riemann-at-home page [--once] [--port N]  this computer's page at http://localhost:8642/
   riemann-at-home export                   Level 2: hash the proof export (lean4export) and compare with the reference
   riemann-at-home recheck --nanoda|--con-leche   Level 3 (optional): re-check the export with an independent checker
@@ -36,7 +36,7 @@ FIXED_FOLDERS = {"Darwin": "/Users/Shared/riemann-at-home/lean", "Linux": "/opt/
 EXPECTED_AXIOMS = ["propext", "Classical.choice", "Quot.sound"]
 RECORD_KEYS = ["format", "tool", "archive_sha256", "toolchain", "mathlib_rev", "build_folder", "build_id", "machine", "started",
                "recorded", "busy_seconds", "modules_compiled", "bitmap_b64", "olean_digest", "whole_proof", "axioms", "final"]
-NAME_KEYS = ["display_name", "anonymous"]       # at most one, only when the volunteer chose it (`name`)
+NAME_KEYS = ["display_name"]                    # only when the volunteer chose one (`name`)
 LEVEL_KEYS = ["export_sha256", "export_bytes", "checkers", "sign_statement"]   # Levels 2-3 and the joint statement
 OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS
 # Level 2: the raw proof export (lean4export, NDJSON) reproduces the reference made by Andrew Sutherland
@@ -48,8 +48,14 @@ EXPORTER_TAG = "v4.33.0"
 UNVERIFIED = "unverified: the reference hash has not yet been reproduced by this tool"
 # Level 3: an independent checker accepts the export. RAM each needs (GB, approximate).
 CHECKERS = {"nanoda": 100, "con-leche": 50}
-NAME_NOTICE = ("This hides your username on the Riemann@home page. "
-               "Your pull request is still public on GitHub under your account.")
+NAME_NOTICE = ("This is only a label on the Riemann@home page. Your pull request on GitHub always shows your "
+               "username, so nobody here is anonymous.")
+CONSENT_NOTICE = (
+    "Riemann@home posts your progress to a public pull request on GitHub, about every 10 minutes while you build.\n"
+    "Public: your GitHub username, your computer's OS, chip and number of cores, and which modules you've built.\n"
+    "On the leaderboard you can show a display name instead of your username, but the pull request always shows "
+    "your username.\n"
+    "Nothing is posted until you agree. Stop any time: riemann-at-home submit --disable-auto")
 PAGE_PORT = 8642
 SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
 MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "20"))          # stop the build below this much free disk
@@ -613,6 +619,7 @@ def cmd_setup(ctx: Ctx, a):
         if run([which("lake") or "lake", "exe", "cache", "get", "Mathlib"], cwd=folder, env=lean_env()).returncode != 0:
             raise Fail("`lake exe cache get Mathlib` failed; run setup again to retry")
     print(f"this computer's build_id: {ctx.build_id()}")
+    ask_consent(ctx)
     print(f"ready. Next: riemann-at-home build")
 
 
@@ -818,6 +825,7 @@ def cmd_build(ctx: Ctx, a):
     mode = "full" if a.full else "gentle" if a.gentle else stored_mode(ctx)
     ctx.logs.mkdir(parents=True, exist_ok=True)
     if getattr(a, "submit", False):           # auto-submit on; a running build picks it up on its next cycle
+        need_consent(ctx)
         check_gh(True)
         sc = ctx.conf().get("submit") or {}
         ctx.set_conf(submit={**sc, "auto": True, "upstream": sc.get("upstream") or UPSTREAM})
@@ -1170,9 +1178,7 @@ def make_record(ctx: Ctx, a, final: bool = False) -> dict:
     }
     assert list(rec) == RECORD_KEYS
     shown = ctx.conf().get("display")
-    if shown == {"anonymous": True}:
-        rec["anonymous"] = True
-    elif isinstance(shown, dict) and name_problem(shown.get("display_name")) is None:
+    if isinstance(shown, dict) and name_problem(shown.get("display_name")) is None:
         rec["display_name"] = shown["display_name"]
     rec.update(level_fields(ctx, rec))
     if official:
@@ -1231,8 +1237,8 @@ def validate_record(rec: dict):
         errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS}, at most one of {NAME_KEYS})")
     if "display_name" in rec and name_problem(rec["display_name"]):
         errs.append(f"display_name: {name_problem(rec['display_name'])}")
-    if "anonymous" in rec and rec["anonymous"] is not True:
-        errs.append("anonymous must be true when present")
+    if "anonymous" in rec:
+        errs.append("anonymous is not offered: the pull request always shows your GitHub username")
     for k, v in (("format", FORMAT), ("archive_sha256", ARCHIVE_SHA256), ("toolchain", TOOLCHAIN),
                  ("mathlib_rev", MATHLIB_REV)):
         if rec.get(k) != v:
@@ -1325,7 +1331,7 @@ def name_problem(name):
     if any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in name):
         return "no control characters"
     if name.casefold().startswith("anonymous"):
-        return "may not start with \"anonymous\" (use `name --anonymous` for that)"
+        return "may not start with \"anonymous\" (nobody is anonymous: your pull request shows your username)"
     if name != name.strip():
         return "no spaces at the start or end"
     return None
@@ -1337,15 +1343,10 @@ def cmd_name(ctx: Ctx, a):
         ctx.set_conf(display=None)
         print("cleared: the Riemann@home page shows your GitHub username")
         return 0
-    if a.anonymous:
-        ctx.set_conf(display={"anonymous": True})
-        print("you will show as anonymous")
-        print(NAME_NOTICE)
-        return 0
     if a.display_name is None:
         d = ctx.conf().get("display")
-        print("anonymous" if d == {"anonymous": True} else
-              f"display name: {d['display_name']}" if d else "not set: the page shows your GitHub username")
+        print(f"display name: {d['display_name']}" if isinstance(d, dict) and d.get("display_name")
+              else "not set: the page shows your GitHub username")
         return 0
     name = a.display_name.strip()
     err = name_problem(name)
@@ -1544,7 +1545,56 @@ def submit_lock(ctx: Ctx):
     return f
 
 
+def has_consent(ctx: Ctx) -> bool:
+    return bool((ctx.conf().get("consent") or {}).get("agreed"))
+
+
+def need_consent(ctx: Ctx):
+    if not has_consent(ctx):
+        raise Fail("Nothing is posted until you agree.\n\n" + CONSENT_NOTICE +
+                   "\n\nTo agree: riemann-at-home submit --agree   (optionally --name \"Display Name\")")
+
+
+def ask_consent(ctx: Ctx):
+    """End of setup: show what becomes public and ask once. In a terminal: y/N, then the name. Otherwise (an AI
+    assistant running setup) print the notice and how to agree, so the person answers, not the assistant."""
+    if has_consent(ctx):
+        return
+    print("\n" + CONSENT_NOTICE)
+    if not sys.stdin.isatty():
+        print("\nTo agree: riemann-at-home submit --agree   (optionally --name \"Display Name\")\n"
+              "(If an AI assistant is running this: show the person this notice word for word and wait for "
+              "their answer.)")
+        return
+    if input("Post progress? [y/N] ").strip().lower() not in ("y", "yes"):
+        print("Not posting. Your build still runs and the local page still works. "
+              "Agree later: riemann-at-home submit --agree")
+        return
+    name = input("Name on the leaderboard (Enter = your GitHub username, or type a display name): ").strip()
+    agree(ctx, name or None)
+
+
+def agree(ctx: Ctx, name=None, upstream=None):
+    if name:
+        err = name_problem(name)
+        if err:
+            raise Fail(f"display name {err}")
+    check_gh(True)
+    ctx.set_conf(consent={"agreed": iso(time.time())})
+    if name:
+        ctx.set_conf(display={"display_name": name})
+    sc = ctx.conf().get("submit") or {}
+    ctx.set_conf(submit={**sc, "auto": True, "upstream": upstream or sc.get("upstream") or UPSTREAM})
+    print(f"Agreed. Progress is posted about every {autosubmit_interval(ctx) / 60:g} minutes while you build"
+          + (f", shown as \"{name}\" on the leaderboard (your pull request shows your username)." if name else
+             ", shown as your GitHub username."))
+    ensure_companion(ctx)
+
+
 def cmd_submit(ctx: Ctx, a):
+    if getattr(a, "agree", False):
+        agree(ctx, a.name, a.upstream)
+        return 0
     if a.interval is not None:
         if a.interval < MIN_INTERVAL:
             raise Fail(f"--interval must be at least {MIN_INTERVAL} seconds")
@@ -1558,6 +1608,7 @@ def cmd_submit(ctx: Ctx, a):
     if a.enable_auto or a.disable_auto:
         sc = ctx.conf().get("submit") or {}
         if a.enable_auto:
+            need_consent(ctx)
             check_gh(True)
             ctx.set_conf(submit={**sc, "auto": True, "upstream": a.upstream or sc.get("upstream") or UPSTREAM})
             print(f"auto-submit on: a running build updates its pull request on {a.upstream or sc.get('upstream') or UPSTREAM} "
@@ -1588,6 +1639,7 @@ def cmd_submit(ctx: Ctx, a):
         upstream = m[1] if m else None
     upstream = upstream or UPSTREAM
     if not a.dry_run:
+        need_consent(ctx)
         with submit_lock(ctx):
             return submit_real(ctx, a, src, rec, login, upstream)
     bid = rec["build_id"]
@@ -2283,6 +2335,8 @@ def main(argv=None):
     r = sub.add_parser("record", parents=[hidden], help="write a build record to ~/.riemann-at-home/records/")
     r.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     u = sub.add_parser("submit", parents=[hidden], help="open / update this computer's pull request with the latest record")
+    u.add_argument("--agree", action="store_true", help="agree to posting progress publicly (shows what is shared)")
+    u.add_argument("--name", help="with --agree: a display name for the leaderboard (your PR still shows your username)")
     au = u.add_mutually_exclusive_group()
     au.add_argument("--enable-auto", action="store_true", help="a running build updates its PR every ~10 min")
     au.add_argument("--disable-auto", action="store_true", help="stop the automatic updates")
@@ -2303,9 +2357,7 @@ def main(argv=None):
     f.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     nm = sub.add_parser("name", parents=[hidden], help="the name the page shows instead of your GitHub login")
     nm.add_argument("display_name", nargs="?", help="1 to 32 characters")
-    g = nm.add_mutually_exclusive_group()
-    g.add_argument("--anonymous", action="store_true", help="show as anonymous")
-    g.add_argument("--clear", action="store_true", help="show your GitHub login again")
+    nm.add_argument("--clear", action="store_true", help="show your GitHub login again")
     p = sub.add_parser("page", parents=[hidden], help="regenerate the local page and serve it on localhost:8642")
     p.add_argument("--once", action="store_true", help="regenerate only, don't serve")
     p.add_argument("--port", type=int, default=PAGE_PORT, help=f"local port (default {PAGE_PORT})")

@@ -123,7 +123,7 @@ index = {}
 for k, r in R.items():
     index[k] = {"file": str(save(f"check/versions/{k}.json", r).relative_to(BOT)), "path": repo_path(login_of(k), r)}
 index["build_A"], index["build_B"] = bid(A), bid(B)
-# a real record written by the volunteer CLI (a real record from an early build), and a sorryAx whole proof
+# a real record written by the volunteer CLI (copy of v1/cli/tmp/sample-real-record.json), and a sorryAx whole proof
 real = json.loads((BOT / "tests/real-cli-record.json").read_text())
 index["real_cli"] = {"file": str(save("check/versions/real_cli.json", real).relative_to(BOT)), "path": repo_path("volunteer", real)}
 for k, r in {"whole_sorry": record("2026-11-18T00:00:00Z", "2026-11-19T22:00:00Z", range(rb.N), whole_proof=True,
@@ -151,12 +151,11 @@ f = record("2026-11-17T00:00:00Z", "2026-11-20T06:00:00Z", range(rb.N), whole_pr
                                                      # started before carol, finished after
 f["machine"] = {"os": "Linux 6.8.0", "arch": "x86_64", "cpu": "AMD EPYC 9654", "cores": 96}
 save(f"sample/main/frank/{f['build_id']}.json", f)
-# display names: alice's newest record names her; dave is anonymous; a later anonymous joiner (extra/) with an
-# earlier start must not renumber dave
+# display names: alice's newest record names her; dave and a later joiner (extra/) show their logins
 save(f"sample/open/alice/{R['alice2']['build_id']}.json", R["alice2"])
 save(f"sample/open/alice/{R['aliceB2']['build_id']}.json", {**R["aliceB2"], "display_name": "Alice L."})
-save(f"sample/open/dave/{R['dave_fast']['build_id']}.json", {**R["dave_fast"], "anonymous": True})
-save(f"sample/extra/erin/{R['erin']['build_id']}.json", {**R["erin"], "anonymous": True, "started": "2026-11-16T00:00:00Z",
+save(f"sample/open/dave/{R['dave_fast']['build_id']}.json", R["dave_fast"])
+save(f"sample/extra/erin/{R['erin']['build_id']}.json", {**R["erin"], "started": "2026-11-16T00:00:00Z",
                                                          "busy_seconds": 3600})
 
 # poll: rounds of open PRs (one PR per build, head = current version of the file)
