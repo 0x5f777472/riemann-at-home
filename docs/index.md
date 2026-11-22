@@ -8,27 +8,27 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T16:54:56Z
+- Updated: 2026-11-22T17:05:12Z
 
 ## Totals
 
 - Builders: 11
-- Modules built at least once: 151,677 of 175,187 (86.6%)
-- Modules built 3 or more times: 139,273
+- Modules built at least once: 153,343 of 175,187 (87.5%)
+- Modules built 3 or more times: 140,872
 - Whole proofs finished: 0
 
 ## Running now
 
-- xangma (github.com/xangma): 151,677 modules (86.6%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- jasonhansel (github.com/jasonhansel): 142,622 modules (81.4%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
-- derek-blanchette (github.com/derek-blanchette): 138,812 modules (79.2%), AMD Ryzen 9 5950X 16-Core Processor
-- titojankowski (github.com/titojankowski): 92,903 modules (53.0%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 61,726 modules (35.2%), Apple M2 Max
+- xangma (github.com/xangma): 153,343 modules (87.5%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
+- jasonhansel (github.com/jasonhansel): 145,055 modules (82.8%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+- derek-blanchette (github.com/derek-blanchette): 140,411 modules (80.1%), AMD Ryzen 9 5950X 16-Core Processor
+- titojankowski (github.com/titojankowski): 93,138 modules (53.2%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 62,529 modules (35.7%), Apple M2 Max
 - gebhardtr (github.com/gebhardtr): 47,170 modules (26.9%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 32,014 modules (18.3%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- Genbox (github.com/Genbox): 12,704 modules (7.3%), 12th Gen Intel(R) Core(TM) i7-12700K
-- framiere (github.com/framiere): 9,115 modules (5.2%), Apple M4 Pro
+- Genbox (github.com/Genbox): 13,310 modules (7.6%), 12th Gen Intel(R) Core(TM) i7-12700K
+- framiere (github.com/framiere): 9,390 modules (5.4%), Apple M4 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
