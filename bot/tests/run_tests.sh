@@ -34,6 +34,7 @@ t "unknown tool version"           1 check ${=$(ck unknown_tool)} --author mallo
 t "digest on, reference lacks modules" 2 check ${=$(ck dave_fast)} --author dave --prev none --check-digest $SNAP
 t "digest vs live build folder"    0 check ${=$(ck bob)} --author bob --prev none --check-digest
 t "older version replayed as new"  1 check ${=$(ck alice1)} --author alice --prev $(f alice2)
+t "same record pushed again"      0 check ${=$(ck alice2)} --author alice --prev $(f alice2)
 t "final version"                  0 check ${=$(ck bob_final)} --author bob --prev $(f bob)
 t "update after final"             1 check ${=$(ck bob_after_final)} --author bob --prev $(f bob_final)
 t "real CLI record, first version"   0 check ${=$(ck real_cli)} --author volunteer --prev none

@@ -364,7 +364,8 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
         except (KeyError, ValueError) as e:
             rej.append(f"previous accepted record unreadable: {e}")
     if prev_raw is not None:
-        if recorded <= since: rej.append(f"recorded {rec['recorded']} is not after the last accepted record {prev['recorded']}")
+        if recorded <= since and rec != prev:          # the same record pushed again (a re-submit) is fine, not news
+            rej.append(f"recorded {rec['recorded']} is not after the last accepted record {prev['recorded']}")
         if not is_superset(raw, prev_raw):
             lost = popcount(bytes(a & ~b & 0xFF for a, b in zip(prev_raw, raw)))
             rej.append(f"bitmap shrank: {lost:,} modules from the last accepted record are missing")
