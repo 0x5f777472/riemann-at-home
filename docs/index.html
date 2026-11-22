@@ -23,7 +23,7 @@
     #libkey .hint{padding:7px 12px;font-size:12px;color:#7f9fdf;font-weight:normal}
     .global .title{position:static;order:0;font-size:30px;padding:14px 14px 0}
     .global .sub{position:static;order:1;font-size:13px;padding:4px 14px 6px}
-    .global .nav{position:static;order:6;padding:6px 12px 4px;justify-content:center}
+    .global .nav{position:static;order:6;flex-wrap:wrap;padding:6px 12px 4px;justify-content:center}
     .global .nav a{font-size:14px;padding:9px 14px}
     .global .extra.panel{position:static !important;width:auto !important;height:auto !important;margin:12px 10px 0}
     .global .panel.green.boardview{order:5}
@@ -66,6 +66,9 @@
   .legend i{display:inline-block;width:10px;height:3px;margin:0 5px 2px 0;vertical-align:middle}
   .stat{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
   .stat b{color:#ffd23f}
+  .hnbtn{display:inline-block;padding:7px 16px;font:bold 12px Arial;letter-spacing:1px;text-transform:uppercase;color:#fff;text-decoration:none;background:#ff6600;border:1px solid #ffa366;box-shadow:0 0 12px rgba(255,102,0,.35)}
+  .hnbtn:hover{background:#ff7a1f}
+  .nav a.hn{background:#ff6600 !important;border-color:#ffa366 !important;color:#fff !important}
   .demo{position:absolute;right:22px;top:52px;color:#ff6b6b;font-size:12px;letter-spacing:2px;border:1px solid #ff6b6b;padding:2px 7px;display:none}
   .extra{display:none}
   .global .extra{display:block}
@@ -173,7 +176,7 @@
   <div id="libkey"></div>
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub">every independent build of the AI proof of the Riemann Hypothesis</div>
-  <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a></div>
+  <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a><a class="hn" href="https://news.ycombinator.com/item?id=50594006" target="_blank" rel="noopener">Discuss on HN →</a></div>
   <div class="demo" id="demo">DEMO DATA</div>
   <div class="panel blue"  style="left:22px;top:84px;display:none;width:300px;height:132px"><h3 id="h1">Coverage</h3><div id="p1"></div></div>
   <div class="panel green" style="left:340px;top:84px;display:none;width:300px;height:132px"><h3 id="h2">Latest build</h3><div id="p2"></div></div>
@@ -326,8 +329,7 @@ $("p2").innerHTML = cur ? kv([["Builder", esc(nameOf(cur)), "y"],
 $("p3").innerHTML = kv([["Archive", "9631b4f0…c7fc", "g"], ["Lean", "4.33.1"], ["Mathlib", "0df444a3…"],
                         ["Whole proofs", fmt(sum.whole_proofs), sum.whole_proofs ? "g" : ""]]);
 const first = board.find(p => p.first_whole_proof_rank === 1);
-$("stat").innerHTML = `<b>${fmt(once)}</b> of ${fmt(N)} modules built · <b>${fmt(sum.people)}</b> builder${sum.people === 1 ? "" : "s"} · ` +
-  `<b>${fmt(sum.whole_proofs)}</b> whole proof${sum.whole_proofs === 1 ? "" : "s"}` + ` · Lean 4.33.1 · archive 9631b4f0…c7fc`;
+$("stat").innerHTML = `<a class="hnbtn" href="https://news.ycombinator.com/item?id=50594006" target="_blank" rel="noopener">Discuss on Hacker News →</a>`;   // footer: just this (summary line dropped); also a top button
 
 // ---------- join, leaderboard, whole-proof checks ----------
 const prompt = `I'd like to help build the Lean proof of the Riemann Hypothesis through Riemann@home.

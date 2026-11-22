@@ -9,6 +9,7 @@
   .title span{color:#ffd23f;text-shadow:0 0 8px #b36b00,2px 2px 0 #4d2a00}
   .sub{position:absolute;left:26px;top:54px;color:#7f9fdf;font-size:11px;letter-spacing:.5px}
   .nav{position:absolute;right:22px;top:18px;display:flex;gap:6px}
+  .nav a.hn{background:#ff6600 !important;border-color:#ffa366 !important;color:#fff !important}
   .upd{position:absolute;right:22px;top:50px;max-width:420px;background:#ffd84a;color:#0b1c55;font:bold 12px Arial;padding:6px 10px;border-radius:4px}
   .upd code{font:bold 12px Menlo,monospace;background:rgba(11,28,85,.12);padding:1px 4px;border-radius:3px}
   .nav a{font:bold 11px Arial;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:5px 10px;
@@ -114,7 +115,8 @@ const libTag = n => {                                       // "Development" in 
   return `<span class="lib" style="color:hsl(${hue},90%,68%)">${top}</span>`;
 };
 $("sub").textContent = "this computer's build of the AI proof of the Riemann hypothesis";
-$("nav").innerHTML = `<a href="${GLOBAL_URL}" target="_blank" rel="noopener">Global dashboard →</a>`;
+$("nav").innerHTML = `<a class="hn" href="https://news.ycombinator.com/item?id=50594006" target="_blank" rel="noopener">Discuss on HN →</a>` +
+                   `<a href="${GLOBAL_URL}" target="_blank" rel="noopener">Global dashboard →</a>`;
 if (/stack=\d+/.test(location.hash) && VIEW === "local") { caption = "this computer's build · one bar per 5 neighbouring modules · grows as they compile"; axis = ""; }
 $("cap").textContent = caption;
 
