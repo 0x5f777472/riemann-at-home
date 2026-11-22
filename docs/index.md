@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T22:41:17Z
+- Updated: 2026-11-22T22:55:50Z
 
 ## Totals
 
@@ -20,21 +20,22 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 ## Running now
 
 - derek-blanchette (github.com/derek-blanchette): 175,187 modules (100.0%), AMD Ryzen 9 5950X 16-Core Processor
+- jasonhansel (github.com/jasonhansel): 175,187 modules (100.0%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
 - titojankowski (github.com/titojankowski): 97,370 modules (55.6%), Apple M5 Max
 - rib3ye (github.com/rib3ye): 75,147 modules (42.9%), Apple M2 Max
 - gebhardtr (github.com/gebhardtr): 52,149 modules (29.8%), AMD Ryzen 5 5600X 6-Core Processor
-- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 48,453 modules (27.7%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 28,026 modules (16.0%), 12th Gen Intel(R) Core(TM) i7-12700K
+- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 51,605 modules (29.5%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+- Genbox (github.com/Genbox): 29,308 modules (16.7%), 12th Gen Intel(R) Core(TM) i7-12700K
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 13,255 modules (7.6%), Apple M4 Pro
-- milhouse1337 (github.com/milhouse1337): 11,450 modules (6.5%), Apple M3 Ultra
+- framiere (github.com/framiere): 13,437 modules (7.7%), Apple M4 Pro
+- milhouse1337 (github.com/milhouse1337): 12,182 modules (7.0%), Apple M3 Ultra
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
 
-1. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
-2. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor
+1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor
+2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
 
 ## Also checked independently by
 
