@@ -1,0 +1,38 @@
+# Tests for the volunteer tool (cli/), on Linux with the proof's real Lean, on every change to cli/.
+# Includes ExportSmoke: the real lean4export, built exactly as `riemann-at-home export` builds it, exporting a tiny
+# project compiled with Lean v4.33.1. That test would have caught issue #14 ("incompatible header") on day one.
+name: cli tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["cli/**", ".github/workflows/cli-tests.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install elan and the proof's Lean
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/elan" toolchain install "$(python3 -c "import re;print(re.search(r'^TOOLCHAIN = \"(.+?)\"', open('cli/riemann-at-home').read(), re.M)[1])")"
+
+      - name: Export smoke test (real lean4export, real Lean)
+        working-directory: cli/tests
+        run: python3 -m unittest -v test_cli.ExportSmoke
+
+      - name: All tool tests
+        working-directory: cli/tests
+        run: python3 -m unittest test_cli

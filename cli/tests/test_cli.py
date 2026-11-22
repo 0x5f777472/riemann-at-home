@@ -601,6 +601,26 @@ class Levels(unittest.TestCase):
         self.assertEqual((src / "lean-toolchain").read_text().strip(), rah.TOOLCHAIN)
         self.assertEqual(cmd[-1], "Main")
 
+    def test_export_check_fast(self):
+        """`export --check` (and the 5-minute check in every build): ok only if the exporter reads this Lean version."""
+        def fake(name, body):
+            f = self.tmp / f"bin/{name}"
+            f.write_text(f"#!{sys.executable} -I\nimport sys, json\n{body}\n"); f.chmod(0o755); return f
+        meta = lambda v: f"print(json.dumps({{'meta': {{'lean': {{'version': '{v}'}}}}}})); print('{{}}' * 3)"
+        ok = fake("ok-export", meta(rah.TOOLCHAIN.rsplit(":v", 1)[-1]))
+        code, out, err = self.main("export", "--check", "--exporter", ok)
+        self.assertEqual(code, 0, err); self.assertIn("export check ok", out)
+        self.assertTrue(json.loads((self.home / "export-check.json").read_text())["ok"])
+        old = fake("old-export", "print(\"uncaught exception: failed to read file 'x.olean', incompatible header\", "
+                                 "file=sys.stderr); sys.exit(1)")
+        code, out, err = self.main("export", "--check", "--exporter", old)
+        self.assertEqual(code, 1); self.assertIn("incompatible header", err)
+        wrong = fake("wrong-export", meta("4.33.0"))
+        code, out, err = self.main("export", "--check", "--exporter", wrong)
+        self.assertEqual(code, 1); self.assertIn("expected " + rah.TOOLCHAIN.rsplit(":v", 1)[-1], err)
+        code, out, err = self.main("status")
+        self.assertIn("export    check FAILED", out)
+
     def test_export_match_recheck_sign(self):
         code, out, err = self.main("export", "--exporter", self.exporter)
         self.assertEqual(code, 0, err); self.assertIn("Level 2: matches the reference", out)
@@ -1154,3 +1174,38 @@ class Consent(unittest.TestCase):
             del os.environ["RAH_HOME"]
         self.assertIn("riemann-at-home submit --agree", buf.getvalue())
         self.assertFalse(rah.has_consent(ctx))           # an assistant can't answer for the person
+
+
+def _toolchain_ready() -> bool:
+    elan = rah.elan_bin() / "elan"
+    if not elan.exists() or not shutil.which("git"):
+        return False
+    r = subprocess.run([str(elan), "toolchain", "list"], capture_output=True, text=True)
+    return rah.TOOLCHAIN.split(":")[-1] in r.stdout
+
+
+@unittest.skipUnless(_toolchain_ready(), f"needs elan with {rah.TOOLCHAIN} installed (and network for lean4export)")
+class ExportSmoke(unittest.TestCase):
+    """The REAL exporter, built exactly as `export` builds it, on a tiny Lean project compiled with the proof's Lean.
+    This is the test that would have caught issue #14 on day one; GitHub Actions runs it on every change to cli/."""
+    def test_real_exporter_reads_a_tiny_project(self):
+        import argparse
+        tmp = Path(tempfile.mkdtemp(dir=TMP, prefix="smoke-"))
+        try:
+            proj = tmp / "lean"; proj.mkdir()
+            (proj / "lean-toolchain").write_text(rah.TOOLCHAIN + "\n")
+            (proj / "lakefile.toml").write_text('name = "tiny"\ndefaultTargets = ["Tiny"]\n\n[[lean_lib]]\nname = "Tiny"\n')
+            (proj / "Tiny.lean").write_text("theorem tiny : 1 + 1 = 2 := rfl\n")
+            b = subprocess.run([rah.which("lake") or "lake", "build"], cwd=proj, capture_output=True, text=True, env=rah.lean_env())
+            self.assertEqual(b.returncode, 0, b.stdout + b.stderr)
+            old = dict(os.environ); os.environ["RAH_HOME"] = str(tmp / "home")
+            try:
+                ctx = rah.Ctx(argparse.Namespace(folder=str(proj), logs=None))
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    r = rah.export_check(ctx)
+            finally:
+                os.environ.clear(); os.environ.update(old)
+            self.assertTrue(r["ok"], r); self.assertEqual(r["module"], "Tiny")
+            self.assertEqual(r["lean_version"], rah.TOOLCHAIN.rsplit(":v", 1)[-1])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

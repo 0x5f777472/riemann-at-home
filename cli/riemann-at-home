@@ -18,7 +18,7 @@
 Standard library only. Run with `python3 -I`. Contract: CONTRACT.md (format rah/build/1).
 """
 import argparse, base64, contextlib, getpass, io, math, gzip, hashlib, http.server, json, os, platform, re, shlex
-import secrets, unicodedata, shutil, signal, socket, subprocess, sys, tarfile, threading, time, urllib.request
+import secrets, unicodedata, shutil, signal, socket, subprocess, sys, tarfile, tempfile, threading, time, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -931,6 +931,7 @@ def cmd_run(ctx: Ctx, a):
     threading.Thread(target=disk_guard, daemon=True).start()
     setup_sweeper(ctx, stopping)              # keeps a whole build near 160 GB instead of 1.2 TB
     update_checker(ctx, stopping)             # daily: is there a newer version? (tells, never installs)
+    setup_export_check(ctx, stopping)         # 5 min in: will the export step work on this computer? (issue #14)
 
     (ctx.logs / "supervisor.features").write_text(f"{os.getpid()} autosubmit-v2\n")   # rereads interval/config
 
@@ -1110,6 +1111,10 @@ def cmd_status(ctx: Ctx, a):
         print(f"speed     {r:,.0f} modules/hour over the last {SPEED_WINDOW // 60} min{eta}")
     elif built and busy >= 600:
         print(f"speed     {built / busy * 3600:,.0f} modules/hour on average ({built:,} built while measured)")
+    xc = export_check_state(ctx)
+    if xc:
+        print("export    " + (f"check ok ({xc.get('exporter')} read {xc.get('module')})" if xc.get("ok")
+                               else f"check FAILED: {xc.get('error')} (riemann-at-home export --check to retry)"))
     up = update_state(ctx)
     if up.get("available"):
         print(f"update    available ({len(up['changes'])} change(s)): riemann-at-home update")
@@ -1851,6 +1856,77 @@ def exporter_command(ctx: Ctx, a) -> list:
     return [which("lake") or "lake", "env", str(exe), "Main"]
 
 
+EXPORT_CHECK_AFTER = 300        # seconds into a build before the export check runs (some modules are compiled by then)
+
+
+def export_check(ctx: Ctx, a=None) -> dict:
+    """Catch export problems in minutes, not after an 18-hour build (issue #14): build lean4export exactly as
+    `export` does, export ONE already-compiled module (the smallest), and check that its first line says it read
+    this build's Lean version. Nothing is kept but the result, saved to export-check.json and returned."""
+    res = {"checked": iso(time.time()), "ok": False}
+    try:
+        done = compiled_modules(ctx.lib)
+        if not done:
+            res["error"] = "no compiled module yet to test the exporter on"
+            return res
+        mod = min(done, key=lambda m: ((ctx.lib / (m.replace(".", "/") + ".olean")).stat().st_size, m))
+        cmd = exporter_command(ctx, a or argparse.Namespace(exporter=None))[:-1] + [mod]
+        res.update(module=mod, exporter=Path(cmd[-2]).parents[3].name if len(cmd) > 2 else str(cmd[0]))
+        with tempfile.TemporaryFile() as err:
+            p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=err, env=lean_env())
+            try:
+                first = p.stdout.readline(1 << 20)
+            finally:
+                p.kill(); p.stdout.close(); p.wait()
+            err.seek(0); msg = err.read().decode(errors="replace").strip()
+        want = TOOLCHAIN.rsplit(":v", 1)[-1]
+        try:
+            got = json.loads(first)["meta"]["lean"]["version"]
+        except (ValueError, KeyError, TypeError):
+            got = None
+        res["lean_version"] = got
+        if got == want:
+            res["ok"] = True
+        else:
+            res["error"] = (msg.splitlines()[-1][:300] if msg else
+                            f"the exporter wrote no export header (Lean {got or '?'}, expected {want})")
+    except Fail as e:
+        res["error"] = str(e)[:300]
+    except Exception as e:
+        res["error"] = f"{type(e).__name__}: {e}"[:300]
+    try:
+        (ctx.home / "export-check.json").write_text(json.dumps(res, indent=1) + "\n")
+    except OSError:
+        pass
+    return res
+
+
+def export_check_state(ctx: Ctx) -> dict:
+    try:
+        return json.loads((ctx.home / "export-check.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def setup_export_check(ctx: Ctx, stop: "threading.Event"):
+    """Background thread: EXPORT_CHECK_AFTER seconds into the build, run export_check once (again only if the last
+    result failed or used a different exporter). Never touches the build; a failure is logged and shown in status."""
+    def go():
+        if stop.wait(EXPORT_CHECK_AFTER):
+            return
+        last = export_check_state(ctx)
+        want = f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
+        if last.get("ok") and last.get("exporter") == want:
+            return
+        r = export_check(ctx)
+        log_event(ctx, "EXPORT_CHECK=" + ("ok" if r["ok"] else "failed"))
+        print(f"export check: {'ok, the export step will work on this computer' if r['ok'] else 'FAILED: ' + r.get('error', '?')}"
+              + ("" if r["ok"] else ". The build goes on, but the export at the end would fail: please report this at "
+                 "https://github.com/riemann-at-home/riemann-at-home/issues"), flush=True)
+    threading.Thread(target=go, daemon=True).start()
+
+
 def export_progress(ctx: Ctx, digest: str):
     """The record's export_progress for this build and olean digest: progress while `export` runs, the result once
     done. An unfinished export not updated for EXPORT_STALE seconds (stopped, crashed) is left out."""
@@ -1935,6 +2011,13 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
 
 def cmd_export(ctx: Ctx, a):
     """Level 2: export the compiled proof with lean4export and compare it with the reference export."""
+    if getattr(a, "check", False):                            # a minute: will the export work here? (issue #14)
+        r = export_check(ctx, a)
+        if r["ok"]:
+            print(f"export check ok: {r['exporter']} read {r['module']} (Lean {r['lean_version']})")
+            return 0
+        print(f"export check FAILED: {r.get('error')}", file=sys.stderr)
+        return 1
     rec = whole_build(ctx, a, "export")
     cmd = exporter_command(ctx, a)
     ctx.logs.mkdir(parents=True, exist_ok=True)
@@ -2472,8 +2555,10 @@ def main(argv=None):
     lvl = argparse.ArgumentParser(add_help=False)
     lvl.add_argument("--exporter", help=argparse.SUPPRESS)            # testing: a stand-in for lean4export
     lvl.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
-    sub.add_parser("export", parents=[hidden, lvl],
-                   help="Level 2: hash the proof export (lean4export, streamed, never stored) against the reference")
+    ex = sub.add_parser("export", parents=[hidden, lvl],
+                        help="Level 2: hash the proof export (lean4export, streamed, never stored) against the reference")
+    ex.add_argument("--check", action="store_true",
+                    help="just check that the exporter works on this computer (exports one compiled module, about a minute)")
     rc = sub.add_parser("recheck", parents=[hidden, lvl], help="Level 3 (optional): re-check the export independently")
     g = rc.add_mutually_exclusive_group(required=True)
     g.add_argument("--nanoda", action="store_true", help=f"nanoda (needs about {CHECKERS['nanoda']} GB of memory)")
