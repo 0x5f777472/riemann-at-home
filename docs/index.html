@@ -258,6 +258,7 @@ const RECENT = (() => {
   else if (DEMO) { for (let k = 0; k < 600; k++) { const i = Math.floor(Math.random() * N); if (heights[i]) idx.push(i); } }
   idx = [...new Set(idx)].filter(i => i >= 0 && i < N && heights[i] > 0);
   for (let k = idx.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [idx[k], idx[j]] = [idx[j], idx[k]]; }
+  idx = idx.slice(0, 300);                     // at most one every ~2 s: a calm trickle; the rest are drawn in full already
   for (const i of idx) heights[i]--;
   return idx;
 })();
@@ -473,7 +474,7 @@ stars(); terrain();
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
   const OV = ctx2d("overlay"), TG = $("terrain").getContext("2d");
-  const W = Math.min(600, Math.max(120, (Date.parse(DATA.generated) + 600e3 - Date.now()) / 1000)) * 1000;   // until the next update
+  const W = 600e3;                             // spread over 10 minutes: at most 300, so one every 2 s or slower
   const t0 = performance.now(), GROW = 700, FADE = 5000, live = [];
   let next = 0;
   const w = Math.max(1, sx * 0.85);

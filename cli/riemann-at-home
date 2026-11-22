@@ -50,12 +50,20 @@ UNVERIFIED = "unverified: the reference hash has not yet been reproduced by this
 CHECKERS = {"nanoda": 100, "con-leche": 50}
 NAME_NOTICE = ("This is only a label on the Riemann@home page. Your pull request on GitHub always shows your "
                "username, so nobody here is anonymous.")
-CONSENT_NOTICE = (
-    "Riemann@home posts your progress to a public pull request on GitHub, about every 10 minutes while you build.\n"
-    "Public: your GitHub username, your computer's OS, chip and number of cores, and which modules you've built.\n"
-    "On the leaderboard you can show a display name instead of your username, but the pull request always shows "
-    "your username.\n"
-    "Nothing is posted until you agree. Stop any time: riemann-at-home submit --disable-auto")
+def consent_notice(login=None) -> str:
+    """What becomes public, said before anything is posted. `login`: the GitHub account `gh` is logged into."""
+    acct = f"your GitHub account ({login})" if login else "your GitHub account (the one `gh` is logged into)"
+    return (
+        f"Riemann@home posts your progress from {acct}, about every 10 minutes while you build.\n"
+        "The commits and the pull request are public on GitHub and carry that username: your name is connected to "
+        "this build.\n"
+        "Also public: your computer's OS, chip and number of cores, and which modules you've built.\n"
+        "On the leaderboard you can show a display name instead, but GitHub always shows your username on the "
+        "commits and the pull request.\n"
+        "Nothing is posted until you agree. Stop any time: riemann-at-home submit --disable-auto")
+
+
+CONSENT_NOTICE = consent_notice()
 PAGE_PORT = 8642
 SAMPLE_SECONDS = float(os.environ.get("RAH_SAMPLE_SECONDS", "300"))
 MIN_FREE_GB = float(os.environ.get("RAH_MIN_FREE_GB", "20"))          # stop the build below this much free disk
@@ -1551,7 +1559,7 @@ def has_consent(ctx: Ctx) -> bool:
 
 def need_consent(ctx: Ctx):
     if not has_consent(ctx):
-        raise Fail("Nothing is posted until you agree.\n\n" + CONSENT_NOTICE +
+        raise Fail("Nothing is posted until you agree.\n\n" + consent_notice() +
                    "\n\nTo agree: riemann-at-home submit --agree   (optionally --name \"Display Name\")")
 
 
@@ -1560,7 +1568,13 @@ def ask_consent(ctx: Ctx):
     assistant running setup) print the notice and how to agree, so the person answers, not the assistant."""
     if has_consent(ctx):
         return
-    print("\n" + CONSENT_NOTICE)
+    try:
+        login = gh_login()                        # the account the commits will come from: name it
+    except Exception:
+        print("\nBefore anything can be posted, log into GitHub yourself: gh auth login\n"
+              "Then run: riemann-at-home submit --agree   (it shows what becomes public, and asks)")
+        return
+    print("\n" + consent_notice(login))
     if not sys.stdin.isatty():
         print("\nTo agree: riemann-at-home submit --agree   (optionally --name \"Display Name\")\n"
               "(If an AI assistant is running this: show the person this notice word for word and wait for "
@@ -1580,14 +1594,16 @@ def agree(ctx: Ctx, name=None, upstream=None):
         if err:
             raise Fail(f"display name {err}")
     check_gh(True)
-    ctx.set_conf(consent={"agreed": iso(time.time())})
+    login = gh_login()
+    print(consent_notice(login) + "\n")
+    ctx.set_conf(consent={"agreed": iso(time.time()), "login": login})
     if name:
         ctx.set_conf(display={"display_name": name})
     sc = ctx.conf().get("submit") or {}
     ctx.set_conf(submit={**sc, "auto": True, "upstream": upstream or sc.get("upstream") or UPSTREAM})
-    print(f"Agreed. Progress is posted about every {autosubmit_interval(ctx) / 60:g} minutes while you build"
-          + (f", shown as \"{name}\" on the leaderboard (your pull request shows your username)." if name else
-             ", shown as your GitHub username."))
+    print(f"Agreed. Progress is posted from GitHub account {login} about every {autosubmit_interval(ctx) / 60:g} "
+          "minutes while you build" + (f", shown as \"{name}\" on the leaderboard (GitHub shows {login} on the "
+                                       "commits and pull request)." if name else f", shown as {login}."))
     ensure_companion(ctx)
 
 

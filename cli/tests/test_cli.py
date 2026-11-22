@@ -1066,10 +1066,12 @@ class Consent(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_notice_says_what_is_public(self):
-        for part in ("GitHub username", "OS, chip and number of cores", "pull request always shows your username",
-                     "Nothing is posted until you agree"):
-            self.assertIn(part, rah.CONSENT_NOTICE)
-        self.assertNotIn("anonymous", rah.CONSENT_NOTICE.lower())
+        n = rah.consent_notice("octocat")
+        for part in ("your GitHub account (octocat)", "carry that username", "your name is connected",
+                     "OS, chip and number of cores", "GitHub always shows your username", "Nothing is posted until you agree"):
+            self.assertIn(part, n)
+        self.assertNotIn("anonymous", n.lower())
+        self.assertIn("the one `gh` is logged into", rah.consent_notice())
 
     def test_no_submit_or_auto_without_agreeing(self):
         rp = self.tmp / "r.json"; rp.write_text(json.dumps(Fast._valid_record(None, rp)))
@@ -1089,5 +1091,5 @@ class Consent(unittest.TestCase):
                 rah.ask_consent(ctx)
         finally:
             del os.environ["RAH_HOME"]
-        self.assertIn("To agree: riemann-at-home submit --agree", buf.getvalue())
+        self.assertIn("riemann-at-home submit --agree", buf.getvalue())
         self.assertFalse(rah.has_consent(ctx))           # an assistant can't answer for the person
