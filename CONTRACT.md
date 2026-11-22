@@ -118,7 +118,8 @@ by whoever publishes data.json (the bot), unchanged from the reference list.
   (marks the record `"final": true`), or after 7 days without updates (merge the last accepted version).
 - A version that fails checks is not used; the bot comments once on the PR with the reason and keeps the last
   accepted version until a newer one passes. It only closes a PR for identity/path violations.
-- Staleness: Running Now hides builds whose `recorded` is older than 1 h (page-side).
+- Staleness: Running Now hides builds whose `recorded` is older than 1 h (page-side), but only when more than 10
+  people have builds running; with 10 or fewer, every unfinished build stays listed (2026-11-21).
 
 ## Clarifications from building the CLI (2026-11-21)
 

@@ -142,7 +142,7 @@
   <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
        border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
 
-  <div class="extra panel navy joinview" style="left:22px;top:540px;width:956px;height:250px">
+  <div class="extra panel navy joinview" style="left:22px;top:540px;width:956px;height:282px">
     <h3>Join in</h3>
     <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/riemann-at-home/riemann-at-home">github.com/riemann-at-home/riemann-at-home</a></div>
     <div class="line">Or paste this into your AI assistant (Claude, ChatGPT, …) and it will walk you through it:</div>
@@ -150,9 +150,9 @@
     <span class="btn" id="copy">COPY</span>
     <div class="line jsline">Finish the whole proof and reproduce the export to sign the <a class="gh" href="#statement" id="jslink">joint statement</a><span id="jscount"></span>.</div>
   </div>
-  <div class="extra panel blue boardview" style="left:22px;top:806px;width:630px;height:330px">
+  <div class="extra panel blue boardview" style="left:22px;top:838px;width:630px;height:330px">
     <h3>Leaderboard · finished the whole proof</h3><div id="board" class="honor"></div></div>
-  <div class="extra panel green boardview" style="left:668px;top:806px;width:310px;height:330px">
+  <div class="extra panel green boardview" style="left:668px;top:838px;width:310px;height:330px">
     <h3>Running now · builds in progress</h3><div id="running" class="honor"></div></div>
   <!-- Joint statement tab (#statement): owner-approved wording, keep exactly -->
   <div class="extra panel navy stview" style="left:22px;top:540px;width:560px;height:646px">
@@ -353,10 +353,12 @@ $("board").innerHTML = (whole.length ? whole.map((p, k) => {
   (VALIDATED.length ? `<div class="sub2">Also checked independently by</div>` + VALIDATED.map(({who, what, url}) =>
     `<div class="val"><b>✓</b> <span class="who">${esc(who)}</span><br><span class="what">${esc(what)}</span> <a href="${esc(url)}" target="_blank">source</a></div>`).join("") +
     `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
-// RIGHT: every unfinished BUILD (one per computer) whose last record is under 1 h old, by this browser's clock,
-// so stale builds drop off even when the bot is idle. Bars are the accepted counts; the shimmer is decoration only.
-const FRESH = 3.6e6, now = Date.now();   // 1 hour
-const running = (DATA.running || []).filter(b => now - Date.parse(b.recorded) <= FRESH)
+// RIGHT: every unfinished BUILD (one per computer). Builds whose last record is over 1 h old (by this browser's clock)
+// drop off only when more than 10 people are building; with 10 or fewer, everyone stays listed (owner, 2026-11-21).
+// Bars are the accepted counts; the shimmer is decoration only.
+const FRESH = 3.6e6, now = Date.now(), CROWD = 10;   // 1 hour; stale builds hide only above 10 people
+const allRunning = DATA.running || [], crowded = new Set(allRunning.map(b => b.who)).size > CROWD;
+const running = allRunning.filter(b => !crowded || now - Date.parse(b.recorded) <= FRESH)
   .sort((a, b) => b.modules - a.modules || String(nameOf(a)).localeCompare(String(nameOf(b))));
 $("running").innerHTML = (running.length ? running.map((p, k) => {
     const pct = p.modules / N * 100;
@@ -364,8 +366,8 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
       person(p, "w") +
       `<span class="pc"><b>${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}%</b> · ${fmt(p.modules)}</span></div>` +
       `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div></div></div>`; }).join("")
-  : `<div class="note">No builds reported in the last hour.</div>`) +
-  `<div class="note">One row per computer with a build record in the last hour; modules built so far out of ${fmt(N)}.</div>`;
+  : (crowded ? `<div class="note">No builds reported in the last hour.</div>` : `<div class="note">No builds in progress.</div>`)) +
+  `<div class="note">One row per computer${crowded ? " with a build record in the last hour" : ""}; modules built so far out of ${fmt(N)}.</div>`;
 
 // ---------- terrain geometry ----------
 // 175,187 = 733 x 239 exactly: 733 columns across, modules run front to back, so the libraries run left to right.
