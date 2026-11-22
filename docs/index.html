@@ -6,20 +6,30 @@
   #screen{width:1000px;height:680px;margin:0 auto;position:relative;background:#000}
   #stagewrap{position:absolute;left:0;top:0;width:1000px;height:680px}
   #stage{position:absolute;left:0;top:0;width:1000px;height:680px;transform-origin:0 0}
+  #mcap,#libkey{display:none}
   /* ---------- phones: the map scales to the screen width; everything else is one column with bigger text ---------- */
   @media (max-width: 760px) {
     body.global{min-width:0}
     #screen{width:auto !important;height:auto !important;display:flex;flex-direction:column;padding:0 0 24px}
-    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.49);overflow:hidden;order:2}
+    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.35);overflow:hidden;order:3}
+    #mcap{display:block;order:2;color:#9fb6ff;font-size:13px;padding:6px 14px 0}
+    #libkey{display:block;order:4;margin:2px 10px 0;border:1px solid rgba(120,160,255,.35)}
+    #libkey .lk{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 12px;
+                border-bottom:1px solid rgba(120,160,255,.16);font-size:15px;color:#fff;cursor:pointer}
+    #libkey .lk:last-child{border-bottom:0}
+    #libkey .lk.on{background:rgba(90,160,255,.18)}
+    #libkey .dot2{width:12px;height:12px;border-radius:50%}
+    #libkey .lkn{font-size:13px;color:#b9d0ff;font-weight:normal;text-align:right}
+    #libkey .hint{padding:7px 12px;font-size:12px;color:#7f9fdf;font-weight:normal}
     .global .title{position:static;order:0;font-size:30px;padding:14px 14px 0}
     .global .sub{position:static;order:1;font-size:13px;padding:4px 14px 6px}
-    .global .nav{position:static;order:3;padding:6px 12px 4px;justify-content:center}
+    .global .nav{position:static;order:5;padding:6px 12px 4px;justify-content:center}
     .global .nav a{font-size:14px;padding:9px 14px}
     .global .extra.panel{position:static !important;width:auto !important;height:auto !important;margin:12px 10px 0}
-    .global .joinview{order:4}
-    .global .panel.green.boardview{order:5}
-    .global .panel.blue.boardview{order:6}
-    .global .stview{order:7}
+    .global .joinview{order:6}
+    .global .panel.green.boardview{order:7}
+    .global .panel.blue.boardview{order:8}
+    .global .stview{order:9}
     .global .panel h3{font-size:13px;padding:7px 10px}
     .global .line{font-size:15px;line-height:1.4;padding:8px 12px 0}
     .global .prompt{font-size:13px;white-space:pre-wrap;word-break:break-word}
@@ -30,7 +40,7 @@
     .global .hr{grid-template-columns:24px 40px 1fr;padding:10px 12px}
     .global .hr .w{font-size:16px}.global .hr .m,.global .hr .d{font-size:13px;text-align:left;grid-column:3}
     .global .sub2{font-size:12px}.global .val{font-size:14px}
-    .global .stat{position:static;order:8;font-size:13px;line-height:1.5;padding:14px 12px 0}
+    .global .stat{position:static;order:10;font-size:13px;line-height:1.5;padding:14px 12px 0}
     .global #tip{display:none !important}
     .global .stmt{font-size:15px;line-height:1.5;height:auto !important;overflow:visible}
   }
@@ -154,11 +164,13 @@
   #tab-statement{border-color:#ffd23f;color:#ffd23f}
 </style></head>
 <body class="global"><div id="screen" style="height:1365px">
+  <div id="mcap">Each spike is one module of the proof · height = how many people built it</div>
   <div id="stagewrap"><div id="stage">
   <canvas id="stars" width="1000" height="680"></canvas>
   <canvas id="terrain" width="1000" height="680"></canvas>
   <canvas id="overlay" width="1000" height="680"></canvas>
   </div></div>
+  <div id="libkey"></div>
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub">every independent build of the AI proof of the Riemann Hypothesis</div>
   <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a></div>
@@ -281,6 +293,8 @@ let sum = DATA.summary, cur = DATA.latest, board = DATA.leaderboard || [];
 board = board.slice().sort((a, b) => b.modules - a.modules || String(a.since).localeCompare(String(b.since))
                                     || (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9));
 let maxVal = 1; for (const h of heights) if (h > maxVal) maxVal = h;
+const BUILT0 = heights.map(h => h > 0 ? 1 : 0);     // built at least once (before the replay lowers recent ones)
+const PHONE = () => innerWidth <= 760;
 // Replay: modules that gained a builder since the bot's previous update ("recent", delta-coded) start one lower and
 // grow back in one by one over the next ~10 minutes, so the map shows the last update's work as it happened.
 // (#demo makes up a few hundred from the sample so the animation can be seen.)
@@ -482,6 +496,7 @@ function terrain() {
   for (const h of [0, maxH + 8]) { g.beginPath();
     corners.forEach(([c, r], k) => { const x = px(c, r), y = py(r) - h; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); }
   for (const [c, r] of corners) { g.beginPath(); g.moveTo(px(c, r), py(r)); g.lineTo(px(c, r), py(r) - maxH - 8); g.stroke(); }
+  if (PHONE()) return;                         // phones: the readable key under the map replaces these labels
   g.fillStyle = "#e8ecff"; g.font = "bold 11px Arial";
   g.save(); g.translate(px(0, 0) - 22, py(0) - maxH / 2 + 24); g.rotate(-Math.PI / 2); g.fillText("builders", 0, 0); g.restore();
   g.fillText(`${maxVal}`, px(0, 0) - 10 - 6 * String(maxVal).length, py(0) - maxH + 4); g.fillText("0", px(0, 0) - 12, py(0));
@@ -502,12 +517,31 @@ function terrain() {
 }
 $("cap").textContent = "";
 stars(); terrain();
+// Phones: library key under the map (name, size, how much is built); tapping a row highlights that library.
+{ const fmtN = n => n.toLocaleString("en-US");
+  const built = (a, z) => { let b = 0; for (let i = a; i < z; i++) b += BUILT0[i]; return b; };
+  const pctTxt = (b, n) => { const p = b / n * 100; return `${p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)}% built`; };
+  const big = [], small = [];                  // libraries of 1%+ of the proof get a row; the rest share one
+  LIBS.forEach(([name, start], k) => ((libEnd(k) - start) >= N / 100 ? big : small).push(k));
+  const rows = big.map(k => { const [name, start] = LIBS[k], end = libEnd(k);
+    return `<div class="lk" data-k="${k}"><span class="dot2" style="background:hsl(${Math.round(libHue(k))},90%,62%)"></span>` +
+           `<span>${esc(name)}</span><span class="lkn">${fmtN(end - start)} modules · ${pctTxt(built(start, end), end - start)}</span></div>`; });
+  if (small.length) { let n = 0, b = 0; for (const k of small) { n += libEnd(k) - LIBS[k][1]; b += built(LIBS[k][1], libEnd(k)); }
+    rows.push(`<div class="lk" style="cursor:default"><span class="dot2" style="background:#6b7080"></span>` +
+              `<span>${small.length} small libraries</span><span class="lkn">${fmtN(n)} modules · ${pctTxt(b, n)}</span></div>`); }
+  $("libkey").innerHTML = rows.join("") + `<div class="hint">Tap a library to highlight it in the map.</div>`;
+  $("libkey").addEventListener("click", e => {
+    const row = e.target.closest(".lk"); if (!row || row.dataset.k === undefined) return;
+    const k = +row.dataset.k; HL = HL === k ? -1 : k; terrain();
+    for (const r of $("libkey").querySelectorAll(".lk")) r.classList.toggle("on", +r.dataset.k === HL);
+  }); }
 // Phones: scale the 1000x680 map to the screen width (the rest of the page is a normal column there).
-{ const TOP = 95, H = 490;                  // phones: show only the map's band (desktop title/summary areas trimmed)
+{ const TOP = 100, H = 350;                  // phones: show only the map's band (desktop title/summary areas trimmed)
   const fit = () => { const phone = innerWidth <= 760, k = phone ? $("stagewrap").clientWidth / 1000 : 1;
                       $("stage").style.transform = phone ? `scale(${k}) translateY(${-TOP}px)` : "";
                       $("stagewrap").style.height = phone ? `${Math.round(H * k)}px` : ""; };
-  fit(); addEventListener("resize", fit); }
+  let wasPhone = PHONE();
+  fit(); addEventListener("resize", () => { fit(); if (PHONE() !== wasPhone) { wasPhone = PHONE(); terrain(); } }); }
 
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
