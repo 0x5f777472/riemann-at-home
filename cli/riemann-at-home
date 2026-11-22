@@ -1554,7 +1554,10 @@ def submit_lock(ctx: Ctx):
 
 
 def has_consent(ctx: Ctx) -> bool:
-    return bool((ctx.conf().get("consent") or {}).get("agreed"))
+    """Agreed with `submit --agree` (or at setup), or already posting before consent existed: a pull request opened
+    by an older version counts as agreed (new versions can't open one without the yes)."""
+    c = ctx.conf()
+    return bool((c.get("consent") or {}).get("agreed")) or bool((c.get("pr") or {}).get("number"))
 
 
 def need_consent(ctx: Ctx):

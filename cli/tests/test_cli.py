@@ -1081,6 +1081,16 @@ class Consent(unittest.TestCase):
         r = cli("submit", "--enable-auto", home=self.home, check=False)
         self.assertEqual(r.returncode, 1); self.assertIn("Nothing is posted until you agree", r.stderr)
 
+    def test_already_posting_before_consent_counts_as_agreed(self):
+        os.environ["RAH_HOME"] = str(self.home)
+        try:
+            ctx = rah.Ctx(type("A", (), {"folder": None, "logs": str(self.tmp / "logs")})())
+            self.assertFalse(rah.has_consent(ctx))
+            ctx.set_conf(pr={"build_id": "0123456789abcdef", "number": 7, "state": "open"})
+            self.assertTrue(rah.has_consent(ctx))
+        finally:
+            del os.environ["RAH_HOME"]
+
     def test_ask_consent_without_terminal_only_prints(self):
         ctx = rah.Ctx(type("A", (), {"folder": None, "logs": str(self.tmp / "logs")})())
         os.environ["RAH_HOME"] = str(self.home)
