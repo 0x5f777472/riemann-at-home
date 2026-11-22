@@ -35,9 +35,9 @@
        background:linear-gradient(#2f5bd8,#13308f);border:1px solid #6f8fff;cursor:pointer;text-decoration:none}
   .gh{color:#ffd23f;text-decoration:none}
   .honor{height:446px;overflow-y:auto;padding:4px 0}
-  .hr{display:grid;grid-template-columns:26px 56px 1fr auto;gap:3px 12px;padding:10px 12px;border-bottom:1px solid rgba(120,160,255,.16)}
-  .hr .n{color:#7f9fdf;font-size:15px;padding-top:1px;align-self:center;grid-row:1 / 3}.hr .w{color:#fff;font-size:17px}.hr .d{color:#7f9fdf;font-size:11px;text-align:right}
-  .hr .m{grid-column:3 / 5;color:#b9d0ff;font-size:12px;font-weight:normal}
+  .hr{display:grid;grid-template-columns:22px 30px 1fr auto;gap:2px 8px;padding:5px 9px;border-bottom:1px solid rgba(120,160,255,.16)}
+  .hr .n{color:#7f9fdf;font-size:11px;padding-top:1px}.hr .w{color:#fff}.hr .d{color:#7f9fdf;font-size:11px;text-align:right}
+  .hr .m{grid-column:3 / 5;color:#b9d0ff;font-size:11px;font-weight:normal}
   .whole{color:#000;background:#ffd23f;font-size:9px;letter-spacing:1px;padding:1px 5px;margin-left:6px;vertical-align:1px}
   .lvl{color:#000;font-size:9px;letter-spacing:1px;padding:1px 5px;margin-left:4px;vertical-align:1px;white-space:nowrap}
   .lvl.l2{background:#7dff95}.lvl.l3{background:#7fd8ff}
@@ -346,7 +346,7 @@ $("board").innerHTML = (whole.length ? whole.map((p, k) => {
     if (p.build_hours != null) bits.push(`built in ${hours(p.build_hours)}`);
     if (p.machine) bits.push(esc(p.machine));
     if (p.computers > 1) bits.push(`${p.computers} computers`);
-    return `<div class="hr"><span class="n">${p.first_whole_proof_rank ?? k + 1}.</span><span class="avc">${avatar(p, 56)}</span><span class="w">${person(p)}` +
+    return `<div class="hr"><span class="n">${p.first_whole_proof_rank ?? k + 1}.</span><span class="avc">${avatar(p, 30)}</span><span class="w">${person(p)}` +
       `<span class="whole">WHOLE PROOF</span>${levelBadge(p.level)}</span>`+`<span class="d">${p.finished ? "finished " + date(p.finished) : "since " + date(p.since)}</span>` +
       `<span class="m">${bits.join(" · ")}</span></div>`; }).join("")
   : `<div class="note">No one has finished yet. Be the first.</div>`) +
