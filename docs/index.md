@@ -8,20 +8,20 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T05:19:18Z
+- Updated: 2026-11-22T05:29:34Z
 
 ## Totals
 
 - Builders: 5
-- Modules built at least once: 29,920 of 175,187 (17.1%)
-- Modules built 3 or more times: 14,474
+- Modules built at least once: 31,018 of 175,187 (17.7%)
+- Modules built 3 or more times: 15,133
 - Whole proofs finished: 0
 
 ## Running now
 
-- titojankowski (github.com/titojankowski): 29,920 modules (17.1%), Apple M5 Max
-- derek-blanchette (github.com/derek-blanchette): 27,076 modules (15.5%), AMD Ryzen 9 5950X 16-Core Processor
-- rib3ye (github.com/rib3ye): 14,474 modules (8.3%), Apple M2 Max
+- titojankowski (github.com/titojankowski): 31,018 modules (17.7%), Apple M5 Max
+- derek-blanchette (github.com/derek-blanchette): 28,605 modules (16.3%), AMD Ryzen 9 5950X 16-Core Processor
+- rib3ye (github.com/rib3ye): 15,133 modules (8.6%), Apple M2 Max
 - gebhardtr (github.com/gebhardtr): 10,941 modules (6.2%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 6,477 modules (3.7%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 
