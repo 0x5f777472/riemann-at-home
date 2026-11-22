@@ -1820,10 +1820,13 @@ def whole_build(ctx: Ctx, a, what: str) -> dict:
 
 def exporter_command(ctx: Ctx, a) -> list:
     """`lake env <lean4export> Main`, run in the build folder. lean4export is built once from the pinned tag into
-    ~/.riemann-at-home/tools with the toolchain that tag pins."""
+    ~/.riemann-at-home/tools, with the PROOF's toolchain (TOOLCHAIN), not the one the tag pins: Lean only reads
+    .olean files written by the same Lean version, so an exporter built with v4.33.0 fails on this v4.33.1 build
+    with "incompatible header" (reported 2026-11-22, issue #14). The folder name carries the toolchain, so an
+    exporter built the old way is never reused."""
     if getattr(a, "exporter", None):                         # testing: a stand-in exporter
         return [a.exporter, "Main"]
-    src = ctx.home / "tools" / f"lean4export-{EXPORTER_TAG}"
+    src = ctx.home / "tools" / f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
     exe = src / ".lake/build/bin/lean4export"
     if not exe.exists():
         if not src.exists():
@@ -1832,13 +1835,14 @@ def exporter_command(ctx: Ctx, a) -> list:
             if run(["git", "clone", "-q", "--depth", "1", "--branch", EXPORTER_TAG, EXPORTER_REPO, tmp]).returncode != 0:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise Fail(f"could not download lean4export {EXPORTER_TAG} from {EXPORTER_REPO}")
+            (tmp / "lean-toolchain").write_text(TOOLCHAIN + "\n")    # build with the proof's Lean (see above)
             tmp.rename(src)
         tc = toolchain_of(src)
-        if not tc:
-            raise Fail(f"{src} has no lean-toolchain")
+        if tc != TOOLCHAIN:
+            raise Fail(f"{src} pins {tc or 'no toolchain'}, expected {TOOLCHAIN}; delete that folder and run export again")
         elan = ensure_elan()
         if not toolchain_installed(elan, tc):
-            print(f"installing {tc} (the toolchain lean4export {EXPORTER_TAG} pins)")
+            print(f"installing {tc} (the proof's toolchain, to build lean4export {EXPORTER_TAG})")
             if run([elan, "toolchain", "install", tc], env=lean_env()).returncode != 0:
                 raise Fail(f"could not install {tc}")
         print(f"building lean4export {EXPORTER_TAG} with {tc}")

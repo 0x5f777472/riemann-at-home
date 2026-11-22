@@ -578,6 +578,29 @@ class Levels(unittest.TestCase):
         self.main("record", ref=False); rec = self.latest_record()
         self.assertTrue(rec["export_progress"]["done"]); self.assertNotIn("export_sha256", rec)   # page: "differs"
 
+    def test_exporter_built_with_the_proofs_toolchain(self):
+        """Issue #14: lean4export v4.33.0 pins Lean v4.33.0, which can't read this v4.33.1 build's .olean files
+        ("incompatible header"). The tool must build it with TOOLCHAIN, in a folder named for that toolchain."""
+        from unittest import mock
+        import argparse
+        calls = []
+        def fake_run(cmd, cwd=None, env=None, **kw):
+            calls.append(list(map(str, cmd)))
+            if cmd[:2] == ["git", "clone"]:
+                d = Path(cmd[-1]); d.mkdir(parents=True); (d / "lean-toolchain").write_text("leanprover/lean4:v4.33.0\n")
+            elif str(cmd[-1]) == "build":
+                exe = Path(cwd) / ".lake/build/bin/lean4export"; exe.parent.mkdir(parents=True); exe.write_text("")
+            return subprocess.CompletedProcess(cmd, 0)
+        ctx = rah.Ctx(argparse.Namespace(folder=str(self.folder), logs=None))
+        with mock.patch.object(rah, "run", fake_run), mock.patch.object(rah, "ensure_elan", lambda: "elan"), \
+                mock.patch.object(rah, "toolchain_installed", lambda e, t: True), mock.patch.object(rah, "which", lambda x: x), \
+                contextlib.redirect_stdout(io.StringIO()):
+            cmd = rah.exporter_command(ctx, argparse.Namespace(exporter=None))
+        src = Path(cmd[2]).parents[3]
+        self.assertEqual(src.name, f"lean4export-{rah.EXPORTER_TAG}-lean-{rah.TOOLCHAIN.split(':')[-1]}")
+        self.assertEqual((src / "lean-toolchain").read_text().strip(), rah.TOOLCHAIN)
+        self.assertEqual(cmd[-1], "Main")
+
     def test_export_match_recheck_sign(self):
         code, out, err = self.main("export", "--exporter", self.exporter)
         self.assertEqual(code, 0, err); self.assertIn("Level 2: matches the reference", out)
