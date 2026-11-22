@@ -8,24 +8,25 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T09:57:25Z
+- Updated: 2026-11-22T10:07:46Z
 
 ## Totals
 
-- Builders: 8
-- Modules built at least once: 73,415 of 175,187 (41.9%)
-- Modules built 3 or more times: 58,909
+- Builders: 9
+- Modules built at least once: 81,888 of 175,187 (46.7%)
+- Modules built 3 or more times: 60,037
 - Whole proofs finished: 0
 
 ## Running now
 
-- derek-blanchette (github.com/derek-blanchette): 72,953 modules (41.6%), AMD Ryzen 9 5950X 16-Core Processor
-- xangma (github.com/xangma): 70,125 modules (40.0%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- titojankowski (github.com/titojankowski): 59,370 modules (33.9%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 31,877 modules (18.2%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 20,708 modules (11.8%), AMD Ryzen 5 5600X 6-Core Processor
+- xangma (github.com/xangma): 81,887 modules (46.7%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
+- derek-blanchette (github.com/derek-blanchette): 74,717 modules (42.6%), AMD Ryzen 9 5950X 16-Core Processor
+- titojankowski (github.com/titojankowski): 60,498 modules (34.5%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 32,557 modules (18.6%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 21,490 modules (12.3%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 13,581 modules (7.8%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Ununhexium: 2,319 modules (1.3%), AMD Ryzen 7 5700G with Radeon Graphics
+- framiere (github.com/framiere): 42 modules (0.0%), Apple M4 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
