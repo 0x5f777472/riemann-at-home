@@ -8,25 +8,25 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T11:09:49Z
+- Updated: 2026-11-22T11:20:10Z
 
 ## Totals
 
 - Builders: 9
-- Modules built at least once: 94,495 of 175,187 (53.9%)
-- Modules built 3 or more times: 66,649
+- Modules built at least once: 95,934 of 175,187 (54.8%)
+- Modules built 3 or more times: 67,742
 - Whole proofs finished: 0
 
 ## Running now
 
-- xangma (github.com/xangma): 94,494 modules (53.9%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- derek-blanchette (github.com/derek-blanchette): 86,081 modules (49.1%), AMD Ryzen 9 5950X 16-Core Processor
-- titojankowski (github.com/titojankowski): 67,110 modules (38.3%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 37,591 modules (21.5%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 25,789 modules (14.7%), AMD Ryzen 5 5600X 6-Core Processor
+- xangma (github.com/xangma): 95,933 modules (54.8%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
+- derek-blanchette (github.com/derek-blanchette): 87,673 modules (50.0%), AMD Ryzen 9 5950X 16-Core Processor
+- titojankowski (github.com/titojankowski): 68,203 modules (38.9%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 38,285 modules (21.9%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 26,424 modules (15.1%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 14,967 modules (8.5%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Ununhexium: 12,200 modules (7.0%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 490 modules (0.3%), Apple M4 Pro
+- Ununhexium: 12,792 modules (7.3%), AMD Ryzen 7 5700G with Radeon Graphics
+- framiere (github.com/framiere): 602 modules (0.3%), Apple M4 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
