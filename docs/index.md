@@ -8,26 +8,26 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T15:53:11Z
+- Updated: 2026-11-22T16:03:33Z
 
 ## Totals
 
 - Builders: 10
-- Modules built at least once: 141,756 of 175,187 (80.9%)
-- Modules built 3 or more times: 126,803
+- Modules built at least once: 143,688 of 175,187 (82.0%)
+- Modules built 3 or more times: 129,445
 - Whole proofs finished: 0
 
 ## Running now
 
-- xangma (github.com/xangma): 141,756 modules (80.9%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- derek-blanchette (github.com/derek-blanchette): 129,497 modules (73.9%), AMD Ryzen 9 5950X 16-Core Processor
-- jasonhansel (github.com/jasonhansel): 126,803 modules (72.4%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
-- titojankowski (github.com/titojankowski): 90,212 modules (51.5%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 57,291 modules (32.7%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 44,725 modules (25.5%), AMD Ryzen 5 5600X 6-Core Processor
+- xangma (github.com/xangma): 143,688 modules (82.0%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
+- derek-blanchette (github.com/derek-blanchette): 131,107 modules (74.8%), AMD Ryzen 9 5950X 16-Core Processor
+- jasonhansel (github.com/jasonhansel): 129,445 modules (73.9%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+- titojankowski (github.com/titojankowski): 91,200 modules (52.1%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 58,046 modules (33.1%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 45,333 modules (25.9%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 28,474 modules (16.3%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 7,431 modules (4.2%), Apple M4 Pro
+- framiere (github.com/framiere): 7,716 modules (4.4%), Apple M4 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
