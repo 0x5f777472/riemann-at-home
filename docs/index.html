@@ -288,7 +288,7 @@ Please clone https://github.com/riemann-at-home/riemann-at-home, read its README
 "riemann-at-home setup", then "riemann-at-home build".
 Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
 If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
-Ask me before installing anything. When the tool asks for my OK to post progress publicly, show me its notice word for word and wait for my answer.`;
+Ask me before installing anything, and show me the tool's notice before I agree to post anything publicly.`;
 $("prompt").textContent = prompt;
 $("copy").onclick = () => { navigator.clipboard.writeText(prompt); $("copy").textContent = "COPIED"; setTimeout(() => $("copy").textContent = "COPY", 1500); };
 const hours = h => h == null ? "" : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;

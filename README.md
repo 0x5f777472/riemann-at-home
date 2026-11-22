@@ -17,7 +17,7 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 > https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 > "riemann-at-home setup", then "riemann-at-home build".
 > Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
-> Ask me before installing anything. When the tool asks for my OK to post progress publicly, show me its notice word for word and wait for my answer.
+> Ask me before installing anything, and show me the tool's notice before I agree to post anything publicly.
 
 ## Join by hand
 
