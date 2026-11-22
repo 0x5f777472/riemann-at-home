@@ -8,25 +8,25 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T12:22:20Z
+- Updated: 2026-11-22T12:32:42Z
 
 ## Totals
 
 - Builders: 9
-- Modules built at least once: 107,526 of 175,187 (61.4%)
-- Modules built 3 or more times: 74,660
+- Modules built at least once: 109,458 of 175,187 (62.5%)
+- Modules built 3 or more times: 75,881
 - Whole proofs finished: 0
 
 ## Running now
 
-- xangma (github.com/xangma): 107,525 modules (61.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- derek-blanchette (github.com/derek-blanchette): 96,900 modules (55.3%), AMD Ryzen 9 5950X 16-Core Processor
-- titojankowski (github.com/titojankowski): 75,075 modules (42.9%), Apple M5 Max
-- rib3ye (github.com/rib3ye): 42,470 modules (24.2%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 30,401 modules (17.4%), AMD Ryzen 5 5600X 6-Core Processor
+- xangma (github.com/xangma): 109,457 modules (62.5%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
+- derek-blanchette (github.com/derek-blanchette): 98,662 modules (56.3%), AMD Ryzen 9 5950X 16-Core Processor
+- titojankowski (github.com/titojankowski): 76,269 modules (43.5%), Apple M5 Max
+- rib3ye (github.com/rib3ye): 43,167 modules (24.6%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 31,111 modules (17.8%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 16,532 modules (9.4%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Ununhexium: 12,792 modules (7.3%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 1,865 modules (1.1%), Apple M4 Pro
+- framiere (github.com/framiere): 2,131 modules (1.2%), Apple M4 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
