@@ -4,8 +4,8 @@
 name: rahbot
 
 on:
-  # schedule:   # enabled after the cutover from the local bot
-  #   - cron: "*/10 * * * *"
+  schedule:
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       live:
