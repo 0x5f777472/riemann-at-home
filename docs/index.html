@@ -6,7 +6,7 @@
   #screen{width:1000px;height:680px;margin:0 auto;position:relative;background:#000}
   #stagewrap{position:absolute;left:0;top:0;width:1000px;height:680px}
   #stage{position:absolute;left:0;top:0;width:1000px;height:680px;transform-origin:0 0}
-  #mcap,#libkey{display:none}
+  #mcap,#libkey{display:none !important}   /* tried on phones, dropped: too much text */
   /* ---------- phones: the map scales to the screen width; everything else is one column with bigger text ---------- */
   @media (max-width: 760px) {
     body.global{min-width:0}
