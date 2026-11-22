@@ -488,7 +488,7 @@ stars(); terrain();
     g.fillStyle = `hsl(${hue},100%,${L}%)`;     g.fillRect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
     g.fillStyle = `hsl(${hue},100%,${Math.min(92, L + 26)}%)`; g.fillRect(x - w / 2, y - h, w, 1.5);
   };
-  const bw = 5 * w;                            // new modules' white bars: 5x wider so first-time visitors see them
+  const bw = 3 * w;                            // new modules' white bars: 3x wider so first-time visitors see them
   function frame(now) {
     while (next < RECENT.length && now - t0 >= next * W / RECENT.length) {        // its turn: one more builder
       const i = RECENT[next++]; heights[i]++; live.push({i, at: now, folded: false});
