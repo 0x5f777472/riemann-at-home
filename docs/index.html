@@ -1,9 +1,39 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Riemann@home</title>
-<meta name="viewport" content="width=1000">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   html,body{margin:0;background:#000;color:#fff;font:bold 12px Arial,Helvetica,sans-serif;overflow:auto}
   #screen{width:1000px;height:680px;margin:0 auto;position:relative;background:#000}
+  #stagewrap{position:absolute;left:0;top:0;width:1000px;height:680px}
+  #stage{position:absolute;left:0;top:0;width:1000px;height:680px;transform-origin:0 0}
+  /* ---------- phones: the map scales to the screen width; everything else is one column with bigger text ---------- */
+  @media (max-width: 760px) {
+    body.global{min-width:0}
+    #screen{width:auto !important;height:auto !important;display:flex;flex-direction:column;padding:0 0 24px}
+    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.49);overflow:hidden;order:2}
+    .global .title{position:static;order:0;font-size:30px;padding:14px 14px 0}
+    .global .sub{position:static;order:1;font-size:13px;padding:4px 14px 6px}
+    .global .nav{position:static;order:3;padding:6px 12px 4px;justify-content:center}
+    .global .nav a{font-size:14px;padding:9px 14px}
+    .global .extra.panel{position:static !important;width:auto !important;height:auto !important;margin:12px 10px 0}
+    .global .joinview{order:4}
+    .global .panel.green.boardview{order:5}
+    .global .panel.blue.boardview{order:6}
+    .global .stview{order:7}
+    .global .panel h3{font-size:13px;padding:7px 10px}
+    .global .line{font-size:15px;line-height:1.4;padding:8px 12px 0}
+    .global .prompt{font-size:13px;white-space:pre-wrap;word-break:break-word}
+    .global .btn{font-size:15px;padding:10px 18px;margin:8px 12px}
+    .global .honor{height:auto !important;max-height:none;overflow:visible}
+    .global .honor .note{font-size:13px;padding:10px 12px}
+    .global .run .w{font-size:17px}.global .run .pc{font-size:14px}
+    .global .hr{grid-template-columns:24px 40px 1fr;padding:10px 12px}
+    .global .hr .w{font-size:16px}.global .hr .m,.global .hr .d{font-size:13px;text-align:left;grid-column:3}
+    .global .sub2{font-size:12px}.global .val{font-size:14px}
+    .global .stat{position:static;order:8;font-size:13px;line-height:1.5;padding:14px 12px 0}
+    .global #tip{display:none !important}
+    .global .stmt{font-size:15px;line-height:1.5;height:auto !important;overflow:visible}
+  }
   #stars,#terrain,#overlay{position:absolute;left:0;top:0}
   .title{position:absolute;left:22px;top:12px;font:bold italic 34px "Arial Black",Arial,sans-serif;color:#5aa0ff;
          text-shadow:0 0 8px #1a4dff,2px 2px 0 #001a66;letter-spacing:1px}
@@ -124,9 +154,11 @@
   #tab-statement{border-color:#ffd23f;color:#ffd23f}
 </style></head>
 <body class="global"><div id="screen" style="height:1365px">
+  <div id="stagewrap"><div id="stage">
   <canvas id="stars" width="1000" height="680"></canvas>
   <canvas id="terrain" width="1000" height="680"></canvas>
   <canvas id="overlay" width="1000" height="680"></canvas>
+  </div></div>
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub">every independent build of the AI proof of the Riemann Hypothesis</div>
   <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a></div>
@@ -470,6 +502,12 @@ function terrain() {
 }
 $("cap").textContent = "";
 stars(); terrain();
+// Phones: scale the 1000x680 map to the screen width (the rest of the page is a normal column there).
+{ const TOP = 95, H = 490;                  // phones: show only the map's band (desktop title/summary areas trimmed)
+  const fit = () => { const phone = innerWidth <= 760, k = phone ? $("stagewrap").clientWidth / 1000 : 1;
+                      $("stage").style.transform = phone ? `scale(${k}) translateY(${-TOP}px)` : "";
+                      $("stagewrap").style.height = phone ? `${Math.round(H * k)}px` : ""; };
+  fit(); addEventListener("resize", fit); }
 
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
@@ -534,7 +572,7 @@ const pick = (mx, my) => {               // front-most bar under the mouse; whic
 };
 $("overlay").style.pointerEvents = "auto";
 $("overlay").addEventListener("mousemove", e => {
-  const b = $("overlay").getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, tip = $("tip");
+  const b = $("overlay").getBoundingClientRect(), k = 1000 / b.width, mx = (e.clientX - b.left) * k, my = (e.clientY - b.top) * k, tip = $("tip");
   // hovering a library label: light up that library, fade the rest
   const lb = labelBoxes.find(([, ox, oy, tw]) => {       // mouse in the label's own slanted frame
     const dx = mx - ox, dy = my - oy, u = dx * Math.cos(0.45) + dy * Math.sin(0.45), v = -dx * Math.sin(0.45) + dy * Math.cos(0.45);
