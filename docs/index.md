@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-22T21:14:08Z
+- Updated: 2026-11-22T21:28:41Z
 
 ## Totals
 
@@ -21,14 +21,14 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
 - jasonhansel (github.com/jasonhansel): 171,928 modules (98.1%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
-- titojankowski (github.com/titojankowski): 95,549 modules (54.5%), Apple M5 Max
+- titojankowski (github.com/titojankowski): 95,836 modules (54.7%), Apple M5 Max
 - rib3ye (github.com/rib3ye): 75,147 modules (42.9%), Apple M2 Max
 - gebhardtr (github.com/gebhardtr): 52,149 modules (29.8%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 45,217 modules (25.8%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 24,514 modules (14.0%), 12th Gen Intel(R) Core(TM) i7-12700K
+- Genbox (github.com/Genbox): 25,198 modules (14.4%), 12th Gen Intel(R) Core(TM) i7-12700K
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 13,169 modules (7.5%), Apple M4 Pro
-- milhouse1337 (github.com/milhouse1337): 8,535 modules (4.9%), Apple M3 Ultra
+- framiere (github.com/framiere): 13,177 modules (7.5%), Apple M4 Pro
+- milhouse1337 (github.com/milhouse1337): 8,881 modules (5.1%), Apple M3 Ultra
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
