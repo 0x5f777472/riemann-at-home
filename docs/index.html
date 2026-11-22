@@ -11,7 +11,7 @@
   @media (max-width: 760px) {
     body.global{min-width:0}
     #screen{width:auto !important;height:auto !important;display:flex;flex-direction:column;padding:0 0 24px}
-    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.415);overflow:hidden;order:3}
+    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.34);overflow:hidden;order:3}
     #mcap{display:block;order:2;color:#9fb6ff;font-size:13px;padding:6px 14px 0}
     #libkey{display:block;order:4;margin:2px 10px 0;border:1px solid rgba(120,160,255,.35)}
     #libkey .lk{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 12px;
@@ -423,9 +423,12 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
 const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
 const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
 // Phones: a front view (no sideways slant): the full width is module positions, rows recede straight up a little.
-const [left, base, spanX, depthX, depthY, maxH] = PHONE() ? [20, 440, 960, 0, 90, 300] : [96, 434, 640, 230, 150, 170];
+const [left, base, spanX, depthX, depthY, maxH] = PHONE() ? [20, 470, 960, 0, 0, 280] : [96, 434, 640, 230, 150, 170];
+// Phones: tilted forward with perspective: rows further back shrink toward a vanishing point (P = 1 front .. 0.45 back).
+const HOR = 120, P = r => PHONE() ? 1 / (1 + 1.2 * r / R) : 1;
 const sx = spanX / C, kx = depthX / R, ky = depthY / R;
-const px = (c, r) => left + c * sx + r * kx, py = r => base - r * ky;
+const px = (c, r) => PHONE() ? 500 + (left + c * sx - 500) * P(r) : left + c * sx + r * kx,
+      py = r => PHONE() ? HOR + (base - HOR) * P(r) : base - r * ky;
 const cell = i => STACK > 1 ? [Math.floor(i / (R * STACK)), Math.floor((i % (R * STACK)) / STACK), i % STACK]
                             : [Math.floor(i / R), i % R, 0];
 const grid = new Int32Array(C * R * STACK).fill(-1);          // (r, c, layer) -> module index
@@ -435,7 +438,7 @@ function column(col) {                     // [first module, slots, modules buil
   for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i < 0) continue; slots++; if (i0 < 0) i0 = i; if (heights[i]) { k++; s += heights[i]; } }
   return [i0, slots, k, s];
 }
-const barH = (s, slots) => s / (slots * maxVal) * maxH;
+const barH = (s, slots, r = 0) => s / (slots * maxVal) * maxH * P(r);
 // Color: rainbow by position (default), #color=library, one color per top-level library.
 const COLOR = (location.hash.match(/color=(\w+)/) || [])[1] || "spectrum";
 const LIB = (() => { const a = new Int32Array(N); let k = 0;
@@ -468,7 +471,7 @@ function terrain() {
       if (!k || (HL >= 0 && LIB[i0] !== HL)) { todo.rect(px(c, r) - 0.4, py(r) - 0.4, 0.8, 0.8); continue; }   // nobody yet (or not highlighted): plain floor
       const key = HL < 0 ? `${Math.round(hueOf(i0) / 5) * 5}` : LIB[i0] === HL ? `${Math.round(libHue(HL))}` : "f0";
       let b = buckets.get(key); if (!b) buckets.set(key, b = { face: new Path2D(), side: new Path2D(), cap: new Path2D() });
-      const x = px(c, r), y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots));
+      const x = px(c, r), y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots, r));
       b.side.rect(x - w / 2, y - h, w * 0.45, h);
       b.face.rect(x - w / 2 + w * 0.45, y - h, w * 0.55, h);
       if (STACK < 2 || k < slots) b.cap.rect(x - w / 2, y - h, w, 1.5);   // stacked: pale top only while unfinished
@@ -495,8 +498,8 @@ function terrain() {
   g.strokeStyle = "rgba(220,220,255,.55)"; g.lineWidth = 1;
   const corners = [[0,0],[C,0],[C,R],[0,R]];
   for (const h of [0, maxH + 8]) { g.beginPath();
-    corners.forEach(([c, r], k) => { const x = px(c, r), y = py(r) - h; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); }
-  for (const [c, r] of corners) { g.beginPath(); g.moveTo(px(c, r), py(r)); g.lineTo(px(c, r), py(r) - maxH - 8); g.stroke(); }
+    corners.forEach(([c, r], k) => { const x = px(c, r), y = py(r) - h * P(r); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.stroke(); }
+  for (const [c, r] of corners) { g.beginPath(); g.moveTo(px(c, r), py(r)); g.lineTo(px(c, r), py(r) - (maxH + 8) * P(r)); g.stroke(); }
   if (PHONE()) return;                         // phones: the readable key under the map replaces these labels
   g.fillStyle = "#e8ecff"; g.font = "bold 11px Arial";
   g.save(); g.translate(px(0, 0) - 22, py(0) - maxH / 2 + 24); g.rotate(-Math.PI / 2); g.fillText("builders", 0, 0); g.restore();
@@ -537,7 +540,7 @@ stars(); terrain();
     for (const r of $("libkey").querySelectorAll(".lk")) r.classList.toggle("on", +r.dataset.k === HL);
   }); }
 // Phones: scale the 1000x680 map to the screen width (the rest of the page is a normal column there).
-{ const TOP = 35, H = 415;                  // phones: show only the map's band (desktop title/summary areas trimmed)
+{ const TOP = 140, H = 340;                  // phones: show only the map's band (desktop title/summary areas trimmed)
   const fit = () => { const phone = innerWidth <= 760, k = phone ? $("stagewrap").clientWidth / 1000 : 1;
                       $("stage").style.transform = phone ? `scale(${k}) translateY(${-TOP}px)` : "";
                       $("stagewrap").style.height = phone ? `${Math.round(H * k)}px` : ""; };
@@ -553,7 +556,7 @@ stars(); terrain();
   const w = Math.max(1, sx * 0.85);
   const colGeom = i => {                       // the bar holding module i, as drawn by terrain(): x, base y, height, hue, L
     const [c, r] = cell(i), col = r * C + c, [i0, slots, , s2] = column(col), depth = r / R;
-    return [px(c, r), py(r), Math.max(STACK > 1 ? 1.5 : 3, barH(s2, slots)), HL >= 0 ? Math.round(libHue(HL)) : Math.round(hueOf(i0) / 5) * 5, 60 - 26 * depth];
+    return [px(c, r), py(r), Math.max(STACK > 1 ? 1.5 : 3, barH(s2, slots, r)), HL >= 0 ? Math.round(libHue(HL)) : Math.round(hueOf(i0) / 5) * 5, 60 - 26 * depth];
   };
   const solid = (g, i) => {                    // paint i's bar onto the base map (same look as terrain())
     if (HL >= 0 && LIB[i] !== HL) return;
@@ -597,7 +600,7 @@ const pick = (mx, my) => {               // front-most bar under the mouse; whic
   for (let r = 0; r < R; r++) {
     const c = Math.round((mx - left - r * kx) / sx); if (c < 0 || c >= C) continue;
     const col = r * C + c, [i0, slots, k, s] = column(col); if (i0 < 0 || !k) continue;
-    const y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots));
+    const y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots, r));
     if (my <= y + 1.5 && my >= y - h - 1.5) {
       const z = Math.min(slots - 1, Math.max(0, Math.floor((y - my) / h * slots)));
       return grid[col * STACK + z];
