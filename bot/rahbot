@@ -46,7 +46,9 @@ MODULES_TXT = HERE / "modules.txt"   # the published module list, sorted byte-wi
 MODULES_SHA256 = "21f45a03c4d152c91034a8f3229c2c1f35961ad2f0f69e1a4dfd97fef8584841"
 EXPECTED_AXIOMS = ["propext", "Classical.choice", "Quot.sound"]
 REFERENCE = Path("/Users/Shared/riemann-at-home/lean")   # project's own build; opened read-only
-SPEED_FLAG, SPEED_REJECT = 6000, 12000                    # new modules per hour
+SPEED_FLAG, SPEED_REJECT = 6000, 12000                    # new modules per hour, floor for any computer
+SPEED_FLAG_PER_CORE, SPEED_REJECT_PER_CORE = 250, 500    # big computers get more: limit = max(floor, per-core x cores)
+SPEED_CORES_CAP = 512                                     # self-reported cores counted at most this many
 BUILDERS_CAP = 250
 MAX_RECORD_BYTES = 256 * 1024
 CLOCK_SKEW = timedelta(minutes=10)
@@ -356,10 +358,14 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     new = pop - (popcount(prev_raw) if prev_raw is not None else 0)
     hours = max((recorded - since).total_seconds(), SPEED_MIN_WINDOW) / 3600   # short gaps judged over >= 10 min
     rate = max(new, 0) / hours
-    if rate > SPEED_REJECT:
-        rej.append(f"speed implausible: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (limit {SPEED_REJECT:,}/h)")
-    elif rate > SPEED_FLAG:
-        flags.append(f"fast: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (flag above {SPEED_FLAG:,}/h)")
+    cores = rec.get("machine", {}).get("cores")
+    cores = min(max(cores, 1), SPEED_CORES_CAP) if isinstance(cores, int) and not isinstance(cores, bool) else 1
+    reject_at = max(SPEED_REJECT, SPEED_REJECT_PER_CORE * cores)
+    flag_at = max(SPEED_FLAG, SPEED_FLAG_PER_CORE * cores)
+    if rate > reject_at:
+        rej.append(f"speed implausible: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (limit {reject_at:,}/h for {cores} cores)")
+    elif rate > flag_at:
+        flags.append(f"fast: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (flag above {flag_at:,}/h for {cores} cores)")
     # digest (off until M0)
     if check_digest and not rej:
         try:
@@ -864,7 +870,9 @@ def cmd_poll(a):
             pending = not rejects and any(f.startswith("PENDING") for f in flags)
             if rejects:
                 kept = f"your last accepted version ({prev['modules_compiled']:,} modules)" if prev else "nothing yet for this build"
-                if s.get("last_comment") != rejects:   # comment once per distinct failure, not every poll
+                same = [re.sub(r"[0-9][0-9,.]*", "#", r) for r in s.get("last_comment") or []] == \
+                       [re.sub(r"[0-9][0-9,.]*", "#", r) for r in rejects]
+                if not same:   # comment once per distinct failure (numbers ignored), not every poll
                     print(f"#{n} {author}: REJECT version {pr['head'][:8]}, comment" + "".join(f"\n    - {r}" for r in rejects))
                     src.comment(pr, comment_body(rejects, flags, kept))
                     s["last_comment"] = rejects

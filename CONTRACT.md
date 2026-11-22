@@ -41,7 +41,7 @@ Workstreams A (volunteer CLI), B (bot), C (global page) all read/write these. Ch
 
 Reject with a PR comment if any fails: format/tool known · constants match · path login == PR author · bitmap ⊇ the
 person's last accepted bitmap · `modules_compiled` == popcount(bitmap) · speed plausible: new modules ÷ elapsed hours
-since last accepted record ≤ 12,000/h (flag, don't reject, between 6,000 and 12,000) · `olean_digest` == reference digest
+since last accepted record ≤ max(12,000, 500 × cores)/h (flag, don't reject, above max(6,000, 250 × cores); cores counted up to 512) · `olean_digest` == reference digest
 for that bitmap (reference = the project's own build; skipped until M0 confirms cross-machine identity).
 Accept → merge, regenerate `data.json`, commit.
 
