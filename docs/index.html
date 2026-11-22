@@ -165,6 +165,17 @@
   .run .pc{margin-left:auto}
   .jsline{margin-top:8px;color:#ffd23f}
   #tab-statement{border-color:#ffd23f;color:#ffd23f}
+  /* "I'm totally confused" explainer: normal flow under the dashboard, same look as the navy panels */
+  #confused{width:956px;box-sizing:border-box;margin:0 auto 40px;padding:4px 22px 14px;background:rgba(5,15,60,.72);
+            border:1px solid rgba(120,160,255,.55);box-shadow:0 0 18px rgba(30,80,255,.25);
+            color:#dfe7ff;font-weight:normal;font-size:14px;line-height:1.6}
+  #confused h2{margin:14px 0 4px;font:bold 22px Arial,Helvetica,sans-serif;color:#ffd23f}
+  #confused h3{margin:16px 0 2px;font-size:15px;color:#7fd8ff}
+  #confused p{margin:0 0 8px;max-width:760px}
+  #confused b{color:#fff}
+  @media (max-width: 760px){#confused{width:auto;margin:16px 10px 32px;padding:4px 14px 12px;font-size:15px}
+    #confused h2{font-size:20px}}
+  @media print{#confused{display:none !important}}
 </style></head>
 <body class="global"><div id="screen" style="height:1365px">
   <div id="mcap">Each spike is one module of the proof · height = how many people built it</div>

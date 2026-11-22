@@ -525,6 +525,23 @@ def _page_parts(index_html: str):
     return prompt, stmt
 
 
+def _confused_md(index_html: str) -> str:
+    """The homepage's plain-language explainer (<section id="confused">) as markdown, or "" if the page has none."""
+    import html as _html
+    m = re.search(r'<section id="confused">(.*?)</section>', index_html, re.S)
+    if not m:
+        return ""
+    t = re.sub(r"<!--.*?-->", "", m[1], flags=re.S)
+    t = re.sub(r"<h2>(.*?)</h2>", r"\n\n## \1\n\n", t, flags=re.S)
+    t = re.sub(r"<h3>(.*?)</h3>", r"\n\n### \1\n\n", t, flags=re.S)
+    t = re.sub(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', r"[\2](\1)", t, flags=re.S)
+    t = re.sub(r"<b>(.*?)</b>", r"**\1**", t, flags=re.S)
+    t = re.sub(r"<p>(.*?)</p>", r"\n\n\1\n\n", t, flags=re.S)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = "\n".join(line.strip() for line in _html.unescape(t).splitlines())
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
 def homepage_markdown(data: dict, index_html: str) -> str:
     """docs/index.md: the homepage as plain markdown for AI assistants and other readers (rewritten on each publish)."""
     prompt, stmt = _page_parts(index_html)
@@ -579,6 +596,9 @@ def homepage_markdown(data: dict, index_html: str) -> str:
         sigs = data.get("signatures") or []
         out += ["", "## Joint statement", "", stmt, "", f"Signatures so far: {len(sigs)}."]
         out += [f"- {g.get('name') or g.get('who')}, signed {str(g.get('signed', ''))[:10]}" for g in sigs]
+    confused = _confused_md(index_html)
+    if confused:
+        out += ["", confused]
     return "\n".join(out).rstrip() + "\n"
 
 
