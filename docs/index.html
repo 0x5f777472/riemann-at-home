@@ -366,8 +366,7 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
       person(p, "w") +
       `<span class="pc"><b>${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}%</b> · ${fmt(p.modules)}</span></div>` +
       `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div></div></div>`; }).join("")
-  : (crowded ? `<div class="note">No builds reported in the last hour.</div>` : `<div class="note">No builds in progress.</div>`)) +
-  `<div class="note">One row per computer${crowded ? " with a build record in the last hour" : ""}; modules built so far out of ${fmt(N)}.</div>`;
+  : (crowded ? `<div class="note">No builds reported in the last hour.</div>` : `<div class="note">No builds in progress.</div>`));
 
 // ---------- terrain geometry ----------
 // 175,187 = 733 x 239 exactly: 733 columns across, modules run front to back, so the libraries run left to right.
