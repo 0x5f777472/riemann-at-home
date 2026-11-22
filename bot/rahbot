@@ -904,6 +904,9 @@ def cmd_poll(a):
                 st.set_accepted(path, body)
                 if rec.get("sign_statement") and record_level(rec) >= 2:
                     st.signed.setdefault(author, now.strftime("%Y-%m-%dT%H:%M:%SZ"))   # time the signing version was accepted
+                if s.get("last_comment"):   # it was rejected before: say so on the PR, once
+                    src.comment(pr, f"Your latest version ({rec['modules_compiled']:,} modules) was accepted and is on the "
+                                    "leaderboard. The earlier rejections above no longer apply.\n\n(rahbot)")
                 s["accepted_sha"], s["last_comment"] = pr["head"], None
                 prev = rec
                 print(f"#{n} {author}: ACCEPT version {pr['head'][:8]} ({rec['modules_compiled']:,} modules)"

@@ -1,0 +1,63 @@
+# rahbot: checks build-record PRs, comments/closes/merges, republishes docs/data.json (GitHub Pages).
+# Runs here so the leaderboard keeps updating whatever any one computer is doing.
+# The bot's memory (state/ + state-backups/) lives on the `rahbot-state` branch: one commit, force-pushed each run.
+name: rahbot
+
+on:
+  # schedule:   # enabled after the cutover from the local bot
+  #   - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Really comment, merge and publish (false = dry run, nothing written)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write        # push docs/data.json, merge PRs, push rahbot-state
+  pull-requests: write   # comment on / close PRs
+  issues: write          # PR comments go through the issues API
+
+concurrency:
+  group: rahbot
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Restore bot state
+        run: |
+          git fetch -q --depth 1 origin rahbot-state
+          mkdir -p "$RUNNER_TEMP/bot"
+          git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/bot"
+          git config user.name "rahbot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Poll
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LIVE: ${{ github.event_name == 'schedule' || inputs.live }}
+        run: |
+          python3 -I bot/rahbot poll --repo "$GITHUB_REPOSITORY" --workdir . \
+            --state "$RUNNER_TEMP/bot/state" $([ "$LIVE" = true ] && echo --live)
+
+      - name: Save bot state
+        if: ${{ github.event_name == 'schedule' || inputs.live }}
+        run: |
+          cd "$RUNNER_TEMP/bot"
+          git init -q -b rahbot-state
+          git config user.name "rahbot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state state-backups
+          git commit -q -m "rahbot state $(date -u +%FT%TZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git" HEAD:rahbot-state
