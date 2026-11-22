@@ -1,6 +1,8 @@
 # rahbot: checks build-record PRs, comments/closes/merges, republishes docs/data.json (GitHub Pages).
 # Runs here so the leaderboard keeps updating whatever any one computer is doing.
 # The bot's memory (state/ + state-backups/) lives on the `rahbot-state` branch: one commit, force-pushed each run.
+# Cadence: each live run waits ~7 min and then starts the next one (GitHub's cron never fired here, 2026-11-22);
+# the schedule below stays only as a backup that restarts the chain if it ever breaks.
 name: rahbot
 
 on:
@@ -17,6 +19,7 @@ permissions:
   contents: write        # push docs/data.json, merge PRs, push rahbot-state
   pull-requests: write   # comment on / close PRs
   issues: write          # PR comments go through the issues API
+  actions: write         # each run queues the next one (see the last step)
 
 concurrency:
   group: rahbot
@@ -61,3 +64,11 @@ jobs:
           git add state state-backups
           git commit -q -m "rahbot state $(date -u +%FT%TZ)"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git" HEAD:rahbot-state
+
+      - name: Queue the next run (about 10 minutes from now)
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.live) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 420
+          gh workflow run rahbot.yml --repo "$GITHUB_REPOSITORY" --ref main -f live=true
