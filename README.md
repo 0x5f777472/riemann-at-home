@@ -17,7 +17,7 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 > https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 > "riemann-at-home setup", then "riemann-at-home build".
 > Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
-> Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update.
+> Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update. Also ask me then whether I want to sign the joint statement if my build finishes and my export matches.
 
 ## Join by hand
 
@@ -38,6 +38,9 @@ computer always keeps room, and every module you built still counts).
    From then on, one public pull request for this computer is updated about every 10 minutes while you build.
    **What becomes public:** your GitHub username, your computer's OS, chip and number of cores, and which modules
    you've built. Nothing is posted until you agree. Stop any time: `submit --disable-auto`.
+   Setup then asks a second, optional question: if your whole build finishes and your export matches the reference,
+   do you want to sign the joint statement? A yes takes effect only on a match. Later: `sign --when-done`;
+   take it back any time: `sign --cancel`.
 5. **Optional display name.** `riemann-at-home name "Your Name"` (or `submit --agree --name "Your Name"`) shows that
    on the leaderboard instead of your GitHub username. It's only a label: your pull request on GitHub always shows
    your username, so nobody here is anonymous.

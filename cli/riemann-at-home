@@ -1152,6 +1152,8 @@ def cmd_status(ctx: Ctx, a):
         print(f"export    sha256 {ex.get('sha256')} does not match the reference ({UNVERIFIED})")
     elif done == N_MODULES and parse_axioms(ax) is not None:
         print("level     1: whole proof built. Next: riemann-at-home export")
+    if sign_when_done(ctx) and not levels_state(ctx).get("sign_statement"):
+        print("statement signed in advance: takes effect when your export matches (undo: riemann-at-home sign --cancel)")
     return 0
 
 
@@ -1630,6 +1632,43 @@ def ask_consent(ctx: Ctx):
         return
     name = input("Name on the leaderboard (Enter = your GitHub username, or type a display name): ").strip()
     agree(ctx, name or None)
+    ask_sign_when_done(ctx)
+
+
+def ask_sign_when_done(ctx: Ctx):
+    """Setup, after the posting yes (owner, 2026-11-23): sign the joint statement now, to take effect only if this
+    build finishes and its export matches the reference. In a terminal: y/N. Otherwise print how to agree."""
+    if sign_when_done(ctx):
+        return
+    import textwrap
+    print("\nOne more, optional. If your whole build finishes and your export matches the reference, do you want to "
+          "sign the joint statement?\n\n" + textwrap.fill(statement_text(), 100) + "\n")
+    if not sys.stdin.isatty():
+        print("To sign it in advance: riemann-at-home sign --when-done   (it takes effect only if your export matches)\n"
+              "(If an AI assistant is running this: show the person this statement word for word and wait for their "
+              "answer.)")
+        return
+    try:
+        yes = input("Sign it when your export matches? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        yes = False
+    if yes:
+        set_sign_when_done(ctx)
+    else:
+        print("Not signing in advance. You can sign later: riemann-at-home sign")
+
+
+def sign_when_done(ctx: Ctx):
+    """The advance yes, if it is for this exact statement text (a reworded statement needs a new yes)."""
+    w = ctx.conf().get("sign_when_done") or {}
+    return w if w.get("statement_sha256") == hashlib.sha256(statement_text().encode()).hexdigest() else None
+
+
+def set_sign_when_done(ctx: Ctx):
+    ctx.set_conf(sign_when_done={"agreed": iso(time.time()),
+                                 "statement_sha256": hashlib.sha256(statement_text().encode()).hexdigest()})
+    print("Signed in advance: when your export matches the reference, your records carry the signature and the "
+          "leaderboard lists it. Nothing is signed before then. Undo any time: riemann-at-home sign --cancel")
 
 
 def agree(ctx: Ctx, name=None, upstream=None):
@@ -1654,6 +1693,7 @@ def agree(ctx: Ctx, name=None, upstream=None):
 def cmd_submit(ctx: Ctx, a):
     if getattr(a, "agree", False):
         agree(ctx, a.name, a.upstream)
+        ask_sign_when_done(ctx)                     # the optional second question, as at setup
         return 0
     if a.interval is not None:
         if a.interval < MIN_INTERVAL:
@@ -2137,12 +2177,13 @@ def cmd_export(ctx: Ctx, a):
     pf.write_text(json.dumps({**last, "done": True, "left_seconds": None, "updated": int(time.time())}) + "\n")
     peak = f", peak memory {last['peak_memory_gb']:,.0f} GB" if last.get("peak_memory_gb") else ""
     lv = levels_state(ctx, rec["olean_digest"])
+    advance = bool(sign_when_done(ctx)) and match
     same = (lv.get("export") or {}).get("sha256") == sha
     ctx.set_conf(levels={"build_id": rec["build_id"], "olean_digest": rec["olean_digest"],
                          "export": {"sha256": sha, "bytes": n, "exporter": f"lean4export {EXPORTER_TAG}",
                                     "seconds": int(time.time() - t0), "when": iso(time.time())},
                          "checkers": lv.get("checkers", []) if same else [],
-                         "sign_statement": bool(lv.get("sign_statement")) and same and match})
+                         "sign_statement": (bool(lv.get("sign_statement")) and same or advance) and match})
     print(f"export sha256 {sha}\nexport bytes  {n:,}")
     if auto:
         autosubmit(ctx, a, "export done")                   # the leaderboard shows the result (and Level 2 if it matches)
@@ -2152,6 +2193,9 @@ def cmd_export(ctx: Ctx, a):
         print(UNVERIFIED)
         return 1
     print(f"export matches the reference ✓  ({fmt_dur(time.time() - t0)}{peak})")
+    if advance:
+        print(f"Joint statement signed, as you chose at setup ({sign_when_done(ctx)['agreed'][:10]}). "
+              "Undo: riemann-at-home sign --cancel")
     print("Level 2: matches the reference export (Andrew Sutherland, https://math.mit.edu/~drew/grh).")
     out = write_record(ctx, make_record(ctx, a))
     print(f"record with export_sha256: {out}")
@@ -2252,7 +2296,32 @@ def statement_text() -> str:
 
 
 def cmd_sign(ctx: Ctx, a):
-    """Sign the joint statement: allowed at Level 2 or 3. Shows the text and asks first."""
+    """Sign the joint statement: allowed at Level 2 or 3. Shows the text and asks first.
+    --when-done: sign in advance, taking effect only when the export matches. --cancel: take back either."""
+    if getattr(a, "cancel", False):
+        ctx.set_conf(sign_when_done=None)
+        lvc = ctx.conf().get("levels")
+        if lvc and lvc.get("sign_statement"):
+            lvc["sign_statement"] = False
+            ctx.set_conf(levels=lvc)
+            write_record(ctx, make_record(ctx, a))
+            print("signature withdrawn: new records no longer carry it (the leaderboard drops it at the next update)")
+        else:
+            print("not signed in advance any more")
+        return 0
+    if getattr(a, "when_done", False):
+        import textwrap
+        print("\n" + textwrap.fill(statement_text(), 100) + "\n")
+        if sys.stdin.isatty():
+            try:
+                if input("Sign it when your export matches? [y/N] ").strip().lower() not in ("y", "yes"):
+                    print("not signed in advance")
+                    return 1
+            except EOFError:
+                print("not signed in advance")
+                return 1
+        set_sign_when_done(ctx)
+        return 0
     rec = whole_build(ctx, a, "signing")
     if record_level(rec) < 2:
         raise Fail("signing needs Level 2: a whole build whose export reproduces the reference "
@@ -2676,7 +2745,10 @@ def main(argv=None):
     rc.add_argument("--checker", help="path to the checker binary (default: on PATH or ~/.riemann-at-home/tools/bin)")
     rc.add_argument("--checker-args", help="extra arguments for the checker (it reads the export on stdin)")
     rc.add_argument("--checker-version", help="version to record (default: `CHECKER --version`)")
-    sub.add_parser("sign", parents=[hidden, lvl], help="sign the joint statement (Level 2 or 3)")
+    sg = sub.add_parser("sign", parents=[hidden, lvl], help="sign the joint statement (Level 2 or 3)")
+    sgm = sg.add_mutually_exclusive_group()
+    sgm.add_argument("--when-done", action="store_true", help="sign in advance: takes effect only if your export matches")
+    sgm.add_argument("--cancel", action="store_true", help="take back an advance signature (or a signature)")
     y = sub.add_parser("_autosubmit", parents=[hidden])   # internal: what the supervisor runs every ~10 min
     y.add_argument("--test-unofficial-folder", action="store_true")
     sub.add_parser("_autosubmit_loop", parents=[hidden])  # internal: interval loop for a build started by an older version

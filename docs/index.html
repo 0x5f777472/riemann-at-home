@@ -390,8 +390,8 @@ const prompt = `I'd like to help build the Lean proof of the Riemann Hypothesis 
 Please clone https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 "riemann-at-home setup", then "riemann-at-home build".
 Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
-If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
-Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update.`;
+If the whole proof finishes, help me run "riemann-at-home export".
+Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update. Also ask me then whether I want to sign the joint statement if my build finishes and my export matches.`;
 $("prompt").textContent = prompt;
 $("copy").onclick = () => { navigator.clipboard.writeText(prompt); $("copy").textContent = "COPIED"; setTimeout(() => $("copy").textContent = "COPY", 1500); };
 const hours = h => h == null ? "" : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;

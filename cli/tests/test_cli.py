@@ -671,6 +671,42 @@ class Levels(unittest.TestCase):
         code, out, err = self.main("status")
         self.assertIn("export    check FAILED", out)
 
+    def test_sign_in_advance_takes_effect_only_on_a_match(self):
+        """Setup can ask now (owner, 2026-11-23): sign the joint statement if the export later matches."""
+        from unittest import mock
+        code, out, err = self.main("sign", "--when-done", stdin="y\n")
+        self.assertEqual(code, 0, err); self.assertIn("Riemann@home: a joint statement", out)
+        self.assertIn("Nothing is signed before then", out)
+        code, out, err = self.main("status")
+        self.assertIn("statement signed in advance", out)
+        # a mismatching export: no signature
+        code, out, err = self.main("export", "--exporter", self.exporter, ref=False)
+        self.assertEqual(code, 1); self.main("record", ref=False)
+        self.assertNotIn("sign_statement", self.latest_record())
+        # a reworded statement needs a new yes
+        with mock.patch.object(rah, "statement_text", lambda: "Riemann@home: a joint statement, reworded."):
+            ctx = rah.Ctx(type("A", (), {"folder": str(self.folder), "logs": None})())
+            self.assertIsNone(rah.sign_when_done(ctx))
+        # the matching export signs, and says so
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 0, err); self.assertIn("Joint statement signed, as you chose at setup", out)
+        self.assertIs(self.latest_record().get("sign_statement"), True)
+        # and it can be taken back
+        code, out, err = self.main("sign", "--cancel")
+        self.assertEqual(code, 0, err); self.assertIn("signature withdrawn", out)
+        self.assertNotIn("sign_statement", self.latest_record())
+
+    def test_setup_question_without_terminal_only_prints(self):
+        import contextlib, io
+        from unittest import mock
+        ctx = rah.Ctx(type("A", (), {"folder": str(self.folder), "logs": None})())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), mock.patch("sys.stdin", io.StringIO("y\n")):
+            rah.ask_sign_when_done(ctx)
+        self.assertIn("riemann-at-home sign --when-done", buf.getvalue())
+        self.assertIn("Riemann@home: a joint statement", buf.getvalue())
+        self.assertIsNone(rah.sign_when_done(ctx))         # an assistant can't answer for the person
+
     def test_export_match_recheck_sign(self):
         code, out, err = self.main("export", "--exporter", self.exporter)
         self.assertEqual(code, 0, err); self.assertIn("Level 2: matches the reference", out)
