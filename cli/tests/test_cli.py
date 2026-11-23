@@ -6,7 +6,7 @@
 Nothing here writes to the real build folder or to GitHub.
 """
 import base64, getpass, gzip, hashlib, importlib.machinery, importlib.util, json, os, re, shutil, socket
-import contextlib, io, subprocess, sys, tempfile, time, unittest, unittest.mock
+import contextlib, io, subprocess, sys, tempfile, threading, time, unittest, unittest.mock
 from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parents[1]
@@ -541,7 +541,7 @@ class Levels(unittest.TestCase):
         code, out, err = self.main("export", "--exporter", self.exporter, ref=False)
         self.assertEqual(code, 1)
         self.assertIn(f"export sha256 {self.sha}", out); self.assertIn(f"export bytes  {len(self.export):,}", out)
-        self.assertIn("unverified: the reference hash has not yet been reproduced by this tool", out)
+        self.assertIn("other builders have reproduced the reference with this tool", out)
         self.assertIn(f"cwd {self.folder}", (self.home / "logs/export.log").read_text())   # ran in the build folder
         self.assert_export_not_on_disk()
         code, _, _ = self.main("record", ref=False)
@@ -572,6 +572,52 @@ class Levels(unittest.TestCase):
         p["updated"] = int(time.time())
         (self.home / "export-progress.json").write_text(json.dumps(p))
         self.main("record"); self.assertEqual(self.latest_record()["export_progress"]["bytes"], 1000)
+
+    def test_export_quiet_tail_keeps_progress_moving(self):
+        """2026-11-23: 2.4 MB from the end the exporter went quiet and the screen and the PR froze, because the
+        tool waited for whole 1 MB pieces. Now partial output counts at once and progress ticks during the silence."""
+        from unittest import mock
+        head, tail = EXPORT_CHUNK * 75_000, EXPORT_CHUNK * 5_000          # 3.3 MB, then a pause, then 0.2 MB
+        ex = self.tmp / "bin/quiet-lean4export"
+        ex.write_text(f"#!{sys.executable} -I\nimport sys, time\nchunk = {EXPORT_CHUNK!r}\n"
+                      "sys.stdout.buffer.write(chunk * 75_000); sys.stdout.buffer.flush()\n"
+                      "time.sleep(4)\nsys.stdout.buffer.write(chunk * 5_000)\n")
+        ex.chmod(0o755)
+        seen, stop = [], threading.Event()
+        pf = self.home / "export-progress.json"
+        def watch():
+            while not stop.is_set():
+                try:
+                    seen.append(json.loads(pf.read_text())["bytes"])
+                except (OSError, ValueError, KeyError):
+                    pass
+                time.sleep(0.2)
+        t = threading.Thread(target=watch); t.start()
+        try:
+            with mock.patch.object(rah, "EXPORT_QUIET_SECONDS", 1):
+                self.export = head + tail; self.sha = hashlib.sha256(self.export).hexdigest()
+                code, out, err = self.main("export", "--exporter", ex)
+        finally:
+            stop.set(); t.join()
+        self.assertEqual(code, 0, err)
+        self.assertGreaterEqual(seen.count(len(head)), 5, "progress must show the partial piece and keep ticking")
+        self.assertIn("no output for", err); self.assertIn("the exporter is still running", err)
+        self.assertIn("export matches the reference ✓", out)
+
+    def test_export_memory_warning(self):
+        """Before exporting, say plainly if this computer's memory is tight (a 125 GiB run crawled at the end)."""
+        self.assertIsNone(rah.export_memory_warning(256)); self.assertIsNone(rah.export_memory_warning(0))
+        mid, low = rah.export_memory_warning(125), rah.export_memory_warning(64)
+        self.assertIn("125 GB", mid); self.assertIn("should work", mid)
+        self.assertIn("64 GB", low); self.assertIn("may never finish", low); self.assertIn("Level 2 is optional", low)
+        for ram, expect in (("125", "should work"), ("256", None)):
+            os.environ["RAH_TEST_RAM_GB"] = ram
+            code, out, err = self.main("export", "--exporter", self.exporter)
+            self.assertEqual(code, 0, err)
+            if expect:
+                self.assertIn(expect, err)
+            else:
+                self.assertNotIn("warning: this computer has", err)
 
     def test_export_progress_on_mismatch_is_done_without_level2(self):
         code, out, err = self.main("export", "--exporter", self.exporter, ref=False)

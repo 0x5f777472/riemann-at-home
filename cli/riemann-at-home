@@ -59,7 +59,9 @@ Nat.add Nat.sub Nat.mul Nat.pow Nat.gcd Nat.div Nat.mod Nat.beq Nat.ble Nat.land
 """
 EXPORT_TARGETS_SHA256 = "9eeb2e5e55be4a78f6e4983fc950dba915b45ad8aeb7a02a32341927a89e05e8"
 EXPORT_TARGETS = EXPORT_TARGETS_TXT.split()          # `$(cat export-targets.txt)`: one argument per word
-UNVERIFIED = "unverified: the reference hash has not yet been reproduced by this tool"
+# First reproduced with this tool 2026-11-23 (5950X, 125 GiB, 2 h 57 m), so a different hash now points at this computer.
+UNVERIFIED = ("other builders have reproduced the reference with this tool, so a different hash means something differs "
+              "on this computer: run `riemann-at-home export --check` and `riemann-at-home update`")
 # Level 3: an independent checker accepts the export. RAM each needs (GB, approximate).
 CHECKERS = {"nanoda": 100, "con-leche": 50}
 NAME_NOTICE = ("This is only a label on the Riemann@home page. Your pull request on GitHub always shows your "
@@ -2015,48 +2017,82 @@ def fmt_dur(t: float) -> str:
     return f"{max(1, round(t / 60))} m" if t < 3600 else f"{t // 3600} h {round(t % 3600 / 60)} m"
 
 
+EXPORT_QUIET_SECONDS = 60     # no output for this long: say so instead of a frozen "about 1 m left"
+
+
 def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -> tuple:
     """Run the exporter in the build folder at nice 19 and read its stdout straight into sha256 and a byte counter
-    (and into `sink`, a checker's stdin, if given). Nothing is written to disk. -> (exit code, sha256, bytes)."""
+    (and into `sink`, a checker's stdin, if given). Nothing is written to disk. -> (exit code, sha256, bytes).
+    A reader thread takes whatever output is there (not whole 1 MB pieces), and the progress line, the progress file
+    and the leaderboard updates keep ticking every second even while the exporter is silent (a volunteer, 2026-11-23:
+    the screen froze at 99.996% because the last 2.4 MB could not show until the exporter exited)."""
+    import queue
     h, n = hashlib.sha256(), 0
     print("  $ " + shlex.join(map(str, cmd)) + f"   (in {ctx.folder}; output hashed, not stored)", file=sys.stderr)
     with open(log, "ab") as lf:
         p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=lf, env=lean_env())
     t0 = time.time()
-    st = {"peak": 0.0, "next_mem": 0.0, "next_show": 0.0, "pct": -1}
+    st = {"peak": 0.0, "next_mem": 0.0, "next_print": 0.0, "pct": -1, "last_out": t0, "quiet_said": 0}
     tty = sys.stderr.isatty()
+    q = queue.Queue(maxsize=64)
+
+    def reader():
+        try:
+            while chunk := p.stdout.read1(1 << 20):
+                q.put(chunk)
+        except (OSError, ValueError):                         # pipe closed after the checker stopped reading
+            pass
+        finally:
+            q.put(None)
 
     def show(final=False):
-        el = time.time() - t0
-        left = (EXPORT_BYTES - n) / (n / el) if n and el >= 60 and n < EXPORT_BYTES else None
+        now = time.time()
+        el, quiet = now - t0, now - st["last_out"]
+        silent = not final and quiet >= EXPORT_QUIET_SECONDS
+        left = (EXPORT_BYTES - n) / (n / el) if n and el >= 60 and n < EXPORT_BYTES and not silent else None
         pct = min(100, int(n * 100 / EXPORT_BYTES))
         if on_progress:
             on_progress(n, el, left, st["peak"], final)
-        if not tty and not final and pct == st["pct"]:      # logs: one line per percent
-            return
-        st["pct"] = pct
+        if not tty and not final:                         # logs: one line per percent, one per quiet minute
+            qm = int(quiet // EXPORT_QUIET_SECONDS) if silent else 0
+            if pct == st["pct"] and qm <= st["quiet_said"] and now < st["next_print"]:
+                return
+            st["quiet_said"] = qm
+        st["pct"], st["next_print"] = pct, now + 1800
         bar = "█" * (pct * 22 // 100) + "░" * (22 - pct * 22 // 100)
         line = (f"  EXPORTING {pct}%  {bar}  {n / 1e9:,.1f} of {EXPORT_BYTES / 1e9:,.1f} GB · {n / 1e6 / max(el, 1):,.1f} MB/s"
-                + (f" · about {fmt_dur(left)} left" if left else "") + (f" · memory {st['peak']:,.0f} GB" if st["peak"] else ""))
-        print(("\r" + line.ljust(110)) if tty else line, end="" if tty and not final else "\n", file=sys.stderr, flush=True)
+                + (f" · about {fmt_dur(left)} left" if left else "")
+                + (f" · no output for {fmt_dur(quiet)}, the exporter is still running" if silent else "")
+                + (f" · memory {st['peak']:,.0f} GB" if st["peak"] else ""))
+        print(("\r" + line.ljust(130)) if tty else line, end="" if tty and not final else "\n", file=sys.stderr, flush=True)
 
+    threading.Thread(target=reader, daemon=True).start()
+    next_show = 0.0
     try:
-        for chunk in iter(lambda: p.stdout.read(1 << 20), b""):
-            h.update(chunk)
-            n += len(chunk)
-            if sink is not None:
-                sink.write(chunk)
+        while True:
+            try:
+                chunk = q.get(timeout=1)
+            except queue.Empty:
+                chunk = b""
+            if chunk is None:
+                break
             now = time.time()
+            if chunk:
+                st["last_out"] = now
+                h.update(chunk)
+                n += len(chunk)
+                if sink is not None:
+                    sink.write(chunk)
             if now >= st["next_mem"]:                         # peak memory of the exporter (and lake env) every 5 s
                 st["peak"], st["next_mem"] = max(st["peak"], tree_memory_gb(p.pid)), now + 5
-            if now >= st["next_show"]:
-                show(); st["next_show"] = now + (1 if tty else 30)
+            if now >= next_show:
+                show(); next_show = now + 1
     except BrokenPipeError:                                   # the checker stopped reading
         p.kill()
     finally:
+        rc = p.wait()
         p.stdout.close()
-    rc = p.wait()
     show(final=True)
     return rc, h.hexdigest(), n
 
@@ -2075,6 +2111,9 @@ def cmd_export(ctx: Ctx, a):
     ctx.logs.mkdir(parents=True, exist_ok=True)
     log = ctx.logs / "export.log"
     print(f"exporting the proof: {EXPORT_BYTES / 1e9:.1f} GB of output, hashed as it streams (nothing written to disk)")
+    warn = export_memory_warning(total_ram_gb())
+    if warn:
+        print(warn, file=sys.stderr)
     t0 = time.time()
     pf = ctx.home / "export-progress.json"
     base = {"build_id": rec["build_id"], "olean_digest": rec["olean_digest"]}
@@ -2127,6 +2166,25 @@ def total_ram_gb() -> float:
         return int(r) / 2 ** 30 if r.isdigit() else 0.0
     m = re.search(r"^MemTotal:\s+(\d+) kB", read(Path("/proc/meminfo")), re.M)
     return int(m[1]) / 2 ** 20 if m else 0.0
+
+
+# Measured 2026-11-23 (a volunteer's 125 GiB Linux computer): lean4export holds ~70 GB of its own data and keeps rereading ~60 GB of
+# compiled .olean files; at 99.996% its RAM and 8 GiB of swap were full, and the last 2.4 MB took 1 h 47 m (2 h 57 m in all).
+EXPORT_RAM_COMFORTABLE_GB, EXPORT_RAM_MINIMUM_GB = 140, 96
+
+
+def export_memory_warning(ram_gb: float):
+    """A warning (or None) about this computer's memory for the export. Never refuses: it is the volunteer's call."""
+    if not ram_gb or ram_gb >= EXPORT_RAM_COMFORTABLE_GB:
+        return None
+    need = ("the export holds about 70 GB of its own data and keeps rereading about 60 GB of compiled proof files, "
+            f"so it is happiest with {EXPORT_RAM_COMFORTABLE_GB} GB or more")
+    if ram_gb < EXPORT_RAM_MINIMUM_GB:
+        return (f"warning: this computer has {ram_gb:.0f} GB of memory; {need}. With less than "
+                f"{EXPORT_RAM_MINIMUM_GB} GB it will swap heavily and may never finish. Level 2 is optional.")
+    tip = " Close other programs; more swap (32 GB or so) helps." if not IS_MAC else " Close other programs."
+    return (f"warning: this computer has {ram_gb:.0f} GB of memory; {need}. It should work, but the last part may "
+            f"slow down a lot as memory fills (on a 125 GB computer the final 0.01% took almost 2 hours).{tip}")
 
 
 def cmd_recheck(ctx: Ctx, a):
