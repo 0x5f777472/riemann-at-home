@@ -47,7 +47,7 @@ MODULES_SHA256 = "21f45a03c4d152c91034a8f3229c2c1f35961ad2f0f69e1a4dfd97fef85848
 EXPECTED_AXIOMS = ["propext", "Classical.choice", "Quot.sound"]
 REFERENCE = Path("/Users/Shared/riemann-at-home/lean")   # project's own build; opened read-only
 SPEED_FLAG, SPEED_REJECT = 6000, 12000                    # new modules per hour, floor for any computer
-SPEED_FLAG_PER_CORE, SPEED_REJECT_PER_CORE = 250, 500    # big computers get more: limit = max(floor, per-core x cores)
+SPEED_FLAG_PER_CORE, SPEED_REJECT_PER_CORE = 250, 1000   # limit = max(floor, per-core x cores); 1000: a 24-core build bursts ~550 (#18)
 SPEED_CORES_CAP = 512                                     # self-reported cores counted at most this many
 BUILDERS_CAP = 250
 MAX_RECORD_BYTES = 256 * 1024

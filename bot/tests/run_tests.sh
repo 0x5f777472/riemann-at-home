@@ -172,6 +172,7 @@ python3 -I tests/check_export.py && echo "--> ok" || { echo "--> TEST FAILED"; f
 print
 print "=== crash reports"
 python3 -I tests/check_crashes.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+python3 -I tests/check_speed.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
 print "=== aggregate sample (merged + open PRs) + leaderboard/terrain/running assertions"
 S=tests/fixtures/sample
