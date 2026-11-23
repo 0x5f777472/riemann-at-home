@@ -88,6 +88,8 @@ DISK_CHECK_SECONDS = float(os.environ.get("RAH_DISK_CHECK_SECONDS", "30"))
 AUTOSUBMIT_SECONDS = float(os.environ.get("RAH_AUTOSUBMIT_SECONDS", "600"))   # default; `submit --interval` overrides
 MIN_INTERVAL = 30                 # shortest auto-submit interval (seconds)
 TIMES_ONLY_SECONDS = 300          # an update that only changes `recorded`/`busy_seconds` is pushed at most this often
+BUILD_RETRIES = 3                                                  # a crashed `lake build` is restarted this often
+BUILD_RETRY_WAIT = float(os.environ.get("RAH_BUILD_RETRY_WAIT", "30"))   # seconds between (testing: shorter)
 AUTOSUBMIT = os.environ.get("RAH_AUTOSUBMIT", "dry-run")   # dry-run | off. Real PRs are not enabled in this build.
 USER_AGENT = TOOL.replace(" ", "/")
 UPSTREAM = "riemann-at-home/riemann-at-home"   # where build records go (one PR per computer)
@@ -910,17 +912,22 @@ def cmd_run(ctx: Ctx, a):
     tcmd = (["/usr/bin/time", "-l"] if IS_MAC else ["/usr/bin/time", "-v"]) if Path("/usr/bin/time").exists() else []
     cmd = tcmd + ["nice", "-n", "19", which("lake") or "lake", "--no-ansi", "build", a.target]
     stopping, terminated, disk_low = threading.Event(), threading.Event(), threading.Event()
-    with open(ctx.logs / "build.log", "ab") as out, open(ctx.logs / "time.txt", "ab") as err:
-        p = subprocess.Popen(cmd, cwd=ctx.folder, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-                             env=lean_env(), start_new_session=True)
-    ctx.pgid_file.write_text(str(p.pid))
-    start_caffeinate(ctx, p.pid)
+    cur = {}
+
+    def launch():
+        with open(ctx.logs / "build.log", "ab") as out, open(ctx.logs / "time.txt", "ab") as err:
+            cur["p"] = subprocess.Popen(cmd, cwd=ctx.folder, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                                        env=lean_env(), start_new_session=True)
+        ctx.pgid_file.write_text(str(cur["p"].pid))
+        start_caffeinate(ctx, cur["p"].pid)
+        return cur["p"]
+    p = launch()
 
     def on_term(sig, frm):
         terminated.set()
         for s in (signal.SIGCONT, signal.SIGTERM):
             try:
-                os.killpg(p.pid, s)
+                os.killpg(cur["p"].pid, s)
             except OSError:
                 pass
     signal.signal(signal.SIGTERM, on_term)
@@ -953,18 +960,41 @@ def cmd_run(ctx: Ctx, a):
         while not stopping.wait(autosubmit_interval(ctx)):
             autosubmit(ctx, a, "progress")
     threading.Thread(target=progress, daemon=True).start()
-    if mode == "gentle":                      # new lean processes inherit lake's policy
-        for _ in range(30):
-            pids = build_pids(ctx)
-            if pids:
-                set_priority(pids, mode)
-                break
-            time.sleep(1)
-    rc = p.wait()
+    def gentle():
+        if stored_mode(ctx) == "gentle":          # new lean processes inherit lake's policy
+            for _ in range(30):
+                pids = build_pids(ctx)
+                if pids:
+                    set_priority(pids, stored_mode(ctx))
+                    break
+                if cur["p"].poll() is not None:   # already exited (a crash at start): nothing to set
+                    break
+                time.sleep(1)
+    gentle()
+    # A crash (Lean has segfaulted near the end of whole builds) used to end the build silently, leaving the
+    # leaderboard showing it as building. Restart it: lake keeps every finished module and redoes only the rest.
+    retries = 0
+    while True:
+        rc = p.wait()
+        if rc == 0 or terminated.is_set() or disk_low.is_set() or retries >= BUILD_RETRIES:
+            break
+        retries += 1
+        stop_caffeinate(ctx)
+        log_event(ctx, f"BUILD_CRASH={rc}")
+        with open(ctx.logs / "build.log", "a") as f:
+            f.write(f"\nriemann-at-home: lake build stopped with exit code {rc}; restarting it in "
+                    f"{BUILD_RETRY_WAIT:g} s (retry {retries} of {BUILD_RETRIES}). Finished modules are kept.\n")
+        if terminated.wait(BUILD_RETRY_WAIT):
+            break
+        p = launch()
+        gentle()
     stopping.set()
     stop_caffeinate(ctx)
     log_event(ctx, f"BUILD_EXIT={rc}")
-    final_submit = rc == 0 or disk_low.is_set()
+    crashed = rc != 0 and not terminated.is_set() and not disk_low.is_set()
+    if crashed:
+        log_event(ctx, "BUILD_GAVE_UP")
+    final_submit = rc == 0 or disk_low.is_set() or crashed      # the board gets the last count either way
     if rc == 0 and a.target == "Main" and not terminated.is_set():
         audit = ctx.home / "audit"
         audit.mkdir(parents=True, exist_ok=True)
@@ -1110,6 +1140,10 @@ def cmd_status(ctx: Ctx, a):
         last = next((raw for k, raw, _ in reversed(ev) if k == "BUILD_EXIT"), None)
         how = {"BUILD_EXIT=0": "finished"}.get(last, "stopped" + (f" ({last})" if last else ""))
         print(f"build     not running, {how}" if ev else "build     not started yet")
+        gave_up = next((k for k, _, _ in reversed(ev) if k in ("BUILD_GAVE_UP", "START", "RESTART")), None)
+        if gave_up == "BUILD_GAVE_UP":
+            print(f"          !! the build CRASHED and stopped after {BUILD_RETRIES} automatic restarts. Finished "
+                  f"modules are kept: run `riemann-at-home build` to continue, and see {ctx.logs / 'build.log'}")
     started, busy = busy_seconds(ctx, bool(sup) or bool(outside_build(ctx)))
     if started:
         print(f"started   {iso(started)}, busy {busy / 3600:.1f} h")

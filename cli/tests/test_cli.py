@@ -293,6 +293,39 @@ class Fast(unittest.TestCase):
         self.assertIn("DISK_LOW", st); self.assertIn("BUILD_EXIT=disk", st)
         self.assertFalse((self.tmp / "h/logs/build.log").exists())
 
+    def _crashing_run(self, crashes: int):
+        """The real supervisor (`_run`) over a fake lake whose `build` exits 139 (a Lean segfault) `crashes` times."""
+        fake_folder(self.tmp / "p")
+        elan = self.tmp / "elan"; (elan / "bin").mkdir(parents=True)
+        n = self.tmp / "lake-builds"
+        lake = elan / "bin/lake"
+        lake.write_text(f"#!/bin/sh\nif [ \"$2\" = build ]; then echo x >> {n}; "
+                        f"[ $(wc -l < {n}) -gt {crashes} ] && exit 0; echo 'error: Lean exited with code 139'; exit 139; fi\n"
+                        "exit 0\n")
+        lake.chmod(0o755)
+        env = {**os.environ, "RAH_HOME": str(self.tmp / "h"), "ELAN_HOME": str(elan), "RAH_AUTOSUBMIT": "off",
+               "RAH_BUILD_RETRY_WAIT": "0.2", "RAH_SAMPLE_SECONDS": "1"}
+        r = subprocess.run([sys.executable, "-I", str(SCRIPT), "_run", "--folder", self.tmp / "p",
+                            "--logs", self.tmp / "h/logs", "--target", "Main"], capture_output=True, text=True,
+                           env=env, timeout=120)
+        st = cli("status", "--folder", self.tmp / "p", home=self.tmp / "h", check=False).stdout
+        return r, len(n.read_text().splitlines()), (self.tmp / "h/logs/status.txt").read_text(), st
+
+    def test_build_crash_is_restarted(self):
+        """A crashed lake build (a segfault near 99%) restarts by itself and finishes."""
+        r, builds, events, st = self._crashing_run(crashes=2)
+        self.assertEqual((r.returncode, builds), (0, 3), r.stderr)
+        self.assertEqual(events.count("BUILD_CRASH=139"), 2); self.assertIn("BUILD_EXIT=0", events)
+        self.assertIn("restarting it", (self.tmp / "h/logs/build.log").read_text())
+        self.assertNotIn("CRASHED", st)
+
+    def test_build_that_keeps_crashing_says_so(self):
+        r, builds, events, st = self._crashing_run(crashes=99)
+        self.assertEqual((r.returncode, builds), (139, 1 + rah.BUILD_RETRIES))
+        self.assertIn("BUILD_GAVE_UP", events)
+        self.assertIn("the build CRASHED and stopped after 3 automatic restarts", st)
+        self.assertIn("run `riemann-at-home build` to continue", st)
+
     def test_submit_needs_gh_logged_in(self):
         repo = self.tmp / "repo"; repo.mkdir(); subprocess.run(["git", "init", "-q", str(repo)], check=True)
         rec = self.tmp / "rec.json"; self._valid_record(rec)
