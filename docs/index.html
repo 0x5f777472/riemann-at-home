@@ -75,7 +75,7 @@
   .extra{display:none}
   .global .extra{display:block}
   .prompt{margin:6px 9px;padding:8px;background:#000;border:1px solid #2f5bd8;color:#7dff95;font:12px "Courier New",monospace;
-          line-height:1.45;white-space:pre-wrap;user-select:all}
+          line-height:1.45;white-space:pre-wrap;word-break:break-word;user-select:all}
   .btn{display:inline-block;margin:4px 9px;padding:4px 10px;font:bold 11px Arial;letter-spacing:1px;color:#fff;
        background:linear-gradient(#2f5bd8,#13308f);border:1px solid #6f8fff;cursor:pointer;text-decoration:none}
   .gh{color:#ffd23f;text-decoration:none}
@@ -147,6 +147,11 @@
   @keyframes shimmer{0%{background-position:-60px 0}100%{background-position:400px 0}}
   #board .note{color:#b9d0ff}#running .note{color:#9fd8ae}
   .stack .honor{height:auto;overflow:visible}
+  .joinview,.runview{box-sizing:border-box}
+  /* Building now: compact rows (owner, 2026-11-23) */
+  @media (min-width: 761px){#running .run{padding:5px 10px;gap:9px}
+    #running .run .w{font-size:13px}#running .run .pc{font-size:11px}
+    #running .pb{height:6px;margin-top:4px}}
   .tier{padding:7px 12px 5px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
   .tier.g{color:#1a1200;background:linear-gradient(90deg,#ffd23f,#ffe98a 60%,rgba(255,210,63,.2))}
   .tier.w{color:#ffd23f;background:rgba(0,0,0,.3)}.tier.r{color:#c9f5d4;background:rgba(0,0,0,.3)}.tier.x{color:#b9d0ff;background:rgba(0,0,0,.3)}
@@ -479,7 +484,7 @@ const running = (DATA.running || []).filter(p => !(p.modules >= N && wholeWho.ha
   .sort((a, b) => b.modules - a.modules || String(nameOf(a)).localeCompare(String(nameOf(b))));
 const rRows = running.map((p, k) => {
     const pct = p.modules / N * 100;
-    return `<div class="run" title="${esc(p.machine || "")}">${avatar(p, 48)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
+    return `<div class="run" title="${esc(p.machine || "")}">${avatar(p, PHONE() ? 48 : 30)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
       person(p, "w") +
       `<span class="pc"><b>${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}%</b> · ${fmt(p.modules)}</span></div>` +
       `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div>` +
@@ -499,17 +504,26 @@ $("runcount").textContent = running.length ? ` · ${running.length} ${running.le
 $("running").innerHTML = rRows || '<div class="note">No builds in progress.</div>';
 }
 renderPanels(DATA);
-// Desktop: Leaderboard, Join in and Building now stack at their natural heights (nothing scrolls inside a panel),
-// and the page grows with them (owner, 2026-11-23). The statement tab keeps its fixed layout.
-const SCREEN_H = 1392, STACK_TOP = 598, STACK_GAP = 16;
+// Desktop (owner, 2026-11-23): the Leaderboard full width; under it Join in (left) and Building now (right) side by
+// side, ending level: the prompt box stretches to take up any spare room; Also checked independently below both.
+// Nothing scrolls inside a panel; the page grows. The statement tab keeps its fixed layout.
+const SCREEN_H = 1392, STACK_TOP = 598, STACK_GAP = 16, JOIN_W = 470;
 function fitBoard() {
   if (PHONE()) return;
   if (document.body.classList.contains("view-statement")) { $("screen").style.height = `${SCREEN_H}px`; return; }
-  let y = STACK_TOP;
-  for (const p of [$("board").parentElement, document.querySelector(".joinview"), $("running").parentElement, $("also").parentElement]) {
-    if (p.style.display === "none") continue;
-    p.style.top = `${y}px`; y += p.offsetHeight + STACK_GAP; }
-  $("screen").style.height = `${Math.max(SCREEN_H, y + 10)}px`;
+  const b = $("board").parentElement, j = document.querySelector(".joinview"), r = $("running").parentElement,
+        al = $("also").parentElement, pr = $("prompt");
+  b.style.top = `${STACK_TOP}px`;
+  const y = STACK_TOP + b.offsetHeight + STACK_GAP;
+  Object.assign(j.style, {left: "22px", width: `${JOIN_W}px`, top: `${y}px`, height: ""});
+  Object.assign(r.style, {left: `${22 + JOIN_W + STACK_GAP}px`, width: `${956 - JOIN_W - STACK_GAP}px`, top: `${y}px`, height: ""});
+  pr.style.height = "";
+  const h = Math.max(j.offsetHeight, r.offsetHeight);
+  pr.style.height = `${pr.clientHeight - 16 + (h - j.offsetHeight)}px`;   // 16 = the prompt's padding
+  j.style.height = r.style.height = `${h}px`;
+  let y2 = y + h + STACK_GAP;
+  if (al.style.display !== "none") { al.style.top = `${y2}px`; y2 += al.offsetHeight + STACK_GAP; }
+  $("screen").style.height = `${Math.max(SCREEN_H, y2 + 10)}px`;
 }
 fitBoard(); window.addEventListener("hashchange", fitBoard); window.addEventListener("resize", fitBoard);
 
