@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T05:28:22Z
+- Updated: 2026-11-23T05:42:57Z
 
 ## Totals
 
@@ -30,16 +30,16 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 ### Building now
 
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- ericpruitt (github.com/ericpruitt): 152,151 modules (86.9%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
-- titojankowski (github.com/titojankowski): 104,406 modules (59.6%), Apple M5 Max
+- ericpruitt (github.com/ericpruitt): 155,934 modules (89.0%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
+- titojankowski (github.com/titojankowski): 104,723 modules (59.8%), Apple M5 Max
 - gebhardtr (github.com/gebhardtr): 84,869 modules (48.4%), AMD Ryzen 5 5600X 6-Core Processor
 - rib3ye (github.com/rib3ye): 75,147 modules (42.9%), Apple M2 Max
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 69,633 modules (39.7%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 58,269 modules (33.3%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 25,618 modules (14.6%), Apple M3 Ultra
+- Genbox (github.com/Genbox): 59,137 modules (33.8%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 26,298 modules (15.0%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
 - framiere (github.com/framiere): 18,105 modules (10.3%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 3,064 modules (1.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- tgragnato (github.com/tgragnato): 3,226 modules (1.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
