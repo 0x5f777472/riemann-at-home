@@ -91,6 +91,7 @@ TIMES_ONLY_SECONDS = 300          # an update that only changes `recorded`/`busy
 AUTOSUBMIT = os.environ.get("RAH_AUTOSUBMIT", "dry-run")   # dry-run | off. Real PRs are not enabled in this build.
 USER_AGENT = TOOL.replace(" ", "/")
 UPSTREAM = "riemann-at-home/riemann-at-home"   # where build records go (one PR per computer)
+SITE_URL = "https://riemann-at-home.github.io/riemann-at-home/"   # the leaderboard and how to join
 AUDIT_LEAN = """import Main
 
 #print axioms riemannHypothesis
@@ -1633,6 +1634,39 @@ def ask_consent(ctx: Ctx):
     name = input("Name on the leaderboard (Enter = your GitHub username, or type a display name): ").strip()
     agree(ctx, name or None)
     ask_sign_when_done(ctx)
+    share_nudge(ctx, "joined")
+
+
+SHARE_TEXT = {
+    "joined": "I'm running a validator for the Riemann Hypothesis Lean proof in my spare CPU cycles. Join in:",
+    "signed": "My computer built the whole Riemann Hypothesis Lean proof, reproduced the reference export, and I "
+              "signed the joint statement. Run a validator too:",
+}
+
+
+def my_link(ctx: Ctx) -> str:
+    """Their personal leaderboard link: the site opened on their row. Keyed by the name the leaderboard shows
+    (the display name they chose, else the GitHub login), so a chosen display name never exposes the login."""
+    from urllib.parse import quote
+    c = ctx.conf()
+    name = ((c.get("display") or {}).get("display_name") or (c.get("consent") or {}).get("login") or "").strip()
+    return f"{SITE_URL}#@{quote(name, safe='-')}" if name else SITE_URL
+
+
+def share_nudge(ctx: Ctx, kind: str):
+    """After setup's yes and after signing (owner, 2026-11-23): invite the person to post about it, with their
+    personal link back to the site so others join. Only prints links; nothing is posted for them."""
+    from urllib.parse import quote
+    text, url = SHARE_TEXT[kind], my_link(ctx)
+    full = f"{text} {url}"
+    print(("\nYou're validating!" if kind == "joined" else "\nYou're a validator!") +
+          " Tell people, so more computers join in:\n"
+          f"  \"{full}\"\n"
+          f"  X:        https://x.com/intent/tweet?text={quote(text)}&url={quote(url, safe='')}\n"
+          f"  Bluesky:  https://bsky.app/intent/compose?text={quote(full)}\n"
+          f"  LinkedIn: https://www.linkedin.com/sharing/share-offsite/?url={quote(url, safe='')}")
+    if not sys.stdin.isatty():
+        print("(If an AI assistant is running this: pass these links on to the person; don't post for them.)")
 
 
 def ask_sign_when_done(ctx: Ctx):
@@ -1694,6 +1728,7 @@ def cmd_submit(ctx: Ctx, a):
     if getattr(a, "agree", False):
         agree(ctx, a.name, a.upstream)
         ask_sign_when_done(ctx)                     # the optional second question, as at setup
+        share_nudge(ctx, "joined")
         return 0
     if a.interval is not None:
         if a.interval < MIN_INTERVAL:
@@ -2199,6 +2234,8 @@ def cmd_export(ctx: Ctx, a):
     print("Level 2: matches the reference export (Andrew Sutherland, https://math.mit.edu/~drew/grh).")
     out = write_record(ctx, make_record(ctx, a))
     print(f"record with export_sha256: {out}")
+    if advance:
+        share_nudge(ctx, "signed")
     return 0
 
 
@@ -2341,6 +2378,7 @@ def cmd_sign(ctx: Ctx, a):
     ctx.set_conf(levels=lv)
     out = write_record(ctx, make_record(ctx, a))
     print(f"signed: records now carry \"sign_statement\": true; the next update of this build's PR sends it.\n{out}")
+    share_nudge(ctx, "signed")
     return 0
 
 

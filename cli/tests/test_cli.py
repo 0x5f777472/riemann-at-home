@@ -690,11 +690,36 @@ class Levels(unittest.TestCase):
         # the matching export signs, and says so
         code, out, err = self.main("export", "--exporter", self.exporter)
         self.assertEqual(code, 0, err); self.assertIn("Joint statement signed, as you chose at setup", out)
+        self.assertIn("You're a validator! Tell people", out); self.assertIn("https://x.com/intent/tweet?text=", out)
         self.assertIs(self.latest_record().get("sign_statement"), True)
         # and it can be taken back
         code, out, err = self.main("sign", "--cancel")
         self.assertEqual(code, 0, err); self.assertIn("signature withdrawn", out)
         self.assertNotIn("sign_statement", self.latest_record())
+
+    def test_share_nudge_links_back_to_the_site(self):
+        """Setup and signing invite a post that links to the site, so others join (owner, 2026-11-23)."""
+        import contextlib, io
+        from urllib.parse import quote
+        ctx = rah.Ctx(type("A", (), {"folder": str(self.folder), "logs": None})())
+        ctx.set_conf(consent={"agreed": "2026-11-23T00:00:00Z", "login": "octo-cat"})
+        mine = rah.SITE_URL + "#@octo-cat"
+        for kind, head in (("joined", "You're validating!"), ("signed", "You're a validator!")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rah.share_nudge(ctx, kind)
+            o = buf.getvalue()
+            self.assertIn(head, o); self.assertIn(rah.SHARE_TEXT[kind] + " " + mine, o)
+            self.assertIn("url=" + quote(mine, safe=""), o)
+            self.assertIn("bsky.app/intent/compose?text=", o); self.assertIn("linkedin.com/sharing", o)
+            self.assertNotIn(" ", o.split("x.com/intent/tweet?text=")[1].split()[0])   # one clickable link
+        # a chosen display name is the link, and the login stays out of it
+        ctx.set_conf(display={"display_name": "Ada L"})
+        self.assertEqual(rah.my_link(ctx), rah.SITE_URL + "#@Ada%20L")
+        # a mismatching export never invites a "signed" post
+        code, out, err = self.main("sign", "--when-done", stdin="y\n")
+        code, out, err = self.main("export", "--exporter", self.exporter, ref=False)
+        self.assertEqual(code, 1); self.assertNotIn("You're a validator", out)
 
     def test_setup_question_without_terminal_only_prints(self):
         import contextlib, io
