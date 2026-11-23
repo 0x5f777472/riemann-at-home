@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T20:19:40Z
+- Updated: 2026-11-23T20:34:16Z
 
 ## Totals
 
@@ -31,17 +31,17 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ### Building now
 
-- rib3ye (github.com/rib3ye): 158,987 modules (90.8%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 121,871 modules (69.6%), AMD Ryzen 5 5600X 6-Core Processor
-- titojankowski (github.com/titojankowski): 119,906 modules (68.4%), Apple M5 Max
-- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 102,602 modules (58.6%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 92,438 modules (52.8%), 12th Gen Intel(R) Core(TM) i7-12700K
-- Fornax96 (github.com/Fornax96): 82,922 modules (47.3%), AMD Ryzen 9 7900X3D 12-Core Processor
-- sanzgiri (github.com/sanzgiri): 64,518 modules (36.8%), Apple M4 Max
-- milhouse1337 (github.com/milhouse1337): 53,705 modules (30.7%), Apple M3 Ultra
+- rib3ye (github.com/rib3ye): 159,607 modules (91.1%), Apple M2 Max
+- gebhardtr (github.com/gebhardtr): 123,189 modules (70.3%), AMD Ryzen 5 5600X 6-Core Processor
+- titojankowski (github.com/titojankowski): 120,186 modules (68.6%), Apple M5 Max
+- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 106,006 modules (60.5%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+- Genbox (github.com/Genbox): 93,387 modules (53.3%), 12th Gen Intel(R) Core(TM) i7-12700K
+- Fornax96 (github.com/Fornax96): 84,731 modules (48.4%), AMD Ryzen 9 7900X3D 12-Core Processor
+- sanzgiri (github.com/sanzgiri): 66,056 modules (37.7%), Apple M4 Max
+- milhouse1337 (github.com/milhouse1337): 54,372 modules (31.0%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 21,129 modules (12.1%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 13,982 modules (8.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 21,143 modules (12.1%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 14,102 modules (8.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
