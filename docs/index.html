@@ -165,6 +165,10 @@
   .vrow .lvl.sg{background:#7fd8ff}
   .chips{margin-top:6px;line-height:1.9}
   .vrow .facts{font-size:12px;color:#ffe98a;margin-top:4px;font-weight:normal}
+  .me{position:relative;z-index:2;outline:3px solid #ffd23f;outline-offset:-3px;box-shadow:0 0 0 6px rgba(255,210,63,.25),0 0 28px rgba(255,210,63,.55);animation:mepulse 1.6s ease-in-out 3}
+  @keyframes mepulse{50%{box-shadow:0 0 0 10px rgba(255,210,63,.12),0 0 44px rgba(255,210,63,.8)}}
+  .headline .hn{color:#fff}.headline .hs{display:block;font-size:17px;color:#cfe0ff;font-weight:normal;margin-top:4px}
+  .headline .hs a{color:#ffd23f}
   .wrow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(120,160,255,.16);background:rgba(255,210,63,.06)}
   .wrow .nm{font-size:17px;color:#fff}.wrow .facts{font-size:11px;color:#b9d0ff;margin-top:3px;font-weight:normal}
   .wrow .ex{margin-top:5px}
@@ -289,7 +293,9 @@
 // #stack=N        modules per bar (default 5; #stack=1 = one spike per module)
 // #color=library  one color per library instead of the rainbow by position
 // #hover=x,y      test hook: simulates the mouse at that spot (for headless screenshots)
-const DEMO = /demo/.test(location.hash);
+// #@name         personal link: opens on that person's row, highlighted, with their status as the headline
+const H = () => location.hash.startsWith("#@") ? "" : location.hash;   // a name never switches the page's modes
+const DEMO = /demo/.test(H());
 
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString("en-US");
@@ -333,7 +339,7 @@ function ctx2d(id) {                       // draw at full screen resolution (Re
 // Tabs: Leaderboard / Joint statement; the choice lives in the hash (#statement) so it is linkable; #demo is kept.
 $("tab-board").href = DEMO ? "#demo" : "#";
 $("tab-statement").href = DEMO ? "#demo&statement" : "#statement";
-function showTab() { const st = /statement/.test(location.hash);
+function showTab() { const st = /statement/.test(H());
   document.body.classList.toggle("view-statement", st);
   $("tab-board").classList.toggle("on", !st); $("tab-statement").classList.toggle("on", st); }
 showTab(); window.addEventListener("hashchange", showTab);
@@ -419,10 +425,10 @@ const sigs = (DATA.signatures || []).slice().sort((a, b) => String(a.signed).loc
     `<div class="funnel">${labels.map((l, k) => `<span class="fl">${l}</span><span class="ft">` +
       (c[k] ? `<i style="width:${Math.max(1, c[k] / Math.max(1, c[0]) * 100).toFixed(1)}%"></i>` : "") +
       `</span><span class="fc">${fmt(c[k])}</span>`).join("")}</div>`; }
-{ const setTitle = () => document.title = /statement/.test(location.hash) ? "Riemann@home · Joint Statement" : "Riemann@home";
+{ const setTitle = () => document.title = /statement/.test(H()) ? "Riemann@home · Joint Statement" : "Riemann@home";
   setTitle(); addEventListener("hashchange", setTitle);
   const n = (DATA.signatures || []).length; const jc = $("jscount"); if (jc) jc.textContent = n ? ` (${n} signature${n === 1 ? "" : "s"} so far)` : "";
-  const jl = $("jslink"); if (jl && /demo/.test(location.hash)) jl.href = "#demo&statement"; }
+  const jl = $("jslink"); if (jl && /demo/.test(H())) jl.href = "#demo&statement"; }
 $("sighead").textContent = `Signatures${sigs.length ? " · " + sigs.length : ""}`;
 $("sigs").innerHTML = sigs.length ? sigs.map(g =>
     `<div class="sig">${avatar(g, 28)}<div class="body">${person(g, "w")}` +
@@ -472,11 +478,11 @@ const facts = p => { const bits = [`all ${fmt(p.modules)} modules`];
   if (p.machine) bits.push(esc(p.machine));
   if (p.computers > 1) bits.push(`${p.computers} computers`);
   return bits.join(" · "); };
-const vRows = validators.map((p, k) => `<div class="vrow"><span class="rk">${k + 1}</span>${avatar(p, 72)}<div class="body">` +
+const vRows = validators.map((p, k) => `<div class="vrow" data-who="${esc(p.who || p.name)}"><span class="rk">${k + 1}</span>${avatar(p, 72)}<div class="body">` +
     `<div class="nm">${person(p)}</div><div class="chips"><span class="whole">WHOLE PROOF</span>${levelBadge(p.level)}` +
     (signed.has(p.who || p.name) ? '<span class="lvl sg" title="Signed the joint statement">SIGNED</span>' : "") + `</div>` +
     `<div class="facts">${facts(p)}${p.export?.done && p.export.matches ? ` · export matched in ${dur(p.export.seconds)}` : ""}</div></div></div>`).join("");
-const wRows = built.map(p => `<div class="wrow">${avatar(p, 52)}<div class="body"><div class="nm">${person(p)}<span class="whole">WHOLE PROOF</span></div>` +
+const wRows = built.map(p => `<div class="wrow" data-who="${esc(p.who || p.name)}">${avatar(p, 52)}<div class="body"><div class="nm">${person(p)}<span class="whole">WHOLE PROOF</span></div>` +
     `<div class="facts">${facts(p)} · finished ${date(p.finished || p.since)}</div>${exportLine(p.export)}</div></div>`).join("");
 // BUILDING NOW: every unfinished build (one per computer); a whole build that is exporting is already listed above.
 const wholeWho = new Set(whole.map(p => p.who || p.name));
@@ -484,7 +490,7 @@ const running = (DATA.running || []).filter(p => !(p.modules >= N && wholeWho.ha
   .sort((a, b) => b.modules - a.modules || String(nameOf(a)).localeCompare(String(nameOf(b))));
 const rRows = running.map((p, k) => {
     const pct = p.modules / N * 100;
-    return `<div class="run" title="${esc(p.machine || "")}">${avatar(p, PHONE() ? 48 : 30)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
+    return `<div class="run" data-who="${esc(p.who || p.name)}" title="${esc(p.machine || "")}">${avatar(p, PHONE() ? 48 : 30)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
       person(p, "w") +
       `<span class="pc"><b>${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}%</b> · ${fmt(p.modules)}</span></div>` +
       `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div>` +
@@ -504,6 +510,39 @@ $("runcount").textContent = running.length ? ` · ${running.length} ${running.le
 $("running").innerHTML = rRows || '<div class="note">No builds in progress.</div>';
 }
 renderPanels(DATA);
+// Personal link (#@name, the name the leaderboard shows: GitHub login, or the display name they chose):
+// their status as the headline, their row highlighted and scrolled into view. Shared by the tool after setup/signing.
+let CUR = DATA; const HEADLINE = $("headline").innerHTML;
+function personal(DATA) {
+  CUR = DATA;
+  document.querySelectorAll(".me").forEach(e => e.classList.remove("me"));
+  let who = ""; try { who = location.hash.startsWith("#@") ? decodeURIComponent(location.hash.slice(2)).trim() : ""; } catch (e) {}
+  if (!who) { $("headline").innerHTML = HEADLINE; fitBoard(); return; }
+  const lc = who.toLowerCase(), key = p => String(p.who || p.name).toLowerCase();
+  const find = list => (list || []).find(p => key(p) === lc);
+  const b = find(DATA.leaderboard), r = find(DATA.running), signedIt = !!find(DATA.signatures);
+  const nm = esc((b || r || {}).name || who);
+  let line, sub;
+  if (b && b.whole_proof && b.level >= 2) {
+    line = `<span class="hn">${nm}</span> validated the Riemann Hypothesis Lean proof`;
+    sub = `Built all ${fmt(N)} modules and reproduced the 61.6 GB export bit for bit` + (signedIt ? ", then signed the joint statement." : ".");
+  } else if (b && b.whole_proof) {
+    line = `<span class="hn">${nm}</span> built the whole Riemann Hypothesis Lean proof`;
+    sub = `All ${fmt(N)} modules` + (b.build_hours != null ? `, in ${hours(b.build_hours)}` : "") + ". Next: reproducing the export.";
+  } else if (r) {
+    const pct = r.modules / N * 100;
+    line = `<span class="hn">${nm}</span> is building the Riemann Hypothesis Lean proof`;
+    sub = `${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}% done, ${fmt(r.modules)} of ${fmt(N)} modules, in spare CPU cycles.`;
+  } else {
+    line = `<span class="hn">${nm}</span> is joining the Riemann Hypothesis Lean proof`;
+    sub = "Their computer's first update shows up here within about 10 minutes.";
+  }
+  $("headline").innerHTML = `${line}<span class="hs">${sub} <a href="#" id="runtoo">Run one too ↓</a></span>`;
+  $("runtoo").onclick = e => { e.preventDefault(); document.querySelector(".joinview").scrollIntoView({behavior: "smooth", block: "center"}); };
+  fitBoard();
+  const row = [...document.querySelectorAll("[data-who]")].find(e => e.dataset.who.toLowerCase() === lc);
+  if (row) { row.classList.add("me"); setTimeout(() => row.scrollIntoView({behavior: "smooth", block: "center"}), 900); }
+}
 // Desktop (owner, 2026-11-23): the Leaderboard full width; under it Join in (left) and Building now (right) side by
 // side, ending level: the prompt box stretches to take up any spare room; Also checked independently below both.
 // Nothing scrolls inside a panel; the page grows. The statement tab keeps its fixed layout.
@@ -513,8 +552,9 @@ function fitBoard() {
   if (document.body.classList.contains("view-statement")) { $("screen").style.height = `${SCREEN_H}px`; return; }
   const b = $("board").parentElement, j = document.querySelector(".joinview"), r = $("running").parentElement,
         al = $("also").parentElement, pr = $("prompt");
-  b.style.top = `${STACK_TOP}px`;
-  const y = STACK_TOP + b.offsetHeight + STACK_GAP;
+  const hl = $("headline"), top = Math.max(STACK_TOP, hl.offsetTop + hl.offsetHeight + 14);   // room for a 2-line headline
+  b.style.top = `${top}px`;
+  const y = top + b.offsetHeight + STACK_GAP;
   Object.assign(j.style, {left: "22px", width: `${JOIN_W}px`, top: `${y}px`, height: ""});
   Object.assign(r.style, {left: `${22 + JOIN_W + STACK_GAP}px`, width: `${956 - JOIN_W - STACK_GAP}px`, top: `${y}px`, height: ""});
   pr.style.height = "";
@@ -525,14 +565,14 @@ function fitBoard() {
   if (al.style.display !== "none") { al.style.top = `${y2}px`; y2 += al.offsetHeight + STACK_GAP; }
   $("screen").style.height = `${Math.max(SCREEN_H, y2 + 10)}px`;
 }
-fitBoard(); window.addEventListener("hashchange", fitBoard); window.addEventListener("resize", fitBoard);
+fitBoard(); personal(DATA); window.addEventListener("hashchange", fitBoard); window.addEventListener("hashchange", () => personal(CUR)); window.addEventListener("resize", fitBoard);
 
 // ---------- terrain geometry ----------
 // 175,187 = 733 x 239 exactly: 733 columns across, modules run front to back, so the libraries run left to right.
 // Stacked (default, #stack=5): one continuous bar per STACK neighbouring modules (733 across x 48 deep);
 // bar height = builders summed over its modules / (STACK x most builders anywhere), so with one builder
 // a fully built bar reaches the top. Pale top only while some of its modules have no builder yet.
-const STACK = Math.max(1, +((location.hash.match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
+const STACK = Math.max(1, +((H().match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
 const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
 // Phones: a front view (no sideways slant): the full width is module positions, rows recede straight up a little.
 const [left, base, spanX, depthX, depthY, maxH] = PHONE() ? [20, 470, 960, 0, 0, 280] : [96, 434, 640, 230, 150, 170];
@@ -552,7 +592,7 @@ function column(col) {                     // [first module, slots, modules buil
 }
 const barH = (s, slots, r = 0) => s / (slots * maxVal) * maxH * P(r);
 // Color: rainbow by position (default), #color=library, one color per top-level library.
-const COLOR = (location.hash.match(/color=(\w+)/) || [])[1] || "spectrum";
+const COLOR = (H().match(/color=(\w+)/) || [])[1] || "spectrum";
 const LIB = (() => { const a = new Int32Array(N); let k = 0;
   for (let i = 0; i < N; i++) { while (k + 1 < LIBS.length && LIBS[k + 1][1] <= i) k++; a[i] = k; } return a; })();
 const LIB_HUES = [0, 30, 55, 120, 175, 205, 235, 270, 300, 330, 90];
@@ -702,7 +742,7 @@ stars(); terrain();
   setInterval(async () => {
     try {
       const d = await (await fetch((DEMO ? "realistic-sample.json?" : "data.json?") + Date.now())).json();
-      if (d.generated !== DATA.generated && d.generated !== shown) { shown = d.generated; renderPanels(d); fitBoard(); }
+      if (d.generated !== DATA.generated && d.generated !== shown) { shown = d.generated; renderPanels(d); fitBoard(); personal(d); }
       if (d.generated !== DATA.generated && (next >= RECENT.length || performance.now() - t0 > 720e3)) location.reload();
     } catch (e) {}
   }, 60000);
@@ -749,7 +789,7 @@ $("overlay").addEventListener("mousemove", e => {
 });
 $("overlay").addEventListener("mouseleave", () => { $("tip").style.display = "none"; if (HL >= 0) { HL = -1; terrain(); } });
 // test hook: #hover=x,y simulates the mouse at that spot (for offscreen screenshots)
-const hv = location.hash.match(/hover=(\d+),(\d+)/);
+const hv = H().match(/hover=(\d+),(\d+)/);
 if (hv) { const b = $("overlay").getBoundingClientRect(), fire = () => $("overlay").dispatchEvent(new MouseEvent("mousemove", {clientX: b.left + +hv[1], clientY: b.top + +hv[2]}));
           fire(); setTimeout(fire, 1500); }
 </script></body></html>
