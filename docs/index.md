@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T04:15:44Z
+- Updated: 2026-11-23T04:30:16Z
 
 ## Totals
 
@@ -17,26 +17,30 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Modules built 3 or more times: 174,116
 - Whole proofs finished: 2
 
-## Running now
+## Leaderboard
 
-- jasonhansel (github.com/jasonhansel): 175,187 modules (100.0%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+### Validated: built the whole proof and reproduced the export
+
+1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor, export reproduced, signed the joint statement
+
+### Whole proof built
+
+- jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, exporting now
+
+### Building now
+
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- ericpruitt (github.com/ericpruitt): 119,308 modules (68.1%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
-- titojankowski (github.com/titojankowski): 103,069 modules (58.8%), Apple M5 Max
+- ericpruitt (github.com/ericpruitt): 128,575 modules (73.4%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
+- titojankowski (github.com/titojankowski): 103,345 modules (59.0%), Apple M5 Max
 - gebhardtr (github.com/gebhardtr): 84,869 modules (48.4%), AMD Ryzen 5 5600X 6-Core Processor
 - rib3ye (github.com/rib3ye): 75,147 modules (42.9%), Apple M2 Max
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 66,818 modules (38.1%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 51,918 modules (29.6%), 12th Gen Intel(R) Core(TM) i7-12700K
+- Genbox (github.com/Genbox): 53,647 modules (30.6%), 12th Gen Intel(R) Core(TM) i7-12700K
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- milhouse1337 (github.com/milhouse1337): 23,240 modules (13.3%), Apple M3 Ultra
-- framiere (github.com/framiere): 16,710 modules (9.5%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 2,408 modules (1.4%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- milhouse1337 (github.com/milhouse1337): 23,915 modules (13.7%), Apple M3 Ultra
+- framiere (github.com/framiere): 16,944 modules (9.7%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 2,514 modules (1.4%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
-
-## Leaderboard: finished the whole proof
-
-1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor
-2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
 
 ## Also checked independently by
 
@@ -57,8 +61,8 @@ I'd like to help build the Lean proof of the Riemann Hypothesis through Riemann@
 Please clone https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 "riemann-at-home setup", then "riemann-at-home build".
 Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
-If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
-Ask me before installing anything, and show me the tool's notice before I agree to post anything publicly.
+If the whole proof finishes, help me run "riemann-at-home export".
+Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update. Also ask me then whether I want to sign the joint statement if my build finishes and my export matches.
 ```
 
 What becomes public: your GitHub username (on the commits and the pull request), your computer's OS, chip and number of cores, and which modules you've built. Nothing is posted until you agree.
