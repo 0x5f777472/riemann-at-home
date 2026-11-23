@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T13:59:03Z
+- Updated: 2026-11-23T14:13:53Z
 
 ## Totals
 
@@ -28,16 +28,16 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 ### Building now
 
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- titojankowski (github.com/titojankowski): 114,022 modules (65.1%), Apple M5 Max
+- titojankowski (github.com/titojankowski): 114,208 modules (65.2%), Apple M5 Max
 - rib3ye (github.com/rib3ye): 110,661 modules (63.2%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 106,795 modules (61.0%), AMD Ryzen 5 5600X 6-Core Processor
+- gebhardtr (github.com/gebhardtr): 107,346 modules (61.3%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 91,307 modules (52.1%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 86,144 modules (49.2%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 41,752 modules (23.8%), Apple M3 Ultra
+- Genbox (github.com/Genbox): 86,597 modules (49.4%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 42,370 modules (24.2%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 20,883 modules (11.9%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 9,070 modules (5.2%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- Fornax96 (github.com/Fornax96): 8,617 modules (4.9%), AMD Ryzen 9 7900X3D 12-Core Processor
+- framiere (github.com/framiere): 20,891 modules (11.9%), Apple M4 Pro
+- Fornax96 (github.com/Fornax96): 10,535 modules (6.0%), AMD Ryzen 9 7900X3D 12-Core Processor
+- tgragnato (github.com/tgragnato): 9,209 modules (5.3%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
