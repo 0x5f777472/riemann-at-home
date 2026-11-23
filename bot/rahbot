@@ -606,17 +606,27 @@ def homepage_markdown(data: dict, index_html: str) -> str:
         f"- Modules built 3 or more times: {f(sm['modules_built_3x'])}",
         f"- Whole proofs finished: {f(sm['whole_proofs'])}",
         "",
-        "## Running now",
-        "",
     ]
-    run = sorted(data.get("running") or [], key=lambda r: -r["modules"])
-    out += [f"- {who(r)}: {f(r['modules'])} modules ({pct(r['modules'])})" + (f", {r['machine']}" if r.get("machine") else "")
-            for r in run] or ["No builds reported recently."]
-    out += ["", "## Leaderboard: finished the whole proof", ""]
+    # One leaderboard, as on the page (2026-11-23): validators, then whole proofs, then everyone building.
     whole = sorted((r for r in data.get("leaderboard") or [] if r.get("whole_proof")),
                    key=lambda r: r.get("first_whole_proof_rank") or 10**9)
-    out += [f"{k}. {who(r)}: all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else "")
-            + (f", {r['machine']}" if r.get("machine") else "") for k, r in enumerate(whole, 1)] or ["No one has finished yet."]
+    built = lambda r: (f"all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else "")
+                       + (f", {r['machine']}" if r.get("machine") else ""))
+    vals = sorted((r for r in whole if (r.get("level") or 0) >= 2), key=lambda r: str(r.get("finished")))
+    signed = {g.get("who") or g.get("name") for g in data.get("signatures") or []}
+    out += ["## Leaderboard", "", "### Validated: built the whole proof and reproduced the export", ""]
+    out += [f"{k}. {who(r)}: {built(r)}, export reproduced" + (", signed the joint statement" if (r.get("who") or r["name"]) in signed else "")
+            for k, r in enumerate(vals, 1)] or ["No one yet."]
+    rest = [r for r in whole if (r.get("level") or 0) < 2]
+    if rest:
+        out += ["", "### Whole proof built", ""]
+        out += [f"- {who(r)}: {built(r)}" + (", exporting now" if (r.get("export") or {}).get("done") is False else "") for r in rest]
+    out += ["", "### Building now", ""]
+    done_who = {r.get("who") or r["name"] for r in whole}
+    run = sorted((r for r in data.get("running") or [] if not (r["modules"] >= n and (r.get("who") or r["name"]) in done_who)),
+                 key=lambda r: -r["modules"])
+    out += [f"- {who(r)}: {f(r['modules'])} modules ({pct(r['modules'])})" + (f", {r['machine']}" if r.get("machine") else "")
+            for r in run] or ["No builds in progress."]
     val = data.get("validated") or []
     if val:
         out += ["", "## Also checked independently by", ""]

@@ -11,7 +11,7 @@
   @media (max-width: 760px) {
     body.global{min-width:0}
     #screen{width:auto !important;height:auto !important;display:flex;flex-direction:column;padding:0 0 24px}
-    #stagewrap{position:relative;width:100%;height:calc(100vw * 0.34);overflow:hidden;order:3}
+    #stagewrap{position:relative;top:0;width:100%;height:calc(100vw * 0.34);overflow:hidden;order:3}
     #mcap{display:block;order:2;color:#9fb6ff;font-size:13px;padding:6px 14px 0}
     #libkey{display:block;order:4;margin:2px 10px 0;border:1px solid rgba(120,160,255,.35)}
     #libkey .lk{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;padding:9px 12px;
@@ -26,9 +26,11 @@
     .global .nav{position:static;order:6;flex-wrap:wrap;padding:6px 12px 4px;justify-content:center}
     .global .nav a{font-size:14px;padding:9px 14px}
     .global .extra.panel{position:static !important;width:auto !important;height:auto !important;margin:12px 10px 0}
-    .global .panel.green.boardview{order:5}
     .global .joinview{order:7}
-    .global .panel.blue.boardview{order:8}
+    .global .panel.blue.boardview{order:5}
+    .global .panel.boardview.runview{order:8}.global .panel.blue.boardview.alsoview{order:8}
+    .global .vrow{gap:10px;padding:12px}.global .vrow .rk{display:none}.global .vrow .nm{font-size:20px}
+    .global .tier small{display:block;margin:2px 0 0}
     .global .stview{order:9}
     .global .panel h3{font-size:13px;padding:7px 10px}
     .global .line{font-size:15px;line-height:1.4;padding:8px 12px 0}
@@ -143,7 +145,25 @@
   .pb i{position:absolute;left:0;top:0;bottom:0;background:#3a6bff linear-gradient(100deg,transparent 0 40%,rgba(255,255,255,.55) 50%,transparent 60% 100%) no-repeat;
         background-size:60px 100%;animation:shimmer 2.4s linear infinite}
   @keyframes shimmer{0%{background-position:-60px 0}100%{background-position:400px 0}}
-  #running .note{color:#9fd8ae}
+  #board .note{color:#b9d0ff}#running .note{color:#9fd8ae}
+  .stack .honor{height:auto;overflow:visible}
+  .tier{padding:7px 12px 5px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
+  .tier.g{color:#1a1200;background:linear-gradient(90deg,#ffd23f,#ffe98a 60%,rgba(255,210,63,.2))}
+  .tier.w{color:#ffd23f;background:rgba(0,0,0,.3)}.tier.r{color:#c9f5d4;background:rgba(0,0,0,.3)}.tier.x{color:#b9d0ff;background:rgba(0,0,0,.3)}
+  .tier small{font-weight:normal;letter-spacing:0;text-transform:none;opacity:.85;margin-left:8px}
+  .vrow{display:flex;align-items:center;gap:16px;padding:14px 16px;background:linear-gradient(90deg,rgba(255,210,63,.22),rgba(255,210,63,.04));border-bottom:1px solid rgba(255,210,63,.4)}
+  .vrow .av{border:3px solid #ffd23f;box-shadow:0 0 18px rgba(255,210,63,.7)}
+  .vrow .rk{font-size:30px;color:#ffd23f;width:40px;text-align:center;flex:none}
+  .vrow .nm{font-size:24px;color:#fff}.vrow .nm a,.wrow .nm a{color:inherit;text-decoration:none}
+  .vrow .body,.wrow .body{flex:1;min-width:0}
+  .vrow .lvl,.vrow .whole{font-size:10px;margin:0 6px 0 0;padding:2px 7px;white-space:nowrap;display:inline-block;line-height:1.4}
+  .vrow .lvl.sg{background:#7fd8ff}
+  .chips{margin-top:6px;line-height:1.9}
+  .vrow .facts{font-size:12px;color:#ffe98a;margin-top:4px;font-weight:normal}
+  .wrow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(120,160,255,.16);background:rgba(255,210,63,.06)}
+  .wrow .nm{font-size:17px;color:#fff}.wrow .facts{font-size:11px;color:#b9d0ff;margin-top:3px;font-weight:normal}
+  .wrow .ex{margin-top:5px}
+  .runs{background:rgba(20,140,60,.62)}
   /* DOWNLOAD PDF = window.print(): a clean black-on-white document, not the dark page */
   #printdoc{display:none}
   @media print{
@@ -170,7 +190,11 @@
     #printdoc .foot{margin-top:18pt;padding-top:5pt;border-top:1px solid #000;font:8.5pt Arial,sans-serif;word-break:break-all}
   }
   .run .pc{margin-left:auto}
-  .jsline{margin-top:8px;color:#ffd23f}
+  /* owner, 2026-11-23: the headline sits under the map, above the leaderboard */
+  .headline{position:absolute;left:22px;top:540px;font:bold 28px Arial,Helvetica,sans-serif;color:#ffd23f;text-shadow:0 0 10px rgba(255,210,63,.45);z-index:2}
+  .joinhead{padding:12px 12px 4px;font:bold 22px Arial,Helvetica,sans-serif;color:#ffd23f}
+  @media (max-width: 760px){.global .joinhead{font-size:19px;line-height:1.25}}
+  @media (max-width: 760px){.global .headline{position:static;order:4;font-size:21px;line-height:1.25;padding:6px 14px 8px}}
   #tab-statement{border-color:#ffd23f;color:#ffd23f}
   /* "I'm totally confused" explainer: normal flow under the dashboard, same look as the navy panels */
   #confused{width:956px;box-sizing:border-box;margin:0 auto 24px;padding:4px 22px 14px;background:rgba(5,15,60,.72);
@@ -185,7 +209,7 @@
     #confused h2{font-size:20px}}
   @media print{#confused,.stat{display:none !important}}
 </style></head>
-<body class="global"><div id="screen" style="height:1334px">
+<body class="global"><div id="screen" style="height:1392px">
   <div id="mcap">Each spike is one module of the proof · height = how many people built it</div>
   <div id="stagewrap"><div id="stage">
   <canvas id="stars" width="1000" height="680"></canvas>
@@ -195,6 +219,7 @@
   <div id="libkey"></div>
   <div class="title">Riemann<span>@</span>home</div>
   <div class="sub" id="sub">every independent build of the AI proof of the Riemann Hypothesis</div>
+  <div class="headline" id="headline">Run the Riemann Hypothesis Lean proof in your spare CPU cycles</div>
   <div class="nav" id="nav"><a id="tab-board" href="#">Leaderboard</a><a id="tab-statement" href="#statement">Joint statement</a><a class="hn" href="https://news.ycombinator.com/item?id=50594006" target="_blank" rel="noopener">Discuss on HN →</a></div>
   <div class="demo" id="demo">DEMO DATA</div>
   <div class="panel blue"  style="left:22px;top:84px;display:none;width:300px;height:132px"><h3 id="h1">Coverage</h3><div id="p1"></div></div>
@@ -207,20 +232,24 @@
   <div id="tip" style="position:absolute;display:none;pointer-events:none;padding:5px 8px;background:rgba(0,0,0,.85);
        border:1px solid #2f5bd8;font:bold 11px Arial;color:#fff;white-space:nowrap;z-index:5"></div>
 
-  <div class="extra panel navy joinview" style="left:22px;top:540px;width:956px;height:282px">
+  <div class="extra panel navy joinview stack" style="left:22px;top:598px;width:956px;padding-bottom:6px">
     <h3>Join in</h3>
+    <div class="joinhead">Join 13+ independent validators to validate the Lean proof</div>
     <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/riemann-at-home/riemann-at-home">github.com/riemann-at-home/riemann-at-home</a></div>
     <div class="line">Or paste this into your AI assistant (Claude, ChatGPT, …) and it will walk you through it:</div>
     <div class="prompt" id="prompt"></div>
     <span class="btn" id="copy">COPY</span>
-    <div class="line jsline">Finish the whole proof and reproduce the export to sign the <a class="gh" href="#statement" id="jslink">joint statement</a><span id="jscount"></span>.</div>
   </div>
-  <div class="extra panel blue boardview" style="left:668px;top:838px;width:310px;height:480px">
-    <h3>Leaderboard · finished the whole proof</h3><div id="board" class="honor"></div></div>
-  <div class="extra panel green boardview" style="left:22px;top:838px;width:630px;height:480px">
-    <h3>Running now · builds in progress</h3><div id="running" class="honor"></div></div>
+  <!-- Owner, 2026-11-23: the leaderboard (validators in gold, then whole proofs) on top, then Join in, then
+       Building now. Desktop stacks the three at their natural heights (fitBoard); phones use the order below. -->
+  <div class="extra panel blue boardview stack" style="left:22px;top:598px;width:956px">
+    <h3>Leaderboard</h3><div id="board" class="honor"></div></div>
+  <div class="extra panel green boardview runview stack" style="left:22px;top:598px;width:956px">
+    <h3>Building now<span id="runcount"></span></h3><div id="running" class="honor"></div></div>
+  <div class="extra panel blue boardview alsoview stack" style="left:22px;top:598px;width:956px">
+    <h3>Also checked independently</h3><div id="also" class="honor"></div></div>
   <!-- Joint statement tab (#statement): owner-approved wording, keep exactly -->
-  <div class="extra panel navy stview" style="left:22px;top:540px;width:560px;height:646px">
+  <div class="extra panel navy stview" style="left:22px;top:598px;width:560px;height:646px">
     <h3>Joint statement</h3>
     <div class="stmt">
       <h4>Riemann@home: a joint statement from independent builders</h4>
@@ -237,7 +266,7 @@
       <div class="sofar" id="sofar"></div>
       <span class="btn" id="pdf" style="margin-left:0" title="Opens the print dialog: choose “Save as PDF”">DOWNLOAD PDF</span>
     </div></div>
-  <div class="extra panel blue stview" style="left:598px;top:540px;width:380px;height:646px">
+  <div class="extra panel blue stview" style="left:598px;top:598px;width:380px;height:646px">
     <h3 id="sighead">Signatures</h3><div id="sigs" class="honor"></div></div>
 </div>
 <!-- Plain-language explainer for newcomers (owner, 2026-11-22). The bot copies this section into index.md: keep it to
@@ -362,7 +391,7 @@ Please clone https://github.com/riemann-at-home/riemann-at-home, read its README
 "riemann-at-home setup", then "riemann-at-home build".
 Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
 If the whole proof finishes, help me run "riemann-at-home export" and, if it reproduces, "riemann-at-home sign" to sign the joint statement.
-Ask me before installing anything, and show me the tool's notice before I agree to post anything publicly.`;
+Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update.`;
 $("prompt").textContent = prompt;
 $("copy").onclick = () => { navigator.clipboard.writeText(prompt); $("copy").textContent = "COPIED"; setTimeout(() => $("copy").textContent = "COPY", 1500); };
 const hours = h => h == null ? "" : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;
@@ -426,31 +455,29 @@ const exportLine = x => !x ? "" : x.done
 // progress update within a minute; the map's replay of new modules still finishes before the page reloads (2026-11-22).
 function renderPanels(DATA) {
 const board = DATA.leaderboard || [];
-const whole = board.filter(p => p.whole_proof)
-  .sort((a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since)));
+const byRank = (a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since));
+const whole = board.filter(p => p.whole_proof);
+// VALIDATORS: built the whole proof and reproduced the reference export (Level 2+), in the order they got there.
+const validators = whole.filter(p => p.level >= 2).sort((a, b) => String(a.finished).localeCompare(String(b.finished)) || byRank(a, b));
+const built = whole.filter(p => !(p.level >= 2)).sort(byRank);
+const signed = new Set((DATA.signatures || []).map(g => g.who || g.name));
 const VALIDATED = DATA.validated || [];
-$("board").innerHTML = (whole.length ? whole.map((p, k) => {
-    const bits = [`all ${fmt(p.modules)} modules`];
-    if (p.build_hours != null) bits.push(`built in ${hours(p.build_hours)}`);
-    if (p.machine) bits.push(esc(p.machine));
-    if (p.computers > 1) bits.push(`${p.computers} computers`);
-    return `<div class="hr"><span class="n">${p.first_whole_proof_rank ?? k + 1}.</span><span class="avc">${avatar(p, 30)}</span><span class="w">${person(p)}` +
-      `<span class="whole">WHOLE PROOF</span>${levelBadge(p.level)}</span>`+`<span class="d">${p.finished ? "finished " + date(p.finished) : "since " + date(p.since)}</span>` +
-      `<span class="m">${bits.join(" · ")}</span>${exportLine(p.export)}</div>`; }).join("")
-  : `<div class="note">No one has finished yet. Be the first.</div>`) +
-  (VALIDATED.length ? `<div class="sub2">Also checked independently by</div>` + VALIDATED.map(({who, what, url}) =>
-    `<div class="val"><b>✓</b> <span class="who">${esc(who)}</span><br><span class="what">${esc(what)}</span> <a href="${esc(url)}" target="_blank">source</a></div>`).join("") +
-    `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
-// RIGHT: every unfinished BUILD (one per computer). Builds whose last record is over 1 h older than data.json's
-// "generated" time drop off only when more than 10 people are building; with 10 or fewer, everyone stays listed
-// (owner, 2026-11-21). Measured against "generated", not this browser's clock, so if the bot itself is down the
-// list freezes instead of emptying (2026-11-22). Bars are the accepted counts; the shimmer is decoration only.
-const now = Number.isFinite(Date.parse(DATA.generated)) ? Date.parse(DATA.generated) : Date.now();
-// Everyone the bot lists as running shows, however long since they last reported (owner, 2026-11-22).
-const allRunning = DATA.running || [], crowded = false;
-const running = allRunning.slice()
+const facts = p => { const bits = [`all ${fmt(p.modules)} modules`];
+  if (p.build_hours != null) bits.push(`built in ${hours(p.build_hours)}`);
+  if (p.machine) bits.push(esc(p.machine));
+  if (p.computers > 1) bits.push(`${p.computers} computers`);
+  return bits.join(" · "); };
+const vRows = validators.map((p, k) => `<div class="vrow"><span class="rk">${k + 1}</span>${avatar(p, 72)}<div class="body">` +
+    `<div class="nm">${person(p)}</div><div class="chips"><span class="whole">WHOLE PROOF</span>${levelBadge(p.level)}` +
+    (signed.has(p.who || p.name) ? '<span class="lvl sg" title="Signed the joint statement">SIGNED</span>' : "") + `</div>` +
+    `<div class="facts">${facts(p)}${p.export?.done && p.export.matches ? ` · export matched in ${dur(p.export.seconds)}` : ""}</div></div></div>`).join("");
+const wRows = built.map(p => `<div class="wrow">${avatar(p, 52)}<div class="body"><div class="nm">${person(p)}<span class="whole">WHOLE PROOF</span></div>` +
+    `<div class="facts">${facts(p)} · finished ${date(p.finished || p.since)}</div>${exportLine(p.export)}</div></div>`).join("");
+// BUILDING NOW: every unfinished build (one per computer); a whole build that is exporting is already listed above.
+const wholeWho = new Set(whole.map(p => p.who || p.name));
+const running = (DATA.running || []).filter(p => !(p.modules >= N && wholeWho.has(p.who || p.name)))
   .sort((a, b) => b.modules - a.modules || String(nameOf(a)).localeCompare(String(nameOf(b))));
-$("running").innerHTML = (running.length ? running.map((p, k) => {
+const rRows = running.map((p, k) => {
     const pct = p.modules / N * 100;
     return `<div class="run" title="${esc(p.machine || "")}">${avatar(p, 48)}<div class="body"><div class="top"><span class="dot" style="animation-delay:${-(k * 0.37 % 1.6).toFixed(2)}s"></span>` +
       person(p, "w") +
@@ -458,26 +485,31 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
       `<div class="pb"><i style="width:${Math.max(0.6, pct).toFixed(2)}%;animation-delay:${-(k * 0.53 % 2.4).toFixed(2)}s"></i></div>` +
       (p.export && !p.export.done ? `<div class="xl"><b>EXPORTING ${xpct(p.export)}%</b>${xleft(p.export)}</div>` +
         `<div class="xb"><i style="width:${(p.export.bytes / p.export.total * 100).toFixed(1)}%"></i></div>` : "") +
-      `</div></div>`; }).join("")
-  : (crowded ? `<div class="note">No builds reported in the last hour.</div>` : `<div class="note">No builds in progress.</div>`));
+      `</div></div>`; }).join("");
+$("board").innerHTML =
+  `<div class="tier g">✓ Validated <small>built the whole proof and reproduced the 61.6 GB export bit for bit</small></div>` +
+  (vRows || `<div class="note">No one yet. Build the whole proof and reproduce the export to be the first.</div>`) +
+  (wRows ? `<div class="tier w">Whole proof built <small>next: reproduce the export</small></div>${wRows}` : "") +
+  "";
+$("also").innerHTML = (VALIDATED.length ? VALIDATED.map(({who, what, url}) =>
+    `<div class="val"><b>✓</b> <span class="who">${esc(who)}</span><br><span class="what">${esc(what)}</span> <a href="${esc(url)}" target="_blank">source</a></div>`).join("") +
+    `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
+$("also").parentElement.style.display = VALIDATED.length ? "" : "none";
+$("runcount").textContent = running.length ? ` · ${running.length} ${running.length === 1 ? "computer" : "computers"}` : "";
+$("running").innerHTML = rRows || '<div class="note">No builds in progress.</div>';
 }
 renderPanels(DATA);
-// Desktop: both lists (Running now and Leaderboard) grow, and the page with them, so up to 20 people show in each
-// without scrolling inside the panel (owner, 2026-11-22). Past 20 a list scrolls. The two panels stay the same height.
-const LIST_FIT = 20, BOARD_H = 446, BOARD_PANEL_PAD = 480 - 446, SCREEN_H = 1334;
-function fitHeight(el, rowSel) {             // height that shows the first 20 rows (or the whole list, if shorter)
-  const rows = el.querySelectorAll(rowSel), top = el.getBoundingClientRect().top - el.scrollTop;
-  return Math.ceil(rows.length > LIST_FIT ? rows[LIST_FIT - 1].getBoundingClientRect().bottom - top : el.scrollHeight) + 4;
-}
+// Desktop: Leaderboard, Join in and Building now stack at their natural heights (nothing scrolls inside a panel),
+// and the page grows with them (owner, 2026-11-23). The statement tab keeps its fixed layout.
+const SCREEN_H = 1392, STACK_TOP = 598, STACK_GAP = 16;
 function fitBoard() {
-  const lists = [$("board"), $("running")];
-  for (const el of lists) el.style.height = "";
-  const need = PHONE() ? BOARD_H : Math.max(BOARD_H, fitHeight($("board"), ".hr"), fitHeight($("running"), ".run"));
-  const grow = need - BOARD_H;
-  for (const el of lists) el.style.height = grow > 0 ? `${need}px` : "";
-  for (const p of document.querySelectorAll(".panel.boardview")) p.style.height = `${need + BOARD_PANEL_PAD}px`;
-  const st = document.body.classList.contains("view-statement");
-  $("screen").style.height = `${SCREEN_H + (st ? 0 : grow)}px`;
+  if (PHONE()) return;
+  if (document.body.classList.contains("view-statement")) { $("screen").style.height = `${SCREEN_H}px`; return; }
+  let y = STACK_TOP;
+  for (const p of [$("board").parentElement, document.querySelector(".joinview"), $("running").parentElement, $("also").parentElement]) {
+    if (p.style.display === "none") continue;
+    p.style.top = `${y}px`; y += p.offsetHeight + STACK_GAP; }
+  $("screen").style.height = `${Math.max(SCREEN_H, y + 10)}px`;
 }
 fitBoard(); window.addEventListener("hashchange", fitBoard); window.addEventListener("resize", fitBoard);
 
@@ -689,7 +721,7 @@ $("overlay").addEventListener("mousemove", e => {
     const k = lb[0], [name, start] = LIBS[k], end = libEnd(k);
     tip.innerHTML = `<span style="color:#ffd23f">${esc(name)}</span><br>${fmt(end - start)} modules · ${((end - start) / N * 100).toFixed(1)}% of the proof`;
     tip.style.display = "block";
-    tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my - 40) + "px";
+    tip.style.left = Math.min(mx + 14, 1000 - tip.offsetWidth - 4) + "px"; tip.style.top = (my - 40 + $("stagewrap").offsetTop) + "px";
     return;
   }
   const i = pick(mx, my);
