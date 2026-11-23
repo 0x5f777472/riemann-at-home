@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T10:49:07Z
+- Updated: 2026-11-23T11:03:37Z
 
 ## Totals
 
@@ -28,15 +28,15 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 ### Building now
 
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- titojankowski (github.com/titojankowski): 111,146 modules (63.4%), Apple M5 Max
+- titojankowski (github.com/titojankowski): 111,468 modules (63.6%), Apple M5 Max
 - rib3ye (github.com/rib3ye): 110,661 modules (63.2%), Apple M2 Max
-- gebhardtr (github.com/gebhardtr): 95,658 modules (54.6%), AMD Ryzen 5 5600X 6-Core Processor
+- gebhardtr (github.com/gebhardtr): 96,190 modules (54.9%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 85,002 modules (48.5%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 77,307 modules (44.1%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 36,098 modules (20.6%), Apple M3 Ultra
+- Genbox (github.com/Genbox): 77,904 modules (44.5%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 36,425 modules (20.8%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 20,623 modules (11.8%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 6,530 modules (3.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 20,721 modules (11.8%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 6,686 modules (3.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
