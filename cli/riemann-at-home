@@ -48,6 +48,17 @@ EXPORT_SHA256 = "5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244
 EXPORT_BYTES = 61570595788
 EXPORTER_REPO = "https://github.com/leanprover/lean4export"
 EXPORTER_TAG = "v4.33.0"
+# The reference export is `lake env lean4export Main -- $(cat export-targets.txt)`: only these declarations and what
+# they depend on, not everything in Main (an untargeted export runs past 61.6 GB and can never match; issue #15).
+# Copied from https://github.com/Deicyde/riemann-hypothesis/blob/e848b39b/export-targets.txt (sha256 9eeb2e5e…05e8),
+# the list Andrew Sutherland's reference export used (https://math.mit.edu/~drew/grh).
+EXPORT_TARGETS_TXT = """Quot Quot.mk Quot.lift Quot.ind
+riemannHypothesis riemannZeta_eq_zero_re LFunction_ne_zero_of_half_lt_re LFunction_eq_zero_re LFunction_eq_zero_re_of_isPrimitive
+propext Quot.sound Classical.choice
+Nat.add Nat.sub Nat.mul Nat.pow Nat.gcd Nat.div Nat.mod Nat.beq Nat.ble Nat.land Nat.lor Nat.xor Nat.shiftLeft Nat.shiftRight String.ofList Char.ofNat List eagerReduce Nat String String.mk Char optParam autoParam semiOutParam outParam
+"""
+EXPORT_TARGETS_SHA256 = "9eeb2e5e55be4a78f6e4983fc950dba915b45ad8aeb7a02a32341927a89e05e8"
+EXPORT_TARGETS = EXPORT_TARGETS_TXT.split()          # `$(cat export-targets.txt)`: one argument per word
 UNVERIFIED = "unverified: the reference hash has not yet been reproduced by this tool"
 # Level 3: an independent checker accepts the export. RAM each needs (GB, approximate).
 CHECKERS = {"nanoda": 100, "con-leche": 50}
@@ -1830,7 +1841,7 @@ def exporter_command(ctx: Ctx, a) -> list:
     with "incompatible header" (reported 2026-11-22, issue #14). The folder name carries the toolchain, so an
     exporter built the old way is never reused."""
     if getattr(a, "exporter", None):                         # testing: a stand-in exporter
-        return [a.exporter, "Main"]
+        return [a.exporter, "Main", "--", *EXPORT_TARGETS]
     src = ctx.home / "tools" / f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
     exe = src / ".lake/build/bin/lean4export"
     if not exe.exists():
@@ -1853,7 +1864,7 @@ def exporter_command(ctx: Ctx, a) -> list:
         print(f"building lean4export {EXPORTER_TAG} with {tc}")
         if run([which("lake") or "lake", "build"], cwd=src, env=lean_env()).returncode != 0 or not exe.exists():
             raise Fail(f"building lean4export failed (in {src})")
-    return [which("lake") or "lake", "env", str(exe), "Main"]
+    return [which("lake") or "lake", "env", str(exe), "Main", "--", *EXPORT_TARGETS]
 
 
 EXPORT_CHECK_AFTER = 300        # seconds into a build before the export check runs (some modules are compiled by then)
@@ -1870,8 +1881,9 @@ def export_check(ctx: Ctx, a=None) -> dict:
             res["error"] = "no compiled module yet to test the exporter on"
             return res
         mod = min(done, key=lambda m: ((ctx.lib / (m.replace(".", "/") + ".olean")).stat().st_size, m))
-        cmd = exporter_command(ctx, a or argparse.Namespace(exporter=None))[:-1] + [mod]
-        res.update(module=mod, exporter=Path(cmd[-2]).parents[3].name if len(cmd) > 2 else str(cmd[0]))
+        full = exporter_command(ctx, a or argparse.Namespace(exporter=None))
+        cmd = full[:full.index("Main")] + [mod]         # just one module, all of it
+        res.update(module=mod, exporter=Path(cmd[-2]).parents[3].name if len(cmd) > 2 else Path(cmd[0]).name)
         with tempfile.TemporaryFile() as err:
             p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=err, env=lean_env())

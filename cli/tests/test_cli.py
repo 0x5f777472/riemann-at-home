@@ -479,7 +479,7 @@ class Levels(unittest.TestCase):
         self.export = EXPORT_CHUNK * 300_000                    # ~13 MB, streamed in many chunks
         self.sha = hashlib.sha256(self.export).hexdigest()
         ex = self.tmp / "bin/fake-lean4export"; ex.parent.mkdir()
-        ex.write_text(f"#!{sys.executable} -I\nimport os, sys\nassert sys.argv[1:] == ['Main'], sys.argv\n"
+        ex.write_text(f"#!{sys.executable} -I\nimport os, sys\nassert sys.argv[1:] == ['Main', '--'] + {rah.EXPORT_TARGETS!r}, sys.argv\n"
                       "print('cwd', os.getcwd(), file=sys.stderr)\n"
                       f"chunk = {EXPORT_CHUNK!r}\n"
                       "for _ in range(300_000): sys.stdout.buffer.write(chunk)\n")
@@ -600,7 +600,10 @@ class Levels(unittest.TestCase):
         src = Path(cmd[2]).parents[3]
         self.assertEqual(src.name, f"lean4export-{rah.EXPORTER_TAG}-lean-{rah.TOOLCHAIN.split(':')[-1]}")
         self.assertEqual((src / "lean-toolchain").read_text().strip(), rah.TOOLCHAIN)
-        self.assertEqual(cmd[-1], "Main")
+        # the reference command: lean4export Main -- $(cat export-targets.txt)  (issue #15)
+        self.assertEqual(cmd[3:], ["Main", "--", *rah.EXPORT_TARGETS])
+        self.assertIn("riemannHypothesis", rah.EXPORT_TARGETS); self.assertEqual(len(rah.EXPORT_TARGETS), 38)
+        self.assertEqual(hashlib.sha256(rah.EXPORT_TARGETS_TXT.encode()).hexdigest(), rah.EXPORT_TARGETS_SHA256)
 
     def test_export_check_fast(self):
         """`export --check` (and the 5-minute check in every build): ok only if the exporter reads this Lean version."""
