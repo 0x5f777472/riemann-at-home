@@ -941,6 +941,34 @@ class RealSubmit(unittest.TestCase):
         self.assertEqual(r.returncode, 1); self.assertIn("only for --dry-run", r.stderr)
         self.assertFalse(self.gh_calls())
 
+    def test_workflow_scope_refusal_is_explained_and_shown_in_status(self):
+        """Issue #16: GitHub refuses a push carrying the bot's workflow files when the gh login lacks the `workflow`
+        permission. The tool must say exactly how to fix it, and `status` must show updates are failing."""
+        hook = self.up / "hooks/pre-receive"
+        hook.write_text("#!/bin/sh\necho 'refusing to allow an OAuth App to create or update workflow "
+                        "`.github/workflows/rahbot.yml` without `workflow` scope' >&2\nexit 1\n"); hook.chmod(0o755)
+        r = self.submit(check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("gh auth refresh -h github.com -s workflow", r.stderr)
+        recs = self.home / "records"; recs.mkdir(exist_ok=True); shutil.copy(self.rec_path, recs / "29991231T000000Z.json")
+        cfg = json.loads((self.home / "config.json").read_text()); cfg["submit"] = {"auto": True}
+        (self.home / "config.json").write_text(json.dumps(cfg))
+        auto = lambda: subprocess.run([sys.executable, "-I", "-c", f"""
+import importlib.machinery, importlib.util, argparse, sys
+l = importlib.machinery.SourceFileLoader("rah", {str(SCRIPT)!r}); s = importlib.util.spec_from_loader("rah", l)
+rah = importlib.util.module_from_spec(s); l.exec_module(rah)
+rah.make_record = lambda ctx, a: (_ for _ in ()).throw(rah.Fail("skip"))   # keep the valid latest record
+a = argparse.Namespace(cmd="record", folder=None, logs=None, test_unofficial_folder=True)
+sys.exit(rah.cmd_autosubmit(rah.Ctx(a), a))
+"""], capture_output=True, text=True, env=self.env, timeout=120)
+        status = lambda: subprocess.run([sys.executable, "-I", str(SCRIPT), "status"], capture_output=True, text=True,
+                                        env=self.env, timeout=60).stdout
+        self.assertIn("gh auth refresh", auto().stdout)
+        self.assertIn("submit    FAILING since", status()); self.assertIn("-s workflow", status())
+        hook.unlink()                                                     # the volunteer ran gh auth refresh
+        self.assertIn("opened https://github.com/", auto().stdout)
+        self.assertIn("submit    last update sent", status())
+
     def test_autosubmit_off_on_errors_never_fail(self):
         fake_folder(self.tmp / "p")
         run = lambda **env: subprocess.run([sys.executable, "-I", str(SCRIPT), "_autosubmit", "--folder", str(self.tmp / "p"),

@@ -422,6 +422,10 @@ const exportLine = x => !x ? "" : x.done
   ? `<div class="ex ${x.matches ? "done" : "diff"}">${x.matches ? "✓ export matches the reference" : "✗ export differs from the reference"} · ${dur(x.seconds)}${xmem(x, "peak memory")}</div>`
   : `<div class="ex"><span class="lab"><b>EXPORTING ${xpct(x)}%</b> · ${GB(x.bytes)} of ${GB(x.total)} GB${xleft(x)}${xmem(x, "memory")}</span>` +
     `<div class="bar"><i style="width:${(x.bytes / x.total * 100).toFixed(1)}%"></i></div></div>`;
+// The two panels, drawn from a data.json. Called again as soon as the bot publishes new data, so people and their
+// progress update within a minute; the map's replay of new modules still finishes before the page reloads (2026-11-22).
+function renderPanels(DATA) {
+const board = DATA.leaderboard || [];
 const whole = board.filter(p => p.whole_proof)
   .sort((a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since)));
 const VALIDATED = DATA.validated || [];
@@ -456,6 +460,8 @@ $("running").innerHTML = (running.length ? running.map((p, k) => {
         `<div class="xb"><i style="width:${(p.export.bytes / p.export.total * 100).toFixed(1)}%"></i></div>` : "") +
       `</div></div>`; }).join("")
   : (crowded ? `<div class="note">No builds reported in the last hour.</div>` : `<div class="note">No builds in progress.</div>`));
+}
+renderPanels(DATA);
 // Desktop: both lists (Running now and Leaderboard) grow, and the page with them, so up to 20 people show in each
 // without scrolling inside the panel (owner, 2026-11-22). Past 20 a list scrolls. The two panels stay the same height.
 const LIST_FIT = 20, BOARD_H = 446, BOARD_PANEL_PAD = 480 - 446, SCREEN_H = 1334;
@@ -646,9 +652,11 @@ stars(); terrain();
   }
   requestAnimationFrame(frame);
   // New data from the bot: reload once this update's replay is done (or after 12 minutes at most).
+  let shown = DATA.generated;                  // newest data the panels show
   setInterval(async () => {
     try {
       const d = await (await fetch((DEMO ? "realistic-sample.json?" : "data.json?") + Date.now())).json();
+      if (d.generated !== DATA.generated && d.generated !== shown) { shown = d.generated; renderPanels(d); fitBoard(); }
       if (d.generated !== DATA.generated && (next >= RECENT.length || performance.now() - t0 > 720e3)) location.reload();
     } catch (e) {}
   }, 60000);

@@ -1122,6 +1122,14 @@ def cmd_status(ctx: Ctx, a):
         print(f"speed     {r:,.0f} modules/hour over the last {SPEED_WINDOW // 60} min{eta}")
     elif built and busy >= 600:
         print(f"speed     {built / busy * 3600:,.0f} modules/hour on average ({built:,} built while measured)")
+    try:
+        ss = json.loads((ctx.home / "submit-status.json").read_text())
+    except (OSError, ValueError):
+        ss = {}
+    if ss.get("error"):
+        print(f"submit    FAILING since {ss.get('failing_since')} (last ok {ss.get('last_ok') or 'never'}): {ss['error']}")
+    elif ss.get("last_ok"):
+        print(f"submit    last update sent {ss['last_ok']}")
     xc = export_check_state(ctx)
     if xc:
         print("export    " + (f"check ok ({xc.get('exporter')} read {xc.get('module')})" if xc.get("ok")
@@ -1507,7 +1515,12 @@ def submit_real(ctx: Ctx, a, src: Path, rec: dict, login: str, upstream: str) ->
            "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
     g("-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "--no-verify", "--no-gpg-sign",
       "-m", f"update: {rec['modules_compiled']} modules", env=env)
-    g("push", "-q", "--force", remote, f"HEAD:refs/heads/{branch}")
+    try:
+        g("push", "-q", "--force", remote, f"HEAD:refs/heads/{branch}")
+    except Fail as e:
+        if "workflow" in str(e) and "scope" in str(e):
+            raise Fail(WORKFLOW_SCOPE_FIX) from None
+        raise
     if pr["state"] != "open":
         title = f"Riemann@home build {bid} ({login})"
         m = rec["machine"]
@@ -1531,6 +1544,13 @@ def submit_real(ctx: Ctx, a, src: Path, rec: dict, login: str, upstream: str) ->
 
 
 GH_TIMEOUT = 300
+# Your update branch is built on the repo's main, which holds GitHub Actions workflow files (the bot). GitHub refuses
+# a push that adds or changes a workflow file unless your login has the `workflow` permission, which gh's default
+# login doesn't. That silently stopped several volunteers' updates on 2026-11-22 (issue #16).
+WORKFLOW_SCOPE_FIX = ("GitHub refused the push because the Riemann@home repo's main has workflow files (the bot) that "
+                      "your copy doesn't have yet, and your gh login lacks the `workflow` permission. Fix it once with:\n"
+                      "    gh auth refresh -h github.com -s workflow\n"
+                      "then run: riemann-at-home submit")
 
 
 def gh(args: list, what: str, cwd=None) -> str:
@@ -1771,6 +1791,7 @@ def cmd_autosubmit(ctx: Ctx, a):
             ns = argparse.Namespace(enable_auto=False, disable_auto=False, interval=None, repo=None, record=None, login=None,
                                     upstream=sc.get("upstream") or UPSTREAM, dry_run=False, no_gh_check=False)
             cmd_submit(ctx, ns)
+            submit_status(ctx, None)
         elif ctx.conf().get("repo"):              # older setting: dry run into a given clone
             ns = argparse.Namespace(enable_auto=False, disable_auto=False, interval=None, repo=ctx.conf()["repo"], record=None,
                                     login=None, upstream=None, dry_run=True, no_gh_check=False)
@@ -1779,9 +1800,28 @@ def cmd_autosubmit(ctx: Ctx, a):
             print("auto-submit is off (turn on: riemann-at-home submit --enable-auto)")
     except Fail as e:
         print(f"auto-submit: {e} (the build goes on; next try in about 10 minutes)")
+        submit_status(ctx, str(e))
     except Exception as e:                        # network, git, anything: log it, keep building
         print(f"auto-submit failed: {type(e).__name__}: {e} (the build goes on)")
+        submit_status(ctx, f"{type(e).__name__}: {e}")
     return 0
+
+
+def submit_status(ctx: Ctx, error):
+    """Remember how the last automatic update went, so `status` can say when they've been failing (before
+    2026-11-22 a failing update was only visible in logs/autosubmit.log)."""
+    p = ctx.home / "submit-status.json"
+    try:
+        old = json.loads(p.read_text())
+    except (OSError, ValueError):
+        old = {}
+    now = iso(time.time())
+    new = {"last_try": now, "last_ok": now if error is None else old.get("last_ok"), "error": error,
+           "failing_since": None if error is None else (old.get("failing_since") or now)}
+    try:
+        p.write_text(json.dumps(new, indent=1) + "\n")
+    except OSError:
+        pass
 
 
 def called_by_supervisor(ctx: Ctx) -> bool:
