@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T07:39:35Z
+- Updated: 2026-11-23T07:54:06Z
 
 ## Totals
 
@@ -32,14 +32,14 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
 - rib3ye (github.com/rib3ye): 110,661 modules (63.2%), Apple M2 Max
-- titojankowski (github.com/titojankowski): 107,251 modules (61.2%), Apple M5 Max
-- gebhardtr (github.com/gebhardtr): 87,945 modules (50.2%), AMD Ryzen 5 5600X 6-Core Processor
+- titojankowski (github.com/titojankowski): 107,570 modules (61.4%), Apple M5 Max
+- gebhardtr (github.com/gebhardtr): 88,539 modules (50.5%), AMD Ryzen 5 5600X 6-Core Processor
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 76,622 modules (43.7%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 65,976 modules (37.7%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 30,016 modules (17.1%), Apple M3 Ultra
+- Genbox (github.com/Genbox): 66,877 modules (38.2%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 30,648 modules (17.5%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 19,472 modules (11.1%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 4,272 modules (2.4%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 19,612 modules (11.2%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 4,359 modules (2.5%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
