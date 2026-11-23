@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-23T03:32:05Z
+- Updated: 2026-11-23T03:46:38Z
 
 ## Totals
 
@@ -19,25 +19,24 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ## Running now
 
-- derek-blanchette (github.com/derek-blanchette): 175,187 modules (100.0%), AMD Ryzen 9 5950X 16-Core Processor
 - jasonhansel (github.com/jasonhansel): 175,187 modules (100.0%), Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
 - xangma (github.com/xangma): 174,116 modules (99.4%), AMD Ryzen Threadripper PRO 3995WX 64-Cores
-- ericpruitt (github.com/ericpruitt): 104,559 modules (59.7%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
-- titojankowski (github.com/titojankowski): 102,260 modules (58.4%), Apple M5 Max
+- ericpruitt (github.com/ericpruitt): 112,859 modules (64.4%), AMD Ryzen Threadripper PRO 9975WX 32-Cores
+- titojankowski (github.com/titojankowski): 102,497 modules (58.5%), Apple M5 Max
+- gebhardtr (github.com/gebhardtr): 84,763 modules (48.4%), AMD Ryzen 5 5600X 6-Core Processor
 - rib3ye (github.com/rib3ye): 75,147 modules (42.9%), Apple M2 Max
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 64,111 modules (36.6%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- gebhardtr (github.com/gebhardtr): 52,149 modules (29.8%), AMD Ryzen 5 5600X 6-Core Processor
-- Genbox (github.com/Genbox): 49,422 modules (28.2%), 12th Gen Intel(R) Core(TM) i7-12700K
+- Genbox (github.com/Genbox): 50,450 modules (28.8%), 12th Gen Intel(R) Core(TM) i7-12700K
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- milhouse1337 (github.com/milhouse1337): 21,885 modules (12.5%), Apple M3 Ultra
-- framiere (github.com/framiere): 16,206 modules (9.3%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 2,049 modules (1.2%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- milhouse1337 (github.com/milhouse1337): 22,224 modules (12.7%), Apple M3 Ultra
+- framiere (github.com/framiere): 16,402 modules (9.4%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 2,160 modules (1.2%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Leaderboard: finished the whole proof
 
-1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor
-2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+1. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+2. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor
 
 ## Also checked independently by
 
@@ -78,7 +77,8 @@ We do not certify the mathematics. That the statement is Mathlib's Riemann Hypot
 
 We join the Lean and Mathlib communities in congratulating Levent Alpöge.
 
-Signatures so far: 0.
+Signatures so far: 1.
+- derek-blanchette, signed 2026-11-23
 
 ## I’m totally confused what this website is 😭
 
