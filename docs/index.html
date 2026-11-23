@@ -253,7 +253,7 @@
 
   <div class="extra panel navy joinview stack" style="left:22px;top:598px;width:956px;padding-bottom:6px">
     <h3>Join in</h3>
-    <div class="joinhead">Join <span id="joinn">15</span>+ independent validators to validate the Lean proof</div>
+    <div class="joinhead">Join <span id="joinn">15</span> independent validators to validate the Lean proof</div>
     <div class="line">Code and instructions: <a class="gh" id="ghlink" href="https://github.com/riemann-at-home/riemann-at-home">github.com/riemann-at-home/riemann-at-home</a></div>
     <div class="line">Or paste this into your AI assistant (Claude, ChatGPT, …) and it will walk you through it:</div>
     <div class="prompt" id="prompt"></div>
@@ -476,7 +476,7 @@ const exportLine = x => !x ? "" : x.done
 // progress update within a minute; the map's replay of new modules still finishes before the page reloads (2026-11-22).
 function renderPanels(DATA) {
 const board = DATA.leaderboard || [];
-// "Join N+ independent validators": everyone on the leaderboard, updated with the data (every refresh)
+// "Join N independent validators": everyone on the leaderboard, updated with the data (every refresh)
 if (DATA.summary?.people) $("joinn").textContent = fmt(DATA.summary.people);
 const byRank = (a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since));
 const whole = board.filter(p => p.whole_proof);
