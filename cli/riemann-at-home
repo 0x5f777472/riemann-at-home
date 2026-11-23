@@ -39,7 +39,9 @@ RECORD_KEYS = ["format", "tool", "archive_sha256", "toolchain", "mathlib_rev", "
 NAME_KEYS = ["display_name"]                    # only when the volunteer chose one (`name`)
 LEVEL_KEYS = ["export_sha256", "export_bytes", "checkers", "sign_statement"]   # Levels 2-3 and the joint statement
 PROGRESS_KEYS = ["export_progress"]           # how far `export` got: shown on the leaderboard while it runs
-OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS + PROGRESS_KEYS
+CRASH_KEYS = ["crashes"]                       # Lean crashes during the build: which module, so we learn why
+OPTIONAL_KEYS = NAME_KEYS + LEVEL_KEYS + PROGRESS_KEYS + CRASH_KEYS
+CRASHES_MAX = 20
 EXPORT_PROGRESS_FIELDS = ["bytes", "seconds", "left_seconds", "peak_memory_gb", "done"]
 EXPORT_STALE = 1800                             # an unfinished export not heard from in 30 min is dropped from records
 # Level 2: the raw proof export (lean4export, NDJSON) reproduces the reference made by Andrew Sutherland
@@ -897,6 +899,46 @@ def cmd_build(ctx: Ctx, a):
     return 0
 
 
+def crashed_modules(log_tail: str) -> list:
+    """[(module, Lean's exit code)] for each module lake says Lean crashed on: a `✖ [i/n] Building X` line followed
+    (before the next module line) by `Lean exited with code N`. Lake itself then exits 1, so the code that says
+    what happened (139 = segfault) is only in build.log, as is the module."""
+    out, cur = [], None
+    for line in log_tail.splitlines():
+        m = re.match(r"\s*[✖✔⣿]\s*\[\d+/\d+\]\s+(?:Building|Built|Compiling)\s+(\S+)", line)
+        if m:
+            cur = m[1] if line.lstrip().startswith("✖") else None
+        elif cur and (m := re.search(r"exited with code (-?\d+)", line)):
+            if (cur, int(m[1])) not in out:
+                out.append((cur, int(m[1])))
+            cur = None
+    return out
+
+
+def crashes(ctx: Ctx) -> list:
+    """This build's Lean crashes, newest last: [{module, code, at}] (logs/crashes.json, kept per build_id)."""
+    try:
+        d = json.loads(read(ctx.logs / "crashes.json") or "{}")
+    except ValueError:
+        return []
+    return d.get("crashes", []) if d.get("build_id") == ctx.build_id() else []
+
+
+def note_crash(ctx: Ctx, rc: int, log_from: int) -> str:
+    """After lake build exits with rc != 0: find the crashed module(s) in the new part of build.log, keep them for
+    status and the build record. Returns the module names for the message."""
+    try:
+        with open(ctx.logs / "build.log", "rb") as f:
+            f.seek(max(log_from, f.seek(0, 2) - (4 << 20)))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        tail = ""
+    found = crashed_modules(tail) or [("unknown", rc)]
+    got = crashes(ctx) + [{"module": m, "code": c, "at": iso(time.time())} for m, c in found]
+    (ctx.logs / "crashes.json").write_text(json.dumps({"build_id": ctx.build_id(), "crashes": got[-CRASHES_MAX:]}) + "\n")
+    return ", ".join(f"{m} (Lean exit code {c})" for m, c in found)
+
+
 def cmd_run(ctx: Ctx, a):
     """The background supervisor: runs the official `lake build Main` unchanged (nice 19), then the axiom check."""
     ctx.logs.mkdir(parents=True, exist_ok=True)
@@ -915,6 +957,7 @@ def cmd_run(ctx: Ctx, a):
     cur = {}
 
     def launch():
+        cur["log_from"] = (ctx.logs / "build.log").stat().st_size if (ctx.logs / "build.log").exists() else 0
         with open(ctx.logs / "build.log", "ab") as out, open(ctx.logs / "time.txt", "ab") as err:
             cur["p"] = subprocess.Popen(cmd, cwd=ctx.folder, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
                                         env=lean_env(), start_new_session=True)
@@ -976,6 +1019,10 @@ def cmd_run(ctx: Ctx, a):
     retries = 0
     while True:
         rc = p.wait()
+        if rc != 0 and not terminated.is_set() and not disk_low.is_set():
+            where = note_crash(ctx, rc, cur["log_from"])
+            with open(ctx.logs / "build.log", "a") as f:
+                f.write(f"\nriemann-at-home: lake build exited with {rc}; failed: {where}.\n")
         if rc == 0 or terminated.is_set() or disk_low.is_set() or retries >= BUILD_RETRIES:
             break
         retries += 1
@@ -1144,6 +1191,11 @@ def cmd_status(ctx: Ctx, a):
         if gave_up == "BUILD_GAVE_UP":
             print(f"          !! the build CRASHED and stopped after {BUILD_RETRIES} automatic restarts. Finished "
                   f"modules are kept: run `riemann-at-home build` to continue, and see {ctx.logs / 'build.log'}")
+    cr = crashes(ctx)
+    if cr:
+        last = cr[-1]
+        print(f"crashes   {len(cr)}: Lean crashed on {last['module']} (exit code {last['code']}, {last['at']})"
+              + (f" and {len(cr) - 1} earlier" if len(cr) > 1 else "") + "; reported with your build record")
     started, busy = busy_seconds(ctx, bool(sup) or bool(outside_build(ctx)))
     if started:
         print(f"started   {iso(started)}, busy {busy / 3600:.1f} h")
@@ -1255,6 +1307,8 @@ def make_record(ctx: Ctx, a, final: bool = False) -> dict:
     if isinstance(shown, dict) and name_problem(shown.get("display_name")) is None:
         rec["display_name"] = shown["display_name"]
     rec.update(level_fields(ctx, rec))
+    if crashes(ctx):
+        rec["crashes"] = crashes(ctx)
     if official:
         errs = validate_record(rec)
         if errs:
@@ -1308,7 +1362,13 @@ def validate_record(rec: dict):
     extra = [k for k in rec if k not in RECORD_KEYS]           # a set of keys: order does not matter
     if (not set(RECORD_KEYS) <= set(rec) or any(k not in OPTIONAL_KEYS for k in extra)
             or sum(k in rec for k in NAME_KEYS) > 1):
-        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS + PROGRESS_KEYS}, at most one of {NAME_KEYS})")
+        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS + PROGRESS_KEYS + CRASH_KEYS}, at most one of {NAME_KEYS})")
+    cr = rec.get("crashes")
+    if cr is not None and not (isinstance(cr, list) and len(cr) <= CRASHES_MAX and all(
+            isinstance(c, dict) and set(c) == {"module", "code", "at"} and isinstance(c["module"], str)
+            and re.fullmatch(r"[^\s\x00-\x1f]{1,200}", c["module"]) and type(c["code"]) is int
+            and parse_time(str(c["at"])) is not None for c in cr)):
+        errs.append(f"crashes must be at most {CRASHES_MAX} {{module, code, at}} entries")
     if "display_name" in rec and name_problem(rec["display_name"]):
         errs.append(f"display_name: {name_problem(rec['display_name'])}")
     if "anonymous" in rec:

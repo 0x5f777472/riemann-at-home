@@ -170,6 +170,9 @@ print
 print "=== export progress on the page data"
 python3 -I tests/check_export.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
+print "=== crash reports"
+python3 -I tests/check_crashes.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+print
 print "=== aggregate sample (merged + open PRs) + leaderboard/terrain/running assertions"
 S=tests/fixtures/sample
 python3 -I ./rahbot aggregate $S/main $S/open --out sample-data.json || fails=$((fails+1))

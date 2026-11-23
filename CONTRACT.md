@@ -204,3 +204,13 @@ Mathlib's RiemannHypothesis; proved theorem is exactly that statement) are their
   and, once done, `"matches"`, which the bot decides from `export_sha256` (Level 2), never from the record.
   A whole-proof build whose export is in progress is listed in `running`.
 - Known tools: "riemann-at-home 1.0.0", "riemann-at-home 1.1.0".
+
+## Build crashes (2026-11-23)
+
+- Lean has segfaulted (exit code 139) near the end of whole builds; a restart finished them. The tool restarts a
+  crashed `lake build` up to 3 times (finished modules are kept) and, if it still fails, posts its last progress.
+- Records may carry `"crashes"`: up to 20 `{"module": str, "code": int, "at": UTC time}`, newest last: the module
+  lake reported Lean crashing on (its `✖ [i/n] Building X` line) and Lean's own exit code from that log line (lake
+  itself exits 1). `"module"` is `"unknown"` if the log did not say.
+- data.json: `"crashes"`: one entry per module, `{"module", "codes", "names", "times", "last"}`, the modules that
+  crashed on the most people first. Not shown on the page; it is there to learn which module crashes and why.

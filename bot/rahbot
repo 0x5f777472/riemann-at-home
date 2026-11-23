@@ -65,7 +65,10 @@ BACKUPS_KEPT = 20
 OPTIONAL = {"export_sha256": str, "export_bytes": int, "checkers": list, "sign_statement": bool,
             "final": bool,           # set by `riemann-at-home finish`
             "display_name": str,     # shown instead of the login (CONTRACT "Display names")
-            "export_progress": dict}  # how far `riemann-at-home export` got (CONTRACT "Export progress")
+            "export_progress": dict,  # how far `riemann-at-home export` got (CONTRACT "Export progress")
+            "crashes": list}          # Lean crashes during the build: [{module, code, at}] (newest last, at most 20)
+CRASHES_MAX = 20
+CRASH_MODULE_RE = re.compile(r"[^\s\x00-\x1f]{1,200}")
 EXPORT_PROGRESS = {"bytes": int, "seconds": (int, float), "left_seconds": (int, float, type(None)),
                    "peak_memory_gb": (int, float, type(None)), "done": bool}
 PUBLISH_EVERY = timedelta(minutes=float(os.environ.get("RAHBOT_PUBLISH_MINUTES", "10")))  # Pages: ~6 builds/hour
@@ -353,6 +356,17 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
                   and (ep["left_seconds"] is None or ep["left_seconds"] >= 0)
                   and (ep["peak_memory_gb"] is None or 0 <= ep["peak_memory_gb"] <= 1 << 16)):
             rej.append("export_progress numbers out of range")
+    cr = rec.get("crashes")
+    if cr is not None:
+        def crash_ok(c):
+            try:
+                return (isinstance(c, dict) and set(c) == {"module", "code", "at"} and isinstance(c["module"], str)
+                        and CRASH_MODULE_RE.fullmatch(c["module"]) is not None and type(c["code"]) is int
+                        and -1000 < c["code"] < 1000 and parse_ts(c["at"]) is not None)
+            except ValueError:
+                return False
+        if len(cr) > CRASHES_MAX or not all(crash_ok(c) for c in cr):
+            rej.append(f"crashes must be at most {CRASHES_MAX} {{module, code, at}} entries")
     if rec.get("sign_statement") and record_level(rec) < 2:
         rej.append("sign_statement needs Level 2 (whole proof and the reference export reproduced)")
     # growth + speed against this build's last accepted record
@@ -449,7 +463,7 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
         else:
             ident[login] = (login, login)
     counts = bytearray(N)
-    rows, latest, running = [], None, []
+    rows, latest, running, crashes = [], None, [], {}
     for who, builds in sorted(people.items()):
         name, shown = ident[who]
         union = 0                                      # the person = union of their builds
@@ -476,6 +490,10 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
                      "machine": mach(largest), "computers": len(builds),
                      "since": min(r["started"] for r in recs),
                      "_first_whole": whole["recorded"] if whole else None})
+        for r in recs:                                 # which modules crash Lean, and on whose computers
+            for c in r.get("crashes") or []:
+                k = crashes.setdefault(c["module"], {"module": c["module"], "codes": set(), "names": set(), "times": 0, "last": ""})
+                k["codes"].add(c["code"]); k["names"].add(name); k["times"] += 1; k["last"] = max(k["last"], c["at"])
         exp = max((r for r in recs if r.get("export_progress")), key=lambda r: r["recorded"], default=None)
         if exp:
             rows[-1]["export"] = export_view(exp)
@@ -516,6 +534,9 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
         "running": sorted(running, key=lambda x: (-x["modules"], x["recorded"], x["name"], x.get("build_id", ""))),
         "signatures": sorted(signatures, key=lambda x: (x["signed"], x["name"])),
         "validated": VALIDATED,
+        # Lean crashes reported by builds (the tool restarts a crashed build): which module, how often, for whom
+        "crashes": sorted(({**c, "codes": sorted(c["codes"]), "names": sorted(c["names"])} for c in crashes.values()),
+                          key=lambda c: (-len(c["names"]), -c["times"], c["module"])),
     }
 
 

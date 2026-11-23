@@ -300,7 +300,9 @@ class Fast(unittest.TestCase):
         n = self.tmp / "lake-builds"
         lake = elan / "bin/lake"
         lake.write_text(f"#!/bin/sh\nif [ \"$2\" = build ]; then echo x >> {n}; "
-                        f"[ $(wc -l < {n}) -gt {crashes} ] && exit 0; echo 'error: Lean exited with code 139'; exit 139; fi\n"
+                        f"[ $(wc -l < {n}) -gt {crashes} ] && exit 0; "
+                        "printf '\\342\\234\\224 [1/3] Built A.N00 (1s)\\n\\342\\234\\226 [2/3] Building Formalism.Big.Final (40s)\\n"
+                        "error: Lean exited with code 139\\nerror: build failed\\n'; exit 1; fi\n"   # as lake: exit 1
                         "exit 0\n")
         lake.chmod(0o755)
         env = {**os.environ, "RAH_HOME": str(self.tmp / "h"), "ELAN_HOME": str(elan), "RAH_AUTOSUBMIT": "off",
@@ -315,13 +317,19 @@ class Fast(unittest.TestCase):
         """A crashed lake build (a segfault near 99%) restarts by itself and finishes."""
         r, builds, events, st = self._crashing_run(crashes=2)
         self.assertEqual((r.returncode, builds), (0, 3), r.stderr)
-        self.assertEqual(events.count("BUILD_CRASH=139"), 2); self.assertIn("BUILD_EXIT=0", events)
-        self.assertIn("restarting it", (self.tmp / "h/logs/build.log").read_text())
+        self.assertEqual(events.count("BUILD_CRASH=1"), 2); self.assertIn("BUILD_EXIT=0", events)
+        log = (self.tmp / "h/logs/build.log").read_text()
+        self.assertIn("restarting it", log)
+        self.assertIn("failed: Formalism.Big.Final (Lean exit code 139)", log)
         self.assertNotIn("CRASHED", st)
+        # which module, and Lean's own exit code (lake exits 1): kept for status and the build record
+        got = json.loads((self.tmp / "h/logs/crashes.json").read_text())["crashes"]
+        self.assertEqual([(c["module"], c["code"]) for c in got], [("Formalism.Big.Final", 139)] * 2)
+        self.assertIn("crashes   2: Lean crashed on Formalism.Big.Final (exit code 139", st)
 
     def test_build_that_keeps_crashing_says_so(self):
         r, builds, events, st = self._crashing_run(crashes=99)
-        self.assertEqual((r.returncode, builds), (139, 1 + rah.BUILD_RETRIES))
+        self.assertEqual((r.returncode, builds), (1, 1 + rah.BUILD_RETRIES))
         self.assertIn("BUILD_GAVE_UP", events)
         self.assertIn("the build CRASHED and stopped after 3 automatic restarts", st)
         self.assertIn("run `riemann-at-home build` to continue", st)
@@ -753,6 +761,26 @@ class Levels(unittest.TestCase):
         code, out, err = self.main("sign", "--when-done", stdin="y\n")
         code, out, err = self.main("export", "--exporter", self.exporter, ref=False)
         self.assertEqual(code, 1); self.assertNotIn("You're a validator", out)
+
+    def test_crash_report_rides_on_the_record(self):
+        ctx = rah.Ctx(type("A", (), {"folder": str(self.folder), "logs": None})())
+        ctx.logs.mkdir(parents=True, exist_ok=True)
+        crash = {"module": "Formalism.Big.Final", "code": 139, "at": "2026-11-23T12:00:00Z"}
+        (ctx.logs / "crashes.json").write_text(json.dumps({"build_id": ctx.build_id(), "crashes": [crash]}))
+        code, out, err = self.main("record")
+        self.assertEqual(code, 0, err); self.assertEqual(self.latest_record()["crashes"], [crash])
+        msg = f"crashes must be at most {rah.CRASHES_MAX} {{module, code, at}} entries"
+        self.assertIn(msg, rah.validate_record({**self.latest_record(), "crashes": [{**crash, "code": "139"}]}))
+        self.assertNotIn(msg, rah.validate_record(self.latest_record()))
+        # another build's crashes are not this build's
+        (ctx.logs / "crashes.json").write_text(json.dumps({"build_id": "0" * 16, "crashes": [crash]}))
+        self.main("record"); self.assertNotIn("crashes", self.latest_record())
+
+    def test_crashed_modules_from_lake_output(self):
+        log = ("✔ [10/20] Built A.Ok (2s)\n✖ [11/20] Building A.Crash (9s)\ntrace: .> lean A/Crash.lean\n"
+               "error: Lean exited with code 139\n✖ [12/20] Building A.Error (1s)\nerror: A/Error.lean:3:0: unknown\n"
+               "✔ [13/20] Built A.Ok2 (1s)\nerror: build failed\n")
+        self.assertEqual(rah.crashed_modules(log), [("A.Crash", 139)])   # an ordinary error is not a crash
 
     def test_setup_question_without_terminal_only_prints(self):
         import contextlib, io
