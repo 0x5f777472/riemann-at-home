@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-24T03:08:26Z
+- Updated: 2026-11-24T03:22:59Z
 
 ## Totals
 
@@ -32,16 +32,16 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ### Building now
 
-- Fornax96 (github.com/Fornax96): 155,475 modules (88.7%), AMD Ryzen 9 7900X3D 12-Core Processor
-- gebhardtr (github.com/gebhardtr): 136,097 modules (77.7%), AMD Ryzen 5 5600X 6-Core Processor
-- titojankowski (github.com/titojankowski): 129,070 modules (73.7%), Apple M5 Max
+- Fornax96 (github.com/Fornax96): 159,622 modules (91.1%), AMD Ryzen 9 7900X3D 12-Core Processor
+- gebhardtr (github.com/gebhardtr): 136,837 modules (78.1%), AMD Ryzen 5 5600X 6-Core Processor
+- titojankowski (github.com/titojankowski): 129,376 modules (73.9%), Apple M5 Max
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 113,647 modules (64.9%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Genbox (github.com/Genbox): 105,760 modules (60.4%), 12th Gen Intel(R) Core(TM) i7-12700K
-- sanzgiri (github.com/sanzgiri): 94,966 modules (54.2%), Apple M4 Max
-- milhouse1337 (github.com/milhouse1337): 66,963 modules (38.2%), Apple M3 Ultra
+- sanzgiri (github.com/sanzgiri): 96,511 modules (55.1%), Apple M4 Max
+- milhouse1337 (github.com/milhouse1337): 67,300 modules (38.4%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 21,402 modules (12.2%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 18,976 modules (10.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 21,413 modules (12.2%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 19,107 modules (10.9%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
