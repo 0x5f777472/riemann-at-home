@@ -6,7 +6,7 @@
 Nothing here writes to the real build folder or to GitHub.
 """
 import base64, getpass, gzip, hashlib, importlib.machinery, importlib.util, json, os, re, shutil, socket
-import contextlib, io, subprocess, sys, tempfile, threading, time, unittest, unittest.mock
+import contextlib, io, subprocess, sys, tempfile, threading, time, types, unittest, unittest.mock
 from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parents[1]
@@ -677,6 +677,31 @@ class Levels(unittest.TestCase):
         self.assertTrue(seen, "an estimate must show once output is flowing")
         self.assertLessEqual(max(seen), 4, f"half done after ~3 s of output: about 3 s left, not {max(seen)} s")
 
+    def test_export_write_error_stops_the_exporter(self):
+        """Review, 2026-11-23: if saving the export fails (disk full), the exporter must be stopped; it used to be
+        left blocked on a full pipe while the tool waited for it forever."""
+        import argparse
+        ex = self.tmp / "bin/endless-lean4export"
+        ex.write_text(f"#!{sys.executable} -I\nimport sys\nb = b'x' * (1 << 20)\nwhile True: sys.stdout.buffer.write(b)\n")
+        ex.chmod(0o755)
+        class Full:
+            def __init__(self): self.n = 0
+            def write(self, b):
+                self.n += 1
+                if self.n > 3: raise OSError(28, "No space left on device")
+        ctx = types.SimpleNamespace(folder=self.folder)
+        box = {}
+        def go():
+            try:
+                rah.stream_export(ctx, [str(ex)], self.tmp / "x.log", sink=Full())
+            except OSError as e:
+                box["err"] = e
+        with contextlib.redirect_stderr(io.StringIO()):
+            th = threading.Thread(target=go, daemon=True); th.start(); th.join(30)
+        self.assertFalse(th.is_alive(), "stream_export hung after a write error")
+        self.assertEqual(box["err"].errno, 28)
+        self.assertEqual(subprocess.run(["pgrep", "-f", str(ex)], capture_output=True).stdout, b"", "exporter still running")
+
     def test_export_memory_warning(self):
         """Before exporting, say plainly if this computer's memory is tight (a 125 GiB run crawled at the end)."""
         self.assertIsNone(rah.export_memory_warning(256)); self.assertIsNone(rah.export_memory_warning(0))
@@ -843,29 +868,98 @@ class Levels(unittest.TestCase):
         code, out, err = self.main("recheck", "--con-leche", "--checker", "/nonexistent")
         self.assertEqual(code, 1); self.assertIn("con-leche needs about 50 GB", err)
         os.environ["RAH_TEST_RAM_GB"] = "128"
+        # nanoda_bin takes only a JSON config naming the export file (no stdin, no --version)
         chk = self.tmp / "bin/fake-nanoda"
-        chk.write_text(f"#!{sys.executable} -I\nimport hashlib, sys\n"
-                       "if sys.argv[1:] == ['--version']: print('nanoda 0.9-test'); sys.exit(0)\n"
-                       f"ok = hashlib.sha256(sys.stdin.buffer.read()).hexdigest() == {self.sha!r}\n"
-                       "print('checked', sys.argv[1:], ok); sys.exit(0 if ok else 3)\n")
+        chk.write_text(f"#!{sys.executable} -I\nimport hashlib, json, sys\n"
+                       "cfg = json.load(open(sys.argv[1])); assert sys.argv[2:] == [], sys.argv\n"
+                       "assert cfg['use_stdin'] is False and cfg['permitted_axioms'], cfg\n"
+                       f"ok = hashlib.sha256(open(cfg['export_file_path'], 'rb').read()).hexdigest() == {self.sha!r}\n"
+                       "print('checked config', ok); sys.exit(0 if ok else 3)\n")
         chk.chmod(0o755)
-        code, out, err = self.main("recheck", "--nanoda", "--checker", chk, "--checker-args=--stdin",
-                                   "--exporter", self.exporter)
+        code, out, err = self.main("recheck", "--nanoda", "--checker", chk, "--exporter", self.exporter)
         self.assertEqual(code, 0, err + out); self.assertIn("nanoda: ACCEPT", out)
-        self.assertIn("checked ['--stdin'] True", (self.home / "logs/recheck-nanoda.log").read_text())
-        self.assert_export_not_on_disk()
+        self.assertIn("checked config True", (self.home / "logs/recheck-nanoda.log").read_text())
+        saved = self.home / "export" / f"proof-{self.sha[:16]}.ndjson"
+        self.assertEqual(saved.read_bytes(), self.export)             # saved once, whole, for the checkers
+        self.assertFalse(list(saved.parent.glob("*.partial")))
+        self.assertIn("rm ", out); self.assertIn("recheck --con-leche` can reuse it", out)
         rec = self.latest_record()
-        self.assertEqual([(c["name"], c["version"], c["result"]) for c in rec["checkers"]], [("nanoda", "nanoda 0.9-test", "accept")])
+        self.assertEqual([(c["name"], c["version"], c["result"]) for c in rec["checkers"]], [("nanoda", "unknown", "accept")])
         self.assertIsInstance(rec["checkers"][0]["seconds"], int)
         with mock.patch.object(rah, "EXPORT_SHA256", self.sha):
             self.assertEqual(rah.validate_levels(rec), []); self.assertEqual(rah.record_level(rec), 3)
-        # a checker that refuses is recorded as reject (exit 1); con-leche runs at 50+ GB
-        bad = self.tmp / "bin/fake-con-leche"; bad.write_text("#!/bin/sh\ncat >/dev/null; echo nope; exit 2\n"); bad.chmod(0o755)
+        code, out, err = self.main("recheck", "--nanoda", "--checker", chk, "--checker-args=-x", "--exporter", self.exporter)
+        self.assertEqual(code, 1); self.assertIn("nanoda takes no command-line arguments", err)
+        # con-leche takes the file as its last argument; it reuses the saved export (no second export run)
+        runs = (self.home / "logs/export.log").read_text().count("cwd ")
+        bad = self.tmp / "bin/fake-con-leche"
+        bad.write_text(f"#!{sys.executable} -I\nimport sys\n"
+                       "if sys.argv[1:] == ['--version']: print('con-leche 0.1-test'); sys.exit(0)\n"
+                       f"assert sys.argv[-2:] == ['--', {str(saved)!r}], sys.argv\n"
+                       "print('args', sys.argv[1:-2], len(open(sys.argv[-1], 'rb').read())); sys.exit(1)\n")
+        bad.chmod(0o755)
         os.environ["RAH_TEST_RAM_GB"] = "64"
-        code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--checker-version", "1.0",
+        code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--checker-args=--jobs=2",
                                    "--exporter", self.exporter)
-        self.assertEqual(code, 1); self.assertIn("con-leche: REJECT", out)
-        self.assertEqual({c["name"]: c["result"] for c in self.latest_record()["checkers"]}, {"nanoda": "accept", "con-leche": "reject"})
+        self.assertEqual(code, 1); self.assertIn("con-leche: REJECT", out); self.assertIn("using the saved export", out)
+        self.assertIn(f"args ['--jobs=2'] {len(self.export)}", (self.home / "logs/recheck-con-leche.log").read_text())
+        self.assertEqual((self.home / "logs/export.log").read_text().count("cwd "), runs, "the export must not run again")
+        self.assertEqual({(c["name"], c["version"], c["result"]) for c in self.latest_record()["checkers"]},
+                         {("nanoda", "unknown", "accept"), ("con-leche", "con-leche 0.1-test", "reject")})
+        # a damaged saved export is made again, never handed to a checker
+        saved.write_bytes(b"x" * len(self.export))
+        code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter)
+        self.assertIn("is not the reference export; making it again", out)
+        self.assertEqual(saved.read_bytes(), self.export)
+        # not enough disk: says so, and nothing is left behind
+        saved.unlink()
+        with mock.patch.object(rah.shutil, "disk_usage", return_value=shutil._ntuple_diskusage(10**12, 10**12 - 1, 1)):
+            code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter)
+        self.assertEqual(code, 1); self.assertIn("Free some disk", err); self.assertFalse(saved.exists())
+        # an export that is not the reference is refused and its partial file removed
+        code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter, ref=False)
+        self.assertEqual(code, 1); self.assertFalse(saved.exists())
+        self.assertFalse(list(saved.parent.glob("*.partial")))
+        # a stale .partial from a killed run is removed before free disk is measured (it is our own space)
+        stale = saved.with_name(saved.name + ".partial"); stale.write_bytes(b"left over")
+        real_du = shutil.disk_usage
+        def du(p):
+            self.assertFalse(stale.exists(), "stale .partial must be gone before measuring free disk")
+            return real_du(p)
+        with mock.patch.object(rah.shutil, "disk_usage", du):
+            code, out, err = self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter)
+        self.assertEqual(saved.read_bytes(), self.export)
+        # the disk fails while saving: error, no hang, partial removed, nothing recorded
+        saved.unlink(); before = self.latest_record().get("checkers")
+        with mock.patch.object(rah, "stream_export", side_effect=OSError(28, "No space left on device")):
+            with self.assertRaises(OSError):
+                self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter)
+        self.assertFalse(saved.exists()); self.assertFalse(list(saved.parent.glob("*.partial")))
+        self.assertEqual(self.latest_record().get("checkers"), before)
+        # con-leche exit 2 (declined) and 3 (error) are not verdicts on the proof: nothing recorded
+        for code_, word in ((2, "declined"), (3, "stopped with an error")):
+            odd = self.tmp / f"bin/con-leche-{code_}"
+            odd.write_text(f"#!/bin/sh\nexit {code_}\n"); odd.chmod(0o755)
+            before = self.latest_record().get("checkers")
+            code, out, err = self.main("recheck", "--con-leche", "--checker", odd, "--checker-version", "1",
+                                       "--exporter", self.exporter)
+            self.assertEqual(code, 1); self.assertIn(f"con-leche {word}", err); self.assertIn("nothing recorded", err)
+            self.assertEqual(self.latest_record().get("checkers"), before)
+        # a checker killed by a signal (the out-of-memory killer) gives no verdict: nothing recorded
+        self.main("recheck", "--con-leche", "--checker", bad, "--exporter", self.exporter)   # saved again
+        before = self.latest_record()["checkers"]
+        oom = self.tmp / "bin/oom-con-leche"
+        oom.write_text(f"#!{sys.executable} -I\nimport os, sys\nif sys.argv[1:] == ['--version']: print('x'); sys.exit(0)\n"
+                       "os.kill(os.getpid(), 9)\n"); oom.chmod(0o755)
+        code, out, err = self.main("recheck", "--con-leche", "--checker", oom, "--exporter", self.exporter)
+        self.assertEqual(code, 1); self.assertIn("stopped by signal 9 (usually: the computer ran out of memory)", err)
+        self.assertIn("nothing recorded", err); self.assertEqual(self.latest_record()["checkers"], before)
+        # a checker that cannot start: a plain error, not a traceback
+        nox = self.tmp / "bin/not-executable"; nox.write_text("not a program"); nox.chmod(0o644)
+        code, out, err = self.main("recheck", "--con-leche", "--checker", nox, "--checker-version", "1", "--exporter", self.exporter)
+        self.assertEqual(code, 1); self.assertIn("could not start con-leche", err)
+        os.environ["RAH_TEST_RAM_GB"] = "128"
+        self.main("recheck", "--nanoda", "--checker", chk, "--exporter", self.exporter)   # back to a good state
         # sign: shows the statement from the README, asks, and only "y" signs
         code, out, err = self.main("sign", stdin="n\n")
         self.assertEqual(code, 1); self.assertIn("not signed", out)
@@ -1440,4 +1534,59 @@ class ExportSmoke(unittest.TestCase):
             self.assertTrue(r["ok"], r); self.assertEqual(r["module"], "Tiny")
             self.assertEqual(r["lean_version"], rah.TOOLCHAIN.rsplit(":v", 1)[-1])
         finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+CHECKER_BINS = {"nanoda": os.environ.get("RAH_NANODA") or shutil.which("nanoda_bin"),
+                "con-leche": os.environ.get("RAH_CON_LECHE") or shutil.which("con-leche")}
+
+
+@unittest.skipUnless(_toolchain_ready() and any(CHECKER_BINS.values()),
+                     "needs the proof's Lean and a real checker (RAH_NANODA / RAH_CON_LECHE = path to nanoda_bin / con-leche)")
+class RecheckSmoke(unittest.TestCase):
+    """End to end on a tiny real project: the tool's own lean4export saves the export to a file (saved_export), and
+    each REAL checker is run on it exactly as `recheck` runs it (checker_command). A correct export must pass and a
+    tampered one (1 + 1 = 3, proved by rfl) must fail: an accept that also accepts nonsense proves nothing."""
+    def test_real_checkers_on_a_tiny_export(self):
+        import argparse
+        from unittest import mock
+        tmp = Path(tempfile.mkdtemp(dir=TMP, prefix="recheck-smoke-"))
+        old = dict(os.environ)
+        try:
+            proj = tmp / "lean"; proj.mkdir()
+            (proj / "lean-toolchain").write_text(rah.TOOLCHAIN + "\n")
+            (proj / "lakefile.toml").write_text('name = "tiny"\ndefaultTargets = ["Main"]\n\n[[lean_lib]]\nname = "Main"\n')
+            (proj / "Main.lean").write_text("theorem tiny : 1 + 1 = 2 := rfl\n"
+                                            "theorem tiny2 (p q : Prop) (hp : p) (hq : q) : p ∧ q := ⟨hp, hq⟩\n")
+            b = subprocess.run([rah.which("lake") or "lake", "build"], cwd=proj, capture_output=True, text=True, env=rah.lean_env())
+            self.assertEqual(b.returncode, 0, b.stdout + b.stderr)
+            os.environ["RAH_HOME"] = str(tmp / "home")
+            ctx = rah.Ctx(argparse.Namespace(folder=str(proj), logs=None)); ctx.logs.mkdir(parents=True, exist_ok=True)
+            a = argparse.Namespace(exporter=None)
+            with mock.patch.object(rah, "EXPORT_TARGETS", ["tiny", "tiny2"]):
+                cmd = rah.exporter_command(ctx, a)                # builds the real lean4export, as `export` does
+            ref = subprocess.run(cmd, cwd=proj, capture_output=True, env=rah.lean_env()).stdout
+            self.assertTrue(ref.startswith(b'{"meta":'), ref[:200])
+            sha = hashlib.sha256(ref).hexdigest()
+            with mock.patch.object(rah, "EXPORT_TARGETS", ["tiny", "tiny2"]), mock.patch.object(rah, "EXPORT_SHA256", sha), \
+                    mock.patch.object(rah, "EXPORT_BYTES", len(ref)), mock.patch.object(rah, "MIN_FREE_GB", 0), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                good = rah.saved_export(ctx, a)
+                self.assertEqual(good.read_bytes(), ref)
+                again = rah.saved_export(ctx, a)                  # reused, after checking its hash
+            self.assertEqual(again, good)
+            lit = b'"natVal":"2"}'
+            self.assertEqual(ref.count(lit), 1)
+            bad = tmp / "bad" / "proof.ndjson"; bad.parent.mkdir(); bad.write_bytes(ref.replace(lit, b'"natVal":"3"}'))
+            for name, exe in CHECKER_BINS.items():
+                if not exe:
+                    continue
+                with self.subTest(checker=name):
+                    for export, want_ok in ((good, True), (bad, False)):
+                        c = subprocess.run(rah.checker_command(name, exe, export, [], 2), capture_output=True, text=True,
+                                           stdin=subprocess.DEVNULL, timeout=600)
+                        self.assertEqual(c.returncode == 0, want_ok, f"{name} on {export.parent.name}: exit {c.returncode}\n"
+                                         + c.stdout[-1000:] + c.stderr[-1000:])
+        finally:
+            os.environ.clear(); os.environ.update(old)
             shutil.rmtree(tmp, ignore_errors=True)

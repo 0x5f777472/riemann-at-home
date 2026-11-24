@@ -2198,13 +2198,14 @@ def export_left(n: int, total: int, out_seconds: float):
 
 def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -> tuple:
     """Run the exporter in the build folder at nice 19 and read its stdout straight into sha256 and a byte counter
-    (and into `sink`, a checker's stdin, if given). Nothing is written to disk. -> (exit code, sha256, bytes).
+    (and into `sink`, recheck's saved export file, if given). Without a sink nothing is written to disk. -> (exit code, sha256, bytes).
     A reader thread takes whatever output is there (not whole 1 MB pieces), and the progress line, the progress file
     and the leaderboard updates keep ticking every second even while the exporter is silent (a volunteer, 2026-11-23:
     the screen froze at 99.996% because the last 2.4 MB could not show until the exporter exited)."""
     import queue
     h, n = hashlib.sha256(), 0
-    print("  $ " + shlex.join(map(str, cmd)) + f"   (in {ctx.folder}; output hashed, not stored)", file=sys.stderr)
+    print("  $ " + shlex.join(map(str, cmd)) + f"   (in {ctx.folder}; output hashed"
+          + (", saved for the checkers)" if sink is not None else ", not stored)"), file=sys.stderr)
     with open(log, "ab") as lf:
         p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=lf, env=lean_env())
@@ -2266,8 +2267,9 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
                 st["peak"], st["next_mem"] = max(st["peak"], tree_memory_gb(p.pid)), now + 5
             if now >= next_show:
                 show(); next_show = now + 1
-    except BrokenPipeError:                                   # the checker stopped reading
-        p.kill()
+    except BaseException:                                     # a full disk, Ctrl-C, ...: stop the exporter, or
+        p.kill()                                              # it blocks on a full pipe and p.wait() never returns
+        raise
     finally:
         rc = p.wait()
         p.stdout.close()
@@ -2371,8 +2373,87 @@ def export_memory_warning(ram_gb: float):
             f"slow down a lot as memory fills (on a 125 GB computer the final 0.01% took almost 2 hours).{tip}")
 
 
+def saved_export_path(ctx: Ctx) -> Path:
+    return ctx.home / "export" / f"proof-{EXPORT_SHA256[:16]}.ndjson"
+
+
+def saved_export(ctx: Ctx, a) -> Path:
+    """The reference export as a file, for the checkers. Neither checker reads it from a pipe the way we used to send
+    it (con-leche takes FILE.ndjson, nanoda a config that names the file), and piping kept the exporter (~145 GB) and
+    the checker in memory together, which hung nanoda even on 256 GB (a volunteer, issue #9). So: export once to
+    disk, prove it is the reference, then run each checker alone. Kept, so the second checker reuses it."""
+    path = saved_export_path(ctx)
+    if path.exists():
+        if path.stat().st_size == EXPORT_BYTES:
+            print(f"using the saved export {path} (checking its sha256 first)")
+            if sha256_file(path) == EXPORT_SHA256:
+                return path
+        print(f"the saved export {path} is not the reference export; making it again")
+        path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".partial")
+    part.unlink(missing_ok=True)                               # left by a run that was killed: it is our own space
+    free = shutil.disk_usage(path.parent).free / 1e9
+    need = EXPORT_BYTES / 1e9 + MIN_FREE_GB
+    if free < need:
+        raise Fail(f"recheck saves the export ({EXPORT_BYTES / 1e9:,.1f} GB) to {path.parent} first, and "
+                   f"{free:,.0f} GB are free there (needs about {need:,.0f} GB). Free some disk and try again.")
+    print(f"exporting once to {path} ({EXPORT_BYTES / 1e9:,.1f} GB on disk; the checkers then read it from there)")
+    if warn := export_memory_warning(total_ram_gb()):
+        print(warn, file=sys.stderr)
+    try:
+        with open(part, "wb") as f:
+            rc, sha, n = stream_export(ctx, exporter_command(ctx, a), ctx.logs / "export.log", sink=f)
+        if rc != 0 or sha != EXPORT_SHA256 or n != EXPORT_BYTES:
+            raise Fail(f"the export was not the reference export (sha256 {sha}, {n:,} bytes, exporter exit {rc}); "
+                       f"nothing recorded. See {ctx.logs / 'export.log'}")
+        part.rename(path)
+    finally:
+        part.unlink(missing_ok=True)
+    return path
+
+
+def checker_command(name: str, exe: str, export: Path, extra: list, cpus: int) -> list:
+    """How each checker is told where the export is (their READMEs, 2026-11-23): con-leche takes the file as its last
+    argument; nanoda_bin takes only a JSON config file, which we write next to the export."""
+    if name == "con-leche":
+        return [exe, *extra, "--", str(export)]
+    if extra:
+        raise Fail("nanoda takes no command-line arguments, only its config file; drop --checker-args")
+    cfg = export.with_name("nanoda-config.json")
+    cfg.write_text(json.dumps({"export_file_path": str(export), "use_stdin": False, "num_threads": cpus,
+                               "permitted_axioms": EXPECTED_AXIOMS, "unpermitted_axiom_hard_error": False,
+                               "nat_extension": True, "string_extension": True}, indent=2) + "\n")
+    return [exe, str(cfg)]
+
+
+def checker_git_version(name: str, exe: str) -> str:
+    """`nanoda <commit>` when the binary sits inside the clone it was built in (nanoda_bin has no --version)."""
+    d, project = str(Path(exe).resolve().parent), {"nanoda": "nanoda_lib", "con-leche": "con-leche"}[name]
+    try:
+        url = subprocess.run(["git", "-C", d, "remote", "get-url", "origin"], capture_output=True, text=True, timeout=10)
+        if url.returncode != 0 or project not in url.stdout:   # inside some other repo: its commit says nothing
+            return ""
+        r = subprocess.run(["git", "-C", d, "rev-parse", "--short=12", "HEAD"], capture_output=True, text=True, timeout=10)
+        return f"{name} {r.stdout.strip()}" if r.returncode == 0 and r.stdout.strip() else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def find_checker(ctx: Ctx, name: str, given=None) -> str:
+    if given:
+        return given
+    names = [name, "nanoda_bin"] if name == "nanoda" else [name]       # nanoda's cargo build makes `nanoda_bin`
+    for n in names:
+        if w := shutil.which(n):
+            return w
+        if (ctx.home / "tools/bin" / n).exists():
+            return str(ctx.home / "tools/bin" / n)
+    return str(ctx.home / "tools/bin" / name)
+
+
 def cmd_recheck(ctx: Ctx, a):
-    """Level 3 (optional): stream the export into an independent checker (it reads the export on stdin)."""
+    """Level 3 (optional): run an independent checker on the saved reference export."""
     name = "nanoda" if a.nanoda else "con-leche"
     need, ram = CHECKERS[name], total_ram_gb()
     if ram < need:
@@ -2382,44 +2463,51 @@ def cmd_recheck(ctx: Ctx, a):
     lv = levels_state(ctx, rec["olean_digest"])
     if (lv.get("export") or {}).get("sha256") != EXPORT_SHA256:
         raise Fail("recheck needs Level 2 first: run `riemann-at-home export` and reproduce the reference export")
-    exe = a.checker or shutil.which(name) or str(ctx.home / "tools/bin" / name)
+    exe = find_checker(ctx, name, a.checker)
     if not Path(exe).exists():
         raise Fail(f"{name} is not installed. Build it from its project, then put it at "
                    f"{ctx.home / 'tools/bin' / name} or pass --checker PATH")
     version = a.checker_version
-    if not version:
+    if not version and name == "con-leche":                    # nanoda_bin has no --version (config file only)
         try:
             v = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30)
             version = (v.stdout or v.stderr).strip().splitlines()[0][:64] if v.returncode == 0 else ""
         except (OSError, subprocess.TimeoutExpired, IndexError):
             version = ""
-    version = version or "unknown"
-    log = ctx.logs / f"recheck-{name}.log"
+    version = version or checker_git_version(name, exe) or "unknown"
     ctx.logs.mkdir(parents=True, exist_ok=True)
-    ccmd = [exe] + shlex.split(a.checker_args or "")
+    export = saved_export(ctx, a)                              # the exporter has exited: its memory is free again
+    log = ctx.logs / f"recheck-{name}.log"
+    ccmd = checker_command(name, exe, export, shlex.split(a.checker_args or ""), os.cpu_count() or 1)
     print(f"re-checking the export with {name} {version} (needs about {need} GB of memory; takes hours)")
-    print("  $ " + shlex.join(ccmd) + "   (export on stdin)", file=sys.stderr)
+    print("  $ " + shlex.join(ccmd), file=sys.stderr)
     t0 = time.time()
     with open(log, "ab") as lf:
-        chk = subprocess.Popen(ccmd, cwd=ctx.home, stdin=subprocess.PIPE, stdout=lf, stderr=subprocess.STDOUT)
-        rc, sha, n = stream_export(ctx, exporter_command(ctx, a), ctx.logs / "export.log", sink=chk.stdin)
         try:
-            chk.stdin.close()
-        except BrokenPipeError:
-            pass
-        crc = chk.wait()
+            crc = subprocess.run(ccmd, cwd=ctx.home, stdin=subprocess.DEVNULL, stdout=lf, stderr=subprocess.STDOUT).returncode
+        except OSError as e:
+            raise Fail(f"could not start {name} ({exe}): {e}. The saved export stays at {export}.")
     secs = int(time.time() - t0)
-    if sha != EXPORT_SHA256 or n != EXPORT_BYTES:
-        raise Fail(f"the export streamed to {name} was not the reference export (sha256 {sha}, {n:,} bytes, exporter "
-                   f"exit {rc}); nothing recorded. See {ctx.logs / 'export.log'}")
+    if crc < 0:                                                # killed by a signal: no verdict, nothing recorded
+        sig = -crc
+        why = " (usually: the computer ran out of memory)" if sig == 9 else ""
+        raise Fail(f"{name} was stopped by signal {sig}{why} after {secs / 3600:.1f} h, before it gave a verdict; "
+                   f"nothing recorded. Log: {log}. The saved export stays at {export}, so a rerun skips the export.")
+    if name == "con-leche" and crc not in (0, 1):             # arena convention: 1 rejected, 2 declined, 3 error
+        what = "declined (it does not support something in the export)" if crc == 2 else "stopped with an error"
+        raise Fail(f"con-leche {what}, exit {crc}, after {secs / 3600:.1f} h: no verdict on the proof, nothing recorded. "
+                   f"Log: {log}. The saved export stays at {export}.")
     result = "accept" if crc == 0 else "reject"
     entry = {"name": name, "version": version, "result": result, "seconds": secs}
     lv = levels_state(ctx, rec["olean_digest"])
     lv["checkers"] = [e for e in lv.get("checkers", []) if e.get("name") != name] + [entry]
     ctx.set_conf(levels=lv)
-    print(f"{name}: {result.upper()} in {secs / 3600:.1f} h (log: {log})")
+    print(f"{name}: {result.upper()} in {secs / 3600:.1f} h (exit {crc}; log: {log})")
     out = write_record(ctx, make_record(ctx, a))
     print(f"{'Level 3. ' if result == 'accept' else ''}record with checkers: {out}")
+    other = "con-leche" if name == "nanoda" else "nanoda"
+    print(f"the saved export stays at {export} ({EXPORT_BYTES / 1e9:,.1f} GB) so `recheck --{other}` can reuse it; "
+          f"delete it when you are done: rm {shlex.quote(str(export))}")
     return 0 if result == "accept" else 1
 
 
@@ -2884,7 +2972,7 @@ def main(argv=None):
     g.add_argument("--nanoda", action="store_true", help=f"nanoda (needs about {CHECKERS['nanoda']} GB of memory)")
     g.add_argument("--con-leche", action="store_true", help=f"con-leche (needs about {CHECKERS['con-leche']} GB of memory)")
     rc.add_argument("--checker", help="path to the checker binary (default: on PATH or ~/.riemann-at-home/tools/bin)")
-    rc.add_argument("--checker-args", help="extra arguments for the checker (it reads the export on stdin)")
+    rc.add_argument("--checker-args", help="extra arguments for con-leche (nanoda takes only its config file)")
     rc.add_argument("--checker-version", help="version to record (default: `CHECKER --version`)")
     sg = sub.add_parser("sign", parents=[hidden, lvl], help="sign the joint statement (Level 2 or 3)")
     sgm = sg.add_mutually_exclusive_group()

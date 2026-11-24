@@ -50,10 +50,14 @@ and this README (`sign` prints the joint statement from it).
   `5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e`. A match puts `export_sha256` and
   `export_bytes` into the records. Until a whole build has reproduced it, the exact exporter invocation is
   unverified, and the tool says so when the hash does not match.
-- **Level 3 · Independent re-check** (optional): `riemann-at-home recheck --nanoda` or `--con-leche` streams the
-  export into the checker's stdin (still nothing on disk) and records a `checkers` entry. It checks memory first and
-  refuses below the need: nanoda about 100 GB, con-leche about 50 GB. Install the checker yourself and put it on
-  `PATH`, at `~/.riemann-at-home/tools/bin/<name>`, or pass `--checker PATH`.
+- **Level 3 · Independent re-check** (optional): `riemann-at-home recheck --nanoda` or `--con-leche` saves the
+  export once to `~/.riemann-at-home/export/` (61.6 GB of disk), confirms it is the reference export, then runs the
+  checker on that file after the exporter has exited, so the two never need memory at the same time. The second
+  checker reuses the saved file; delete it when you are done (the tool prints the `rm` command). It records a
+  `checkers` entry. It checks memory first and refuses below the need: nanoda about 100 GB, con-leche about 50 GB.
+  Build the checker yourself (nanoda: `cargo build --release` in https://github.com/ammkrn/nanoda_lib, giving
+  `nanoda_bin`; con-leche: `lake build con-leche` in https://github.com/leanprover/con-leche) and put it on `PATH`,
+  at `~/.riemann-at-home/tools/bin/<name>`, or pass `--checker PATH`.
 - `riemann-at-home sign`: at Level 2 or 3, shows the joint statement below, asks for confirmation (y/N), and then
   records carry `"sign_statement": true`.
 
