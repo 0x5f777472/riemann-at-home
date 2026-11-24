@@ -17,14 +17,19 @@ Paste this into Claude, ChatGPT, or another assistant that can run commands:
 > https://github.com/riemann-at-home/riemann-at-home, read its README, and walk me through the volunteer steps:
 > "riemann-at-home setup", then "riemann-at-home build".
 > Once the build is running, start my local dashboard with "riemann-at-home page" and open http://localhost:8642 in my browser.
+> If the whole proof finishes, help me run "riemann-at-home export".
 > Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update. Also ask me then whether I want to sign the joint statement if my build finishes and my export matches.
 
 ## Join by hand
 
-Needs macOS or Linux, Python 3, git, roughly 160 GB free for the whole proof (our estimate from builds so far; nobody has measured a finished build yet) (less is fine: the build stops by itself at 20 GB free, so your
-computer always keeps room, and every module you built still counts).
+Needs macOS or Linux, Python 3, git, roughly 150 GB free for the whole proof (a whole build is about 120 GB, judging
+from 84 GB at 70%; Lean and the tools about 3 GB; and the build always leaves 20 GB free) (less is fine: the build stops by itself at 20 GB free, so your
+computer always keeps room, and every module you built still counts). Building needs no special amount of memory; the
+optional export step (7) needs a lot.
 
-1. **GitHub CLI.** Install `gh` (macOS: `brew install gh`) and log in yourself: `gh auth login`.
+1. **GitHub CLI.** Install `gh` (macOS: `brew install gh`) and log in yourself: `gh auth login -s workflow`.
+   The `workflow` permission lets your updates go through: the repo holds the bot's GitHub Actions files, and GitHub
+   refuses a push that touches those without it (already logged in? `gh auth refresh -h github.com -s workflow`).
    The tool never asks for or handles your password or token.
 2. **Setup.** `python3 -I cli/riemann-at-home setup`
    Downloads the official archive from alpo.ge, checks its sha256
@@ -33,7 +38,9 @@ computer always keeps room, and every module you built still counts).
    (4.33.1) and the Mathlib cache. At the end it asks once whether to post your progress publicly (see 4).
 3. **Build.** `python3 -I cli/riemann-at-home build --gentle` (or `--full`)
    Runs the official `lake build Main`, unchanged, at the lowest priority. `pause`, `resume`, `stop`, `status`.
-   A full build is about two days on a fast Mac; any amount counts.
+   Measured so far: 9 to 19 hours of compute on 16- to 64-core desktops and workstations, about 2 days on a 12-core
+   M2 Max; any amount counts. If Lean crashes, the tool restarts the build by itself (up to three times) and keeps
+   what was built.
 4. **Post your progress.** Setup asks once; or later: `python3 -I cli/riemann-at-home submit --agree`.
    From then on, one public pull request for this computer is updated about every 10 minutes while you build.
    **What becomes public:** your GitHub username, your computer's OS, chip and number of cores, and which modules
@@ -45,8 +52,14 @@ computer always keeps room, and every module you built still counts).
    on the leaderboard instead of your GitHub username. It's only a label: your pull request on GitHub always shows
    your username, so nobody here is anonymous.
 6. **See your own build.** `python3 -I cli/riemann-at-home page` opens a local page for this computer.
-7. **Done or stopping for good.** `python3 -I cli/riemann-at-home finish`
-8. **Updates.** The tool checks GitHub once a day (one fetch with no login; nothing about you is sent). When there's a new
+7. **Export (Level 2, optional).** When the whole proof is built, run `python3 -I cli/riemann-at-home update`, then
+   `python3 -I cli/riemann-at-home export`. It exports the compiled proof (61.6 GB, hashed as it streams, nothing
+   written to disk) and checks it is bit for bit the reference export; a match is what lets you sign. It takes 2 to 3
+   hours and a lot of memory: it peaks around 145 GB. With 140 GB or more it is comfortable; with 96 to 140 GB it
+   works but the end slows down a lot as memory fills (a 128 GB computer finished in about 3 hours; macOS adds swap
+   by itself if the disk has room); below 96 GB it may never finish.
+8. **Done or stopping for good.** `python3 -I cli/riemann-at-home finish`
+9. **Updates.** The tool checks GitHub once a day (one fetch with no login; nothing about you is sent). When there's a new
    version, your local page and `status` say so. Run `python3 -I cli/riemann-at-home update`: it shows what changed,
    asks, then updates and restarts the build and page. Nothing built is lost. It never updates by itself.
 

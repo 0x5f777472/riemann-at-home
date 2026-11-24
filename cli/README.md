@@ -12,7 +12,7 @@ and this README (`sign` prints the joint statement from it).
    computer's random `build_id`. Running it again skips whatever is already done.
 2. `riemann-at-home build [--gentle|--full] [--submit]`: the official `lake build Main`, unchanged, in the
    background at nice 19 (gentle = macOS background policy / Linux SCHED_IDLE). `pause`, `resume`, `stop`, `status`.
-   The build stops by itself when the build disk gets down to 20 GB free, so your computer always keeps room (a whole build needs roughly 160 GB free, estimated from builds so far). Everything
+   The build stops by itself when the build disk gets down to 20 GB free, so your computer always keeps room (a whole build is about 120 GB, judging from 84 GB at 70%; with Lean, the tools and that 20 GB, allow roughly 150 GB free). Everything
    compiled so far is kept, and `record` / `submit` still work for the partial build.
 3. `riemann-at-home submit`: sends the latest record to this computer's one pull request on
    `riemann-at-home/riemann-at-home` (`--upstream OWNER/REPO` to change). The tool keeps its own clone in
@@ -36,7 +36,7 @@ and this README (`sign` prints the joint statement from it).
    of main; only changes under `cli/` count) and says so on the local page and in `status`. `update` lists the
    changes, asks, fast-forwards your checkout, and restarts a running build (same speed; Lean resumes where it was) and
    this computer's local page. It never updates without being asked.
-7. `riemann-at-home page`: this computer's page at http://localhost:8642/ ("This computer": its terrain, what is
+8. `riemann-at-home page`: this computer's page at http://localhost:8642/ ("This computer": its terrain, what is
    compiling now, speed). Its "Global dashboard" button opens https://riemann-at-home.github.io/riemann-at-home/.
 
 ## Levels
@@ -44,7 +44,8 @@ and this README (`sign` prints the joint statement from it).
 - **Level 1 · Build**: any compiled modules. A whole build (all 175,187 modules) also runs the axiom check.
 - **Level 2 · Export reproduced**: `riemann-at-home export`, after a whole build with a passing axiom check. Builds
   lean4export at tag v4.33.0 (https://github.com/leanprover/lean4export) into `~/.riemann-at-home/tools` with the
-  toolchain that tag pins, runs `lake env lean4export Main` in the build folder, and streams its output straight into
+  proof's own Lean 4.33.1, not the 4.33.0 that tag pins (Lean only reads compiled files made by the same version:
+  issue #14), runs `lake env lean4export Main` in the build folder, and streams its output straight into
   sha256 and a byte counter: the ~61 GB export is never written to disk. The reference export (Andrew Sutherland,
   https://math.mit.edu/~drew/grh) is 61,570,595,788 bytes with sha256
   `5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e`. A match puts `export_sha256` and
