@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-24T04:35:58Z
+- Updated: 2026-11-24T04:50:39Z
 
 ## Totals
 
@@ -32,16 +32,16 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ### Building now
 
-- Fornax96 (github.com/Fornax96): 172,366 modules (98.4%), AMD Ryzen 9 7900X3D 12-Core Processor
+- Fornax96 (github.com/Fornax96): 173,599 modules (99.1%), AMD Ryzen 9 7900X3D 12-Core Processor
 - gebhardtr (github.com/gebhardtr): 138,302 modules (78.9%), AMD Ryzen 5 5600X 6-Core Processor
-- titojankowski (github.com/titojankowski): 133,971 modules (76.5%), Apple M5 Max
+- titojankowski (github.com/titojankowski): 135,646 modules (77.4%), Apple M5 Max
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 117,699 modules (67.2%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Genbox (github.com/Genbox): 109,263 modules (62.4%), 12th Gen Intel(R) Core(TM) i7-12700K
-- sanzgiri (github.com/sanzgiri): 101,970 modules (58.2%), Apple M4 Max
-- milhouse1337 (github.com/milhouse1337): 69,937 modules (39.9%), Apple M3 Ultra
+- sanzgiri (github.com/sanzgiri): 102,704 modules (58.6%), Apple M4 Max
+- milhouse1337 (github.com/milhouse1337): 70,274 modules (40.1%), Apple M3 Ultra
 - Ununhexium: 23,963 modules (13.7%), AMD Ryzen 7 5700G with Radeon Graphics
-- framiere (github.com/framiere): 21,461 modules (12.3%), Apple M4 Pro
-- tgragnato (github.com/tgragnato): 19,984 modules (11.4%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 21,473 modules (12.3%), Apple M4 Pro
+- tgragnato (github.com/tgragnato): 20,232 modules (11.5%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - Aerlinger (github.com/Aerlinger): 1,027 modules (0.6%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
