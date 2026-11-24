@@ -645,6 +645,38 @@ class Levels(unittest.TestCase):
         self.assertIn("no output for", err); self.assertIn("the exporter is still running", err)
         self.assertIn("export matches the reference ✓", out)
 
+    def test_export_time_left_counts_from_first_output(self):
+        """Issue #9: lean4export loads the proof silently first; the old estimate divided by that silence too, so
+        right after output began it said many times too long. The speed now counts from the first byte."""
+        from unittest import mock
+        half = EXPORT_CHUNK * 40_000
+        ex = self.tmp / "bin/slow-start-lean4export"
+        ex.write_text(f"#!{sys.executable} -I\nimport sys, time\nchunk = {EXPORT_CHUNK!r}\n"
+                      "time.sleep(6)\nsys.stdout.buffer.write(chunk * 40_000); sys.stdout.buffer.flush()\n"
+                      "time.sleep(3)\nsys.stdout.buffer.write(chunk * 40_000)\n")
+        ex.chmod(0o755)
+        seen, stop = [], threading.Event()
+        pf = self.home / "export-progress.json"
+        def watch():
+            while not stop.is_set():
+                try:
+                    p = json.loads(pf.read_text())
+                    if p["bytes"] == len(half) and p["left_seconds"] is not None:
+                        seen.append(p["left_seconds"])
+                except (OSError, ValueError, KeyError):
+                    pass
+                time.sleep(0.2)
+        t = threading.Thread(target=watch); t.start()
+        try:
+            with mock.patch.object(rah, "EXPORT_ETA_AFTER", 1, create=True):
+                self.export = half * 2; self.sha = hashlib.sha256(self.export).hexdigest()
+                code, out, err = self.main("export", "--exporter", ex)
+        finally:
+            stop.set(); t.join()
+        self.assertEqual(code, 0, err)
+        self.assertTrue(seen, "an estimate must show once output is flowing")
+        self.assertLessEqual(max(seen), 4, f"half done after ~3 s of output: about 3 s left, not {max(seen)} s")
+
     def test_export_memory_warning(self):
         """Before exporting, say plainly if this computer's memory is tight (a 125 GiB run crawled at the end)."""
         self.assertIsNone(rah.export_memory_warning(256)); self.assertIsNone(rah.export_memory_warning(0))

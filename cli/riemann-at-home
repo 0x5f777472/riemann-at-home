@@ -2187,6 +2187,13 @@ def fmt_dur(t: float) -> str:
 
 
 EXPORT_QUIET_SECONDS = 60     # no output for this long: say so instead of a frozen "about 1 m left"
+EXPORT_ETA_AFTER = 60         # seconds of output before the first "about N left" (too early, the speed is noise)
+
+
+def export_left(n: int, total: int, out_seconds: float):
+    """Seconds left, from the speed since the exporter's FIRST output: it first loads the proof for a while and says
+    nothing, and counting that silence made the estimate huge at the start (a volunteer, issue #9)."""
+    return (total - n) / (n / out_seconds) if n and out_seconds >= EXPORT_ETA_AFTER and n < total else None
 
 
 def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -> tuple:
@@ -2202,7 +2209,7 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
         p = subprocess.Popen(["nice", "-n", "19"] + list(map(str, cmd)), cwd=ctx.folder, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=lf, env=lean_env())
     t0 = time.time()
-    st = {"peak": 0.0, "next_mem": 0.0, "next_print": 0.0, "pct": -1, "last_out": t0, "quiet_said": 0}
+    st = {"peak": 0.0, "next_mem": 0.0, "next_print": 0.0, "pct": -1, "last_out": t0, "quiet_said": 0, "first_out": None}
     tty = sys.stderr.isatty()
     q = queue.Queue(maxsize=64)
 
@@ -2218,8 +2225,9 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
     def show(final=False):
         now = time.time()
         el, quiet = now - t0, now - st["last_out"]
+        out_el = now - st["first_out"] if st["first_out"] else 0.0   # time since the exporter started writing
         silent = not final and quiet >= EXPORT_QUIET_SECONDS
-        left = (EXPORT_BYTES - n) / (n / el) if n and el >= 60 and n < EXPORT_BYTES and not silent else None
+        left = export_left(n, EXPORT_BYTES, out_el) if not silent else None
         pct = min(100, int(n * 100 / EXPORT_BYTES))
         if on_progress:
             on_progress(n, el, left, st["peak"], final)
@@ -2230,7 +2238,7 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
             st["quiet_said"] = qm
         st["pct"], st["next_print"] = pct, now + 1800
         bar = "█" * (pct * 22 // 100) + "░" * (22 - pct * 22 // 100)
-        line = (f"  EXPORTING {pct}%  {bar}  {n / 1e9:,.1f} of {EXPORT_BYTES / 1e9:,.1f} GB · {n / 1e6 / max(el, 1):,.1f} MB/s"
+        line = (f"  EXPORTING {pct}%  {bar}  {n / 1e9:,.1f} of {EXPORT_BYTES / 1e9:,.1f} GB · {n / 1e6 / max(out_el, 1):,.1f} MB/s"
                 + (f" · about {fmt_dur(left)} left" if left else "")
                 + (f" · no output for {fmt_dur(quiet)}, the exporter is still running" if silent else "")
                 + (f" · memory {st['peak']:,.0f} GB" if st["peak"] else ""))
@@ -2249,6 +2257,7 @@ def stream_export(ctx: Ctx, cmd: list, log: Path, sink=None, on_progress=None) -
             now = time.time()
             if chunk:
                 st["last_out"] = now
+                st["first_out"] = st["first_out"] or now
                 h.update(chunk)
                 n += len(chunk)
                 if sink is not None:
