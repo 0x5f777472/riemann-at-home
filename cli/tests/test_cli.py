@@ -1171,6 +1171,46 @@ class SetupStats(unittest.TestCase):
         self.assertEqual([rah.fmt_dur(x) for x in (59, 3599, 7170, 86399)], ["1 m", "1 h 0 m", "2 h 0 m", "24 h 0 m"])
 
 
+class FastExit(unittest.TestCase):
+    """export --fast-exit: Derek Blanchette's lean4export patch (issue #24)."""
+    MAIN = ("def main (args : List String) : IO Unit := do\n  M.run env do\n    let _ ← initState env opts\n"
+            "    dumpMetadata\n" + rah.FAST_EXIT_LOOP)
+
+    def test_patch_appends_flush_and_exit_after_the_loop(self):
+        out = rah.patch_fast_exit(self.MAIN)
+        self.assertTrue(out.startswith(self.MAIN))
+        self.assertTrue(out.endswith("      dumpConstant c\n    (← IO.getStdout).flush\n    IO.Process.exit 0\n"))
+        self.assertEqual(rah.patch_fast_exit(self.MAIN + "\n\n"), out)          # trailing blank lines are fine
+
+    def test_patch_refuses_a_changed_main(self):
+        self.assertIsNone(rah.patch_fast_exit(self.MAIN + "    IO.println \"done\"\n"))   # loop no longer last
+        self.assertIsNone(rah.patch_fast_exit(self.MAIN.replace("dumpConstant c", "dumpConstant' c")))
+        self.assertIsNone(rah.patch_fast_exit(rah.patch_fast_exit(self.MAIN)))    # never patched twice
+
+    def test_real_v4_33_0_main_if_present(self):
+        p = Path(os.environ.get("RAH_L4E_MAIN", "/nonexistent"))
+        if not p.exists():
+            self.skipTest("set RAH_L4E_MAIN to lean4export v4.33.0's Main.lean")
+        self.assertIsNotNone(rah.patch_fast_exit(p.read_text()))
+
+    def test_fast_exit_uses_its_own_tools_folder(self):
+        from unittest import mock
+        home = Path(tempfile.mkdtemp(dir=TMP)); self.addCleanup(shutil.rmtree, home, True)
+        ctx = types.SimpleNamespace(home=home)
+        seen = []
+        def fake_run(cmd, **kw):
+            seen.append(cmd); dest = Path(cmd[-1]); dest.mkdir(parents=True)
+            (dest / "Main.lean").write_text(self.MAIN); return types.SimpleNamespace(returncode=0)
+        with mock.patch.object(rah, "run", fake_run), mock.patch.object(rah, "ensure_elan", side_effect=rah.Fail("stop")):
+            for fast in (False, True):
+                with self.assertRaises(rah.Fail):
+                    rah.exporter_command(ctx, types.SimpleNamespace(exporter=None, fast_exit=fast))
+        names = sorted(p.name for p in (home / "tools").iterdir())
+        self.assertEqual(len(names), 2); self.assertTrue(names[1].endswith("-fastexit"), names)
+        self.assertNotIn("IO.Process.exit", (home / "tools" / names[0] / "Main.lean").read_text())
+        self.assertIn("IO.Process.exit 0", (home / "tools" / names[1] / "Main.lean").read_text())
+
+
 class RealSubmit(unittest.TestCase):
     """The real submit path against a local bare repo as upstream and a fake `gh` (no network, no GitHub)."""
     BID = "0123456789abcdef"

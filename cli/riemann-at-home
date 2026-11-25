@@ -2145,6 +2145,23 @@ def whole_build(ctx: Ctx, a, what: str) -> dict:
     return rec
 
 
+FAST_EXIT_LOOP = ("    for c in constants do\n      modify (fun st => { st with noMDataExprs := {} })\n"
+                  "      dumpConstant c\n")
+FAST_EXIT_ADD = "    (← IO.getStdout).flush\n    IO.Process.exit 0\n"
+
+
+def patch_fast_exit(main_lean: str):
+    """lean4export's Main.lean with Derek Blanchette's fix (issue #24), or None if the file is not the one it fits.
+    After the last constant the exporter used to free its whole cache one object at a time before exiting; on a
+    computer that is swapping that took hours at "99%" with all the data already written. The fix flushes the
+    output and exits, and the operating system frees the memory at once. The output is unchanged; the export's own
+    comparison with the reference hash checks that on every run."""
+    body = main_lean.rstrip("\n") + "\n"
+    if not body.endswith(FAST_EXIT_LOOP) or body.count(FAST_EXIT_LOOP) != 1:
+        return None
+    return body + FAST_EXIT_ADD
+
+
 def exporter_command(ctx: Ctx, a) -> list:
     """`lake env <lean4export> Main`, run in the build folder. lean4export is built once from the pinned tag into
     ~/.riemann-at-home/tools, with the PROOF's toolchain (TOOLCHAIN), not the one the tag pins: Lean only reads
@@ -2153,7 +2170,9 @@ def exporter_command(ctx: Ctx, a) -> list:
     exporter built the old way is never reused."""
     if getattr(a, "exporter", None):                         # testing: a stand-in exporter
         return [a.exporter, "Main", "--", *EXPORT_TARGETS]
-    src = ctx.home / "tools" / f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
+    fast = bool(getattr(a, "fast_exit", False))
+    src = ctx.home / "tools" / (f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
+                                + ("-fastexit" if fast else ""))   # never mixed up with the unpatched build
     exe = src / ".lake/build/bin/lean4export"
     if not exe.exists():
         if not src.exists():
@@ -2163,6 +2182,13 @@ def exporter_command(ctx: Ctx, a) -> list:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise Fail(f"could not download lean4export {EXPORTER_TAG} from {EXPORTER_REPO}")
             (tmp / "lean-toolchain").write_text(TOOLCHAIN + "\n")    # build with the proof's Lean (see above)
+            if fast:
+                patched = patch_fast_exit((tmp / "Main.lean").read_text())
+                if patched is None:
+                    shutil.rmtree(tmp, ignore_errors=True)
+                    raise Fail(f"lean4export {EXPORTER_TAG}'s Main.lean is not the one --fast-exit fits; "
+                               "run export without --fast-exit")
+                (tmp / "Main.lean").write_text(patched)
             tmp.rename(src)
         tc = toolchain_of(src)
         if tc != TOOLCHAIN:
@@ -3088,6 +3114,8 @@ def main(argv=None):
                         help="Level 2: hash the proof export (lean4export, streamed, never stored) against the reference")
     ex.add_argument("--check", action="store_true",
                     help="just check that the exporter works on this computer (exports one compiled module, about a minute)")
+    ex.add_argument("--fast-exit", action="store_true",
+                    help="trial: skip lean4export's slow memory cleanup after the last byte (issue #24); same output")
     rc = sub.add_parser("recheck", parents=[hidden, lvl], help="Level 3 (optional): re-check the export independently")
     g = rc.add_mutually_exclusive_group(required=True)
     g.add_argument("--nanoda", action="store_true", help=f"nanoda (needs about {CHECKERS['nanoda']} GB of memory)")
