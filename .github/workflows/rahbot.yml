@@ -28,7 +28,7 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20    # 7 min wait + up to ~6 min of queue retries (see the last step)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,9 +71,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sleep 420
-          # GitHub sometimes answers HTTP 500 here; one failure used to stop the chain for hours (2026-11-25).
+          # GitHub sometimes answers HTTP 500 here, or never answers; either one used to stop the chain
+          # (2026-11-25: a 500, then a call that hung until the job limit). Each try gets 40 s.
           for wait in 20 40 60 80 0; do
-            gh workflow run rahbot.yml --repo "$GITHUB_REPOSITORY" --ref main -f live=true && exit 0
+            timeout 40 gh workflow run rahbot.yml --repo "$GITHUB_REPOSITORY" --ref main -f live=true && exit 0
             [ "$wait" = 0 ] && break
             echo "queueing the next run failed; trying again in ${wait}s"
             sleep "$wait"
