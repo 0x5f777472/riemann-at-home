@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-25T10:08:50Z
+- Updated: 2026-11-25T10:23:35Z
 
 ## Totals
 
@@ -38,10 +38,10 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 ### Building now
 
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 161,369 modules (92.1%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 154,784 modules (88.4%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 127,384 modules (72.7%), Apple M3 Ultra
-- Andrea Shepard: 84,084 modules (48.0%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
-- tgragnato (github.com/tgragnato): 43,348 modules (24.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- Genbox (github.com/Genbox): 155,118 modules (88.5%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 128,055 modules (73.1%), Apple M3 Ultra
+- Andrea Shepard: 88,670 modules (50.6%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
+- tgragnato (github.com/tgragnato): 43,500 modules (24.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - framiere (github.com/framiere): 21,921 modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
