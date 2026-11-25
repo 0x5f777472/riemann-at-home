@@ -446,13 +446,15 @@ def export_view(r):
     return v
 
 
-def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
+def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> dict:
     """signed_map: login -> time their signing version was accepted (the bot records it); people missing from it get
     the signing record's `recorded` time (aggregate without the bot's ledger).
     firsts: login -> {"whole": first whole-proof `recorded`, "validated": first Level 2+ `recorded`} (the bot's ledger,
     updated here). A build is ONE file that each `submit` overwrites, so the records alone only show the newest
     version: without the ledger, re-submitting a finished build moved its finish date (issue #12, 2026-11-25).
-    Each entry only ever moves earlier."""
+    Each entry only ever moves earlier.
+    published: the data.json already on main. Its finish, Level 2 and signing times are merged in (earlier wins), so
+    losing the bot's state (and its backups) cannot move them either."""
     signed_map = {} if signed_map is None else signed_map
     firsts = {} if firsts is None else firsts
     signatures = []
@@ -467,6 +469,20 @@ def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
             ident[login] = (clean_display_name(newest["display_name"]), None)
         else:
             ident[login] = (login, login)
+    if published:
+        by_key = {(shown or name): login for login, (name, shown) in ident.items()}
+        for r in published.get("leaderboard") or []:
+            login = by_key.get(r.get("who") or r.get("name"))
+            if not login:
+                continue
+            for k, field in (("whole", "finished"), ("validated", "validated_at")):
+                if r.get(field):
+                    e = firsts.setdefault(login, {})
+                    e[k] = min(e.get(k) or r[field], r[field])
+        for g in published.get("signatures") or []:
+            login = by_key.get(g.get("who") or g.get("name"))
+            if login and g.get("signed"):
+                signed_map[login] = min(signed_map.get(login) or g["signed"], g["signed"])
     counts = bytearray(N)
     rows, latest, running, crashes = [], None, [], {}
     for who, builds in sorted(people.items()):
@@ -484,6 +500,7 @@ def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
         mine = firsts.setdefault(who, {})
         if whole:
             mine["whole"] = min(mine.get("whole") or whole["recorded"], whole["recorded"])
+            mine.setdefault("hours", round(whole["busy_seconds"] / 3600, 1))   # as it was when they finished
         lv2 = [r["recorded"] for r in recs if record_level(r) >= 2]
         if lv2:
             mine["validated"] = min(mine.get("validated") or min(lv2), min(lv2))
@@ -498,7 +515,7 @@ def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
                                "level": level, "checkers": sorted({c["name"] for r in recs for c in r.get("checkers") or []
                                                                    if c.get("result") == "accept" and c.get("name") in KNOWN_CHECKERS})})
         rows.append({"name": name, "who": shown, "_login": who, "level": level, "modules": popcount(raw), "whole_proof": whole is not None,
-                     "build_hours": round(whole["busy_seconds"] / 3600, 1) if whole else None,
+                     "build_hours": mine["hours"] if whole else None,
                      "finished": mine["whole"] if whole else None,
                      "validated_at": mine["validated"] if lv2 else None,
                      "machine": mach(largest), "computers": len(builds),
@@ -529,7 +546,8 @@ def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
         row.setdefault("first_whole_proof_rank", None)
         del row["_first_whole"]
     # modules desc; among whole proofs, who finished first; otherwise earliest since
-    rows.sort(key=lambda x: (-x["modules"], x["first_whole_proof_rank"] or 0, x["since"], x.pop("_login")))
+    rows.sort(key=lambda x: (-x["modules"], not x["whole_proof"], x["first_whole_proof_rank"] or 10**9, x["since"],
+                             x.pop("_login")))
     libs, prev = [], None
     for i, m in enumerate(mods):
         top = m.split(".")[0]
@@ -647,7 +665,7 @@ def homepage_markdown(data: dict, index_html: str) -> str:
                    key=lambda r: r.get("first_whole_proof_rank") or 10**9)
     built = lambda r: (f"all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else "")
                        + (f", {r['machine']}" if r.get("machine") else ""))
-    vals = sorted((r for r in whole if (r.get("level") or 0) >= 2), key=lambda r: str(r.get("finished")))
+    vals = sorted((r for r in whole if (r.get("level") or 0) >= 2), key=lambda r: str(r.get("validated_at") or r.get("finished")))
     signed = {g.get("who") or g.get("name") for g in data.get("signatures") or []}
     out += ["## Leaderboard", "", "### Validated: built the whole proof and reproduced the export", ""]
     out += [f"{k}. {who(r)}: {built(r)}, export reproduced" + (", signed the joint statement" if (r.get("who") or r["name"]) in signed else "")
@@ -739,11 +757,9 @@ class GitHubSource:
             if after: v["after"] = after
             page = self._graphql(LIST_QUERY, **v)["repository"]["pullRequests"]
             for n in page["nodes"]:
-                if n["isDraft"]:
-                    continue
                 files = [{"path": f["path"], "changeType": f["changeType"]} for f in n["files"]["nodes"]]
                 files += [{"path": "...", "changeType": "MODIFIED"}] * max(0, n["changedFiles"] - len(files))
-                out.append({"number": n["number"], "author": (n["author"] or {}).get("login", ""),
+                out.append({"number": n["number"], "author": (n["author"] or {}).get("login", ""), "draft": n["isDraft"],
                             "branch": n["headRefName"], "head": n["headRefOid"], "files": files})
             if not page["pageInfo"]["hasNextPage"]:
                 return out
@@ -792,6 +808,7 @@ class GitHubSource:
     def commit_files(self, paths, msg):
         self._git("add", *paths)
         self._git("commit", "-q", "-m", msg)
+        self._git("pull", "--rebase", "-q")
         self._git("push", "-q")
 
 
@@ -885,10 +902,13 @@ class State:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_bytes(body)
 
-    def drop(self, n):
+    def drop(self, n, keep_record=False):
+        """keep_record: the PR went away unmerged (closed, fork deleted). Its last accepted version stays on the
+        board: it passed every check, and a finished, validated or signed build must not vanish (2026-11-25 review).
+        A new PR for the same build continues from it."""
         st = self.data["prs"].pop(str(n), {})
         rp = st.get("path")
-        if rp and self.persist:
+        if rp and self.persist and not keep_record:
             f = self.dir / "accepted" / rp.removeprefix("submissions/")
             if f.exists():
                 f.unlink()                              # bot's own state copy; the record lives on in git / main
@@ -950,8 +970,8 @@ def cmd_poll(a):
     prs = sorted(src.prs(), key=lambda p: p["number"])
     open_numbers = {str(p["number"]) for p in prs}
     for n in [n for n in st.data["prs"] if n not in open_numbers]:
-        print(f"#{n}: no longer open; dropping its unmerged version from the board")
-        st.drop(n)
+        print(f"#{n}: no longer open; its last accepted version stays on the board")
+        st.drop(n, keep_record=True)
 
     open_builds, todo, paths = {}, [], {}
     for pr in prs:
@@ -967,6 +987,10 @@ def cmd_poll(a):
         if s.get("seen_sha") != pr["head"]:
             todo.append((pr, path))
     bodies = src.contents(todo) if todo else {}
+    # a head whose file GitHub did not return this time (fork briefly unavailable) is retried next poll, not marked
+    # seen; only a PR that deletes the file gets the "file not found" reject (2026-11-25 review)
+    bodies_missing_ok = {pr["number"] for pr, _ in todo
+                         if pr["number"] not in bodies and pr["files"][0].get("changeType") != "DELETED"}
     logins = ({f.parent.name for d in (repo / "submissions", state_dir / "accepted") if d.exists() for f in d.glob("*/*.json")}
               | {p["author"] for p in prs})            # every participant, for the display_name rule
 
@@ -976,7 +1000,9 @@ def cmd_poll(a):
             continue
         path, s = paths[n], st.pr(n)
         prev = st.accepted(path)                       # None after state loss: head re-checked as a first version
-        if s.get("seen_sha") != pr["head"]:            # a new version on the branch
+        if s.get("seen_sha") != pr["head"] and bodies.get(n) is None and n in bodies_missing_ok:
+            print(f"#{n} {author}: could not read version {pr['head'][:8]} yet; trying again next poll")
+        elif s.get("seen_sha") != pr["head"]:          # a new version on the branch
             s["seen_sha"], s["seen_at"] = pr["head"], now.strftime("%Y-%m-%dT%H:%M:%SZ")
             body = bodies.get(n)
             try:
@@ -1021,7 +1047,7 @@ def cmd_poll(a):
         # Only `finish` (final) merges. A whole-proof PR stays open so its export progress and Level 2/3 result
         # (export_sha256, checkers, sign_statement) can still arrive on it (2026-11-22). No time-based merge.
         why = "final" if prev.get("final") else None
-        if not why:
+        if not why or pr.get("draft"):
             continue
         try:
             if s.get("accepted_sha") == pr["head"]:
@@ -1043,7 +1069,13 @@ def cmd_poll(a):
     if not persist:
         print("dry run: data.json not rebuilt")
         return 0
-    data = build_data([repo / "submissions", state_dir / "accepted"], now=now, signed_map=st.signed, firsts=st.firsts)
+    pub = repo / "docs" / "data.json"
+    try:
+        published = json.loads(pub.read_text()) if pub.exists() else None
+    except ValueError:
+        published = None
+    data = build_data([repo / "submissions", state_dir / "accepted"], now=now, signed_map=st.signed, firsts=st.firsts,
+                      published=published)
     published = False
     h = content_hash(data)
     last = st.data.get("last_publish")

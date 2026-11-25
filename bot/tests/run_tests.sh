@@ -171,6 +171,10 @@ print "=== re-submitting a finished build keeps its finish date and Level 2 time
 python3 -I tests/check_firsts.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
 
+print "=== review fixes: closed PRs, state loss, ranking, frozen build hours (2026-11-25)"
+python3 -I tests/check_review_fixes.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
+print
+
 print "=== export progress on the page data"
 python3 -I tests/check_export.py && echo "--> ok" || { echo "--> TEST FAILED"; fails=$((fails+1)); }
 print
