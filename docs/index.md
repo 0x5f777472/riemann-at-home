@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-25T12:35:43Z
+- Updated: 2026-11-25T12:50:22Z
 
 ## Totals
 
@@ -32,16 +32,16 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - titojankowski (github.com/titojankowski): all 175,187 modules, built in 64.3 h, Apple M5 Max
 - Ununhexium: all 175,187 modules, built in 57.5 h, AMD Ryzen 7 5700G with Radeon Graphics
 - gebhardtr (github.com/gebhardtr): all 175,187 modules, built in 60.4 h, AMD RYZEN AI MAX+ 395 w/ Radeon 8060S
-- xangma (github.com/xangma): all 175,187 modules, built in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, exporting now
 - sanzgiri (github.com/sanzgiri): all 175,187 modules, built in 41.0 h, Apple M4 Max, exporting now
+- xangma (github.com/xangma): all 175,187 modules, built in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, exporting now
 
 ### Building now
 
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 162,952 modules (93.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 159,769 modules (91.2%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 131,998 modules (75.3%), Apple M3 Ultra
-- Andrea Shepard: 116,050 modules (66.2%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
-- tgragnato (github.com/tgragnato): 45,144 modules (25.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- Genbox (github.com/Genbox): 159,809 modules (91.2%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 132,340 modules (75.5%), Apple M3 Ultra
+- Andrea Shepard: 117,712 modules (67.2%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
+- tgragnato (github.com/tgragnato): 45,388 modules (25.9%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - framiere (github.com/framiere): 21,921 modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
