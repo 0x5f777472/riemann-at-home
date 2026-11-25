@@ -446,10 +446,15 @@ def export_view(r):
     return v
 
 
-def build_data(dirs, now=None, signed_map=None) -> dict:
+def build_data(dirs, now=None, signed_map=None, firsts=None) -> dict:
     """signed_map: login -> time their signing version was accepted (the bot records it); people missing from it get
-    the signing record's `recorded` time (aggregate without the bot's ledger)."""
+    the signing record's `recorded` time (aggregate without the bot's ledger).
+    firsts: login -> {"whole": first whole-proof `recorded`, "validated": first Level 2+ `recorded`} (the bot's ledger,
+    updated here). A build is ONE file that each `submit` overwrites, so the records alone only show the newest
+    version: without the ledger, re-submitting a finished build moved its finish date (issue #12, 2026-11-25).
+    Each entry only ever moves earlier."""
     signed_map = {} if signed_map is None else signed_map
+    firsts = {} if firsts is None else firsts
     signatures = []
     mods = modules()
     people = {}
@@ -476,6 +481,14 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
         recs = [v[1] for v in builds.values()]
         wholes = sorted((r for r in recs if r["whole_proof"]), key=lambda r: r["recorded"])
         whole = wholes[0] if wholes else None          # first whole build
+        mine = firsts.setdefault(who, {})
+        if whole:
+            mine["whole"] = min(mine.get("whole") or whole["recorded"], whole["recorded"])
+        lv2 = [r["recorded"] for r in recs if record_level(r) >= 2]
+        if lv2:
+            mine["validated"] = min(mine.get("validated") or min(lv2), min(lv2))
+        if not mine:
+            del firsts[who]
         largest = max(recs, key=lambda r: (r["modules_compiled"], r["recorded"]))
         level = max(record_level(r) for r in recs)
         signing = sorted((r for r in recs if r.get("sign_statement") and record_level(r) >= 2), key=lambda r: r["recorded"])
@@ -486,10 +499,11 @@ def build_data(dirs, now=None, signed_map=None) -> dict:
                                                                    if c.get("result") == "accept" and c.get("name") in KNOWN_CHECKERS})})
         rows.append({"name": name, "who": shown, "_login": who, "level": level, "modules": popcount(raw), "whole_proof": whole is not None,
                      "build_hours": round(whole["busy_seconds"] / 3600, 1) if whole else None,
-                     "finished": whole["recorded"] if whole else None,
+                     "finished": mine["whole"] if whole else None,
+                     "validated_at": mine["validated"] if lv2 else None,
                      "machine": mach(largest), "computers": len(builds),
                      "since": min(r["started"] for r in recs),
-                     "_first_whole": whole["recorded"] if whole else None})
+                     "_first_whole": mine["whole"] if whole else None})
         for r in recs:                                 # which modules crash Lean, and on whose computers
             for c in r.get("crashes") or []:
                 k = crashes.setdefault(c["module"], {"module": c["module"], "codes": set(), "names": set(), "times": 0, "last": ""})
@@ -826,6 +840,24 @@ def close_body(reason):
                       "submissions/<your-login>/<build_id>.json. Run it again to open a correct one.", "", "(rahbot)"])
 
 
+FIRSTS_SEED = HERE / "firsts-seed.json"
+
+
+def load_firsts_seed():
+    """Times recovered from the published data.json history (2026-11-25), from before the bot kept the ledger."""
+    return json.loads(FIRSTS_SEED.read_text()) if FIRSTS_SEED.exists() else {}
+
+
+def merge_firsts(a, b):
+    """Per login and key, the earlier time wins."""
+    out = {k: dict(v) for k, v in a.items()}
+    for login, v in b.items():
+        for k, t in v.items():
+            cur = out.setdefault(login, {}).get(k)
+            out[login][k] = min(cur, t) if cur else t
+    return out
+
+
 class State:
     """STATE/state.json + STATE/accepted/<login>/<build_id>.json (last accepted version of each open PR's build)."""
     def __init__(self, d: Path, persist: bool):
@@ -835,6 +867,8 @@ class State:
         self.mem = {}                                   # dry run: accepted versions held in memory only
         sf = d / "signatures.json"                      # login -> time the signing version was accepted
         self.signed = json.loads(sf.read_text()) if sf.exists() else {}
+        ff = d / "firsts.json"                          # login -> first whole proof / first Level 2 (see build_data)
+        self.firsts = merge_firsts(json.loads(ff.read_text()) if ff.exists() else {}, load_firsts_seed())
 
     def pr(self, n):
         return self.data["prs"].setdefault(str(n), {})
@@ -862,6 +896,7 @@ class State:
     def save(self):
         if self.persist:
             write_json_backed_up(self.dir / "signatures.json", self.signed, backup=False)
+            write_json_backed_up(self.dir / "firsts.json", self.firsts, backup=False)
             write_json_backed_up(self.dir / "state.json", self.data, backup=False)
 
 
@@ -1008,7 +1043,7 @@ def cmd_poll(a):
     if not persist:
         print("dry run: data.json not rebuilt")
         return 0
-    data = build_data([repo / "submissions", state_dir / "accepted"], now=now, signed_map=st.signed)
+    data = build_data([repo / "submissions", state_dir / "accepted"], now=now, signed_map=st.signed, firsts=st.firsts)
     published = False
     h = content_hash(data)
     last = st.data.get("last_publish")
@@ -1121,9 +1156,13 @@ def cmd_reference_snapshot(a):
 def cmd_aggregate(a):
     sig = Path(a.signed_map) if a.signed_map else None
     signed_map = json.loads(sig.read_text()) if sig and sig.exists() else {}
-    data = build_data([Path(d) for d in a.dirs], signed_map=signed_map)
+    ff = Path(a.firsts) if a.firsts else None
+    firsts = json.loads(ff.read_text()) if ff and ff.exists() else {}
+    data = build_data([Path(d) for d in a.dirs], signed_map=signed_map, firsts=firsts)
     if sig:
         write_json_backed_up(sig, signed_map)
+    if ff:
+        write_json_backed_up(ff, firsts)
     write_json_backed_up(Path(a.out), data)
     mt = Path(a.out).resolve().with_name("modules.txt")       # CONTRACT: modules.txt travels with data.json
     if mt != MODULES_TXT.resolve():
@@ -1147,6 +1186,7 @@ def main():
     s = sub.add_parser("reference-snapshot"); s.add_argument("--out", required=True)
     g = sub.add_parser("aggregate"); g.add_argument("dirs", nargs="+"); g.add_argument("--out", required=True)
     g.add_argument("--signed-map", help="login -> signed time (the bot's ledger); default: signing record's recorded")
+    g.add_argument("--firsts", help="login -> first whole proof / first Level 2 times (the bot's ledger, updated)")
     p = sub.add_parser("poll")
     p.add_argument("--repo"); p.add_argument("--workdir", required=True)
     p.add_argument("--live", action="store_true", help="really merge / comment / push (default: print only)")

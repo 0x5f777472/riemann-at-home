@@ -65,6 +65,10 @@ Leaderboard order: modules compiled (desc); among whole proofs, `first_whole_pro
 otherwise earliest `since`. `since` = full UTC timestamp of the person's first accepted record.
 `build_hours` = `busy_seconds` / 3600 of the record that completed the whole proof (null until then).
 `finished` = `recorded` (UTC) of that same record (null until then).
+`finished` and `validated_at` (first record at Level 2 or higher; null below Level 2) come from the bot's ledger
+(`state/firsts.json`, seeded from `bot/firsts-seed.json`) and only ever move earlier: a build is one file that each
+`submit` overwrites, so re-submitting must not change when someone finished (issue #12). Validators are listed by
+`validated_at`.
 `libraries` = top-level folders only, with their first module index. `modules.txt` is published next to index.html
 by whoever publishes data.json (the bot), unchanged from the reference list.
 

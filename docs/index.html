@@ -481,7 +481,7 @@ if (DATA.summary?.people) $("joinn").textContent = fmt(DATA.summary.people);
 const byRank = (a, b) => (a.first_whole_proof_rank ?? 1e9) - (b.first_whole_proof_rank ?? 1e9) || String(a.since).localeCompare(String(b.since));
 const whole = board.filter(p => p.whole_proof);
 // VALIDATORS: built the whole proof and reproduced the reference export (Level 2+), in the order they got there.
-const validators = whole.filter(p => p.level >= 2).sort((a, b) => String(a.finished).localeCompare(String(b.finished)) || byRank(a, b));
+const validators = whole.filter(p => p.level >= 2).sort((a, b) => String(a.validated_at || a.finished).localeCompare(String(b.validated_at || b.finished)) || byRank(a, b));
 const built = whole.filter(p => !(p.level >= 2)).sort(byRank);
 const signed = new Set((DATA.signatures || []).map(g => g.who || g.name));
 const VALIDATED = DATA.validated || [];
