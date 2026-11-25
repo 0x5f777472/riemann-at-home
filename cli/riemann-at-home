@@ -608,8 +608,50 @@ def mathlib_cache_present(folder: Path) -> bool:
     return (folder / ".lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean").exists()
 
 
+def others_text(data: dict, my_cpu: str = "") -> str:
+    """How long the build and the export took on other volunteers' computers, from the leaderboard's data.json:
+    one line per finished build, fastest first, so a newcomer can see where a computer like theirs lands."""
+    rows = [r for r in data.get("leaderboard") or [] if r.get("whole_proof") and r.get("build_hours")]
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: r["build_hours"])
+    hours = [r["build_hours"] for r in rows]
+    exports = [r for r in rows if (r.get("export") or {}).get("done") and (r.get("export") or {}).get("matches")]
+    def h(x):
+        return f"{x:.0f} h" if x >= 10 else f"{x:.1f} h"
+    out = [f"How long it took others ({len(rows)} whole builds so far, from the leaderboard):",
+           f"  build:  {h(hours[0])} to {h(hours[-1])}; half finished within {h(hours[(len(hours) - 1) // 2])}"]
+    if exports:
+        ex = sorted(r["export"]["seconds"] / 3600 for r in exports)
+        out.append(f"  export: {h(ex[0])} to {h(ex[-1])} ({len(ex)} finished); it is slowest on computers with "
+                   "less than about 140 GB of memory")
+    out.append(f"  {'computer':<44} {'build':>6}  {'export':>6}")
+    mine = " ".join(my_cpu.split()).lower()
+    for r in rows:
+        e = r.get("export") or {}
+        ex = h(e["seconds"] / 3600) if e.get("done") and e.get("matches") else "-"
+        cpu = " ".join(str(r.get("machine") or "?").split())
+        like = "  <- like this computer" if mine and cpu.lower() == mine else ""
+        out.append(f"  {cpu[:44]:<44} {h(r['build_hours']):>6}  {ex:>6}{like}")
+    return "\n".join(out)
+
+
+def show_others(ctx: Ctx):
+    """Print others_text from the live leaderboard. Optional: any failure prints nothing."""
+    try:
+        req = urllib.request.Request(SITE_URL + "data.json", headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            text = others_text(json.loads(r.read(5_000_000)), machine().get("cpu", ""))
+    except Exception:
+        return
+    if text:
+        print(text + "\n")
+
+
 def cmd_setup(ctx: Ctx, a):
     disk_heads_up(ctx)
+    if not os.environ.get("RAH_NO_STATS"):
+        show_others(ctx)
     folder = ctx.folder
     if folder.exists():
         tc = toolchain_of(folder)
@@ -1340,8 +1382,41 @@ def cmd_record(ctx: Ctx, a):
     return 0
 
 
+def finish_problem(ctx: Ctx):
+    """Why `finish` now would lose something for good, or None. A final record closes the build: nothing sent after
+    it is accepted (2026-11-25 review: a `finish` during the axiom check sent "not whole" as final; a `finish`
+    before or during the export threw the export result away)."""
+    pf = ctx.home / "export-progress.json"
+    try:
+        ep = json.loads(pf.read_text()) if pf.exists() else {}
+    except ValueError:
+        ep = {}
+    if ep and not ep.get("done") and time.time() - ep.get("updated", 0) < 15 * 60:
+        return "an export is running; finishing now would throw its result away. Let it finish first."
+    mods, done = all_modules(ctx.folder), compiled_modules(ctx.lib)
+    if not mods or any(m not in done for m in mods):
+        return None                                   # a partial build: finishing it is a normal choice
+    if parse_axioms(read(ctx.logs / "axioms.log")) is None:
+        return ("every module is built but the axiom check has not finished (it runs right after the last module, "
+                "a few minutes). Finishing now would send a final record that says the proof is not whole. "
+                "Wait until `riemann-at-home status` shows the axioms.")
+    if not (ctx.conf().get("levels") or {}).get("export"):
+        return ("your whole build has not been exported yet. `finish` closes this build for good, so an export "
+                "result (Level 2) could never be added. Run `riemann-at-home export` first.")
+    return None
+
+
 def cmd_finish(ctx: Ctx, a):
     """Done with this computer: stop the build if it runs, write a final record, submit it (the bot then merges)."""
+    problem = finish_problem(ctx)
+    if a.dry_run:                                 # really nothing: no stop, no record (it used to write a final one)
+        print("would " + ("stop the build, then " if supervisor(ctx) else "") +
+              "write a final record and submit it; after that this build takes no more updates")
+        if problem:
+            print(f"but not now: {problem}")
+        return 0
+    if problem and not a.force:
+        raise Fail(f"{problem}\nTo finish anyway: riemann-at-home finish --force")
     if supervisor(ctx):
         print("stopping the build first")
         cmd_stop(ctx, a)
@@ -1351,7 +1426,7 @@ def cmd_finish(ctx: Ctx, a):
     if not (a.submit or a.dry_run or (ctx.conf().get("submit") or {}).get("auto")):
         print("submit it with: riemann-at-home submit")
         return 0
-    a.record, a.enable_auto, a.disable_auto, a.interval = str(out), False, False, None
+    a.record, a.enable_auto, a.disable_auto, a.interval, a.dry_run = str(out), False, False, None, False
     return cmd_submit(ctx, a)
 
 
@@ -1471,11 +1546,35 @@ def name_problem(name):
     return None
 
 
+def send_now(ctx: Ctx, a, why: str):
+    """After a change the leaderboard should see (sign, sign --cancel, recheck, name): send it to this build's PR now.
+    While a build runs its timer does that; after the build ends nothing else would (2026-11-25 review)."""
+    try:
+        bid = ctx.build_id()
+    except Exception:
+        return
+    st = ctx.conf().get("pr") or {}
+    if st.get("build_id") == bid and st.get("final_sent"):
+        print("This build's final record was already sent, so the leaderboard can't take this change any more. "
+              "To change what it shows, open an issue: https://github.com/Riemann-at-home/riemann-at-home/issues")
+        return
+    if supervisor(ctx):
+        print("the running build's next update sends it (within about 15 minutes)")
+        return
+    if AUTOSUBMIT != "off" and (ctx.conf().get("submit") or {}).get("auto"):
+        print("sending it to your pull request now...")
+        autosubmit(ctx, a, why)
+        print(f"done; details in {ctx.logs / 'autosubmit.log'}")
+    else:
+        print("send it with: riemann-at-home submit")
+
+
 def cmd_name(ctx: Ctx, a):
     """What the Riemann@home page shows for you instead of your GitHub login."""
     if a.clear:
         ctx.set_conf(display=None)
         print("cleared: the Riemann@home page shows your GitHub username")
+        send_now(ctx, a, "name")
         return 0
     if a.display_name is None:
         d = ctx.conf().get("display")
@@ -1489,6 +1588,7 @@ def cmd_name(ctx: Ctx, a):
     ctx.set_conf(display={"display_name": name})
     print(f"display name: {name}")
     print(NAME_NOTICE)
+    send_now(ctx, a, "name")
     return 0
 
 
@@ -2182,8 +2282,8 @@ def tree_memory_gb(root: int) -> float:
 
 
 def fmt_dur(t: float) -> str:
-    t = int(t)
-    return f"{max(1, round(t / 60))} m" if t < 3600 else f"{t // 3600} h {round(t % 3600 / 60)} m"
+    m = max(1, round(int(t) / 60))                # whole minutes first, so 7170 s is "2 h 0 m", never "1 h 60 m"
+    return f"{m} m" if m < 60 else f"{m // 60} h {m % 60} m"
 
 
 EXPORT_QUIET_SECONDS = 60     # no output for this long: say so instead of a frozen "about 1 m left"
@@ -2286,7 +2386,12 @@ def cmd_export(ctx: Ctx, a):
             return 0
         print(f"export check FAILED: {r.get('error')}", file=sys.stderr)
         return 1
+    st = ctx.conf().get("pr") or {}
     rec = whole_build(ctx, a, "export")
+    if st.get("build_id") == rec["build_id"] and st.get("final_sent"):
+        raise Fail("this build's final record was already sent, so an export result can't reach the leaderboard any "
+                   "more (the bot takes no updates after `finish`)")
+    keep_awake()
     cmd = exporter_command(ctx, a)
     ctx.logs.mkdir(parents=True, exist_ok=True)
     log = ctx.logs / "export.log"
@@ -2319,11 +2424,15 @@ def cmd_export(ctx: Ctx, a):
     lv = levels_state(ctx, rec["olean_digest"])
     advance = bool(sign_when_done(ctx)) and match
     same = (lv.get("export") or {}).get("sha256") == sha
-    ctx.set_conf(levels={"build_id": rec["build_id"], "olean_digest": rec["olean_digest"],
-                         "export": {"sha256": sha, "bytes": n, "exporter": f"lean4export {EXPORTER_TAG}",
-                                    "seconds": int(time.time() - t0), "when": iso(time.time())},
-                         "checkers": lv.get("checkers", []) if same else [],
-                         "sign_statement": (bool(lv.get("sign_statement")) and same or advance) and match})
+    if not match and (lv.get("export") or {}).get("sha256") == EXPORT_SHA256:
+        # an earlier export here matched: keep it (and Level 2, checkers, signature); this run is only reported
+        print("this export did not match, but an earlier one on this build did: keeping that result (Level 2 stays)")
+    else:
+        ctx.set_conf(levels={"build_id": rec["build_id"], "olean_digest": rec["olean_digest"],
+                             "export": {"sha256": sha, "bytes": n, "exporter": f"lean4export {EXPORTER_TAG}",
+                                        "seconds": int(time.time() - t0), "when": iso(time.time())},
+                             "checkers": lv.get("checkers", []) if same else [],
+                             "sign_statement": (bool(lv.get("sign_statement")) and same or advance) and match})
     print(f"export sha256 {sha}\nexport bytes  {n:,}")
     if auto:
         autosubmit(ctx, a, "export done")                   # the leaderboard shows the result (and Level 2 if it matches)
@@ -2452,8 +2561,16 @@ def find_checker(ctx: Ctx, name: str, given=None) -> str:
     return str(ctx.home / "tools/bin" / name)
 
 
+def keep_awake():
+    """macOS: no idle sleep while this command runs (export and recheck take hours; only the build had this)."""
+    if IS_MAC and shutil.which("caffeinate"):
+        subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def cmd_recheck(ctx: Ctx, a):
     """Level 3 (optional): run an independent checker on the saved reference export."""
+    keep_awake()
     name = "nanoda" if a.nanoda else "con-leche"
     need, ram = CHECKERS[name], total_ram_gb()
     if ram < need:
@@ -2505,6 +2622,7 @@ def cmd_recheck(ctx: Ctx, a):
     print(f"{name}: {result.upper()} in {secs / 3600:.1f} h (exit {crc}; log: {log})")
     out = write_record(ctx, make_record(ctx, a))
     print(f"{'Level 3. ' if result == 'accept' else ''}record with checkers: {out}")
+    send_now(ctx, a, "recheck")
     other = "con-leche" if name == "nanoda" else "nanoda"
     print(f"the saved export stays at {export} ({EXPORT_BYTES / 1e9:,.1f} GB) so `recheck --{other}` can reuse it; "
           f"delete it when you are done: rm {shlex.quote(str(export))}")
@@ -2533,7 +2651,8 @@ def cmd_sign(ctx: Ctx, a):
             lvc["sign_statement"] = False
             ctx.set_conf(levels=lvc)
             write_record(ctx, make_record(ctx, a))
-            print("signature withdrawn: new records no longer carry it (the leaderboard drops it at the next update)")
+            print("signature withdrawn: new records no longer carry it")
+            send_now(ctx, a, "signature withdrawn")
         else:
             print("not signed in advance any more")
         return 0
@@ -2568,7 +2687,8 @@ def cmd_sign(ctx: Ctx, a):
     lv["sign_statement"] = True
     ctx.set_conf(levels=lv)
     out = write_record(ctx, make_record(ctx, a))
-    print(f"signed: records now carry \"sign_statement\": true; the next update of this build's PR sends it.\n{out}")
+    print(f"signed: records now carry \"sign_statement\": true\n{out}")
+    send_now(ctx, a, "signed")
     share_nudge(ctx, "signed")
     return 0
 
@@ -2952,6 +3072,7 @@ def main(argv=None):
     f.add_argument("--repo", help=argparse.SUPPRESS)
     f.add_argument("--login"); f.add_argument("--upstream")
     f.add_argument("--dry-run", action="store_true", help="print what it would do; change nothing")
+    f.add_argument("--force", action="store_true", help="finish even if it would lose the axiom check or export result")
     f.add_argument("--no-gh-check", action="store_true", help=argparse.SUPPRESS)
     f.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
     nm = sub.add_parser("name", parents=[hidden], help="the name the page shows instead of your GitHub login")

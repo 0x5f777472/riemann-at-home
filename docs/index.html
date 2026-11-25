@@ -464,7 +464,7 @@ $("sigs").innerHTML = sigs.length ? sigs.map(g =>
 // LEFT: everyone who finished the whole proof, in finishing order; then the independent public validations.
 // Export (Level 2) progress, as the bot publishes it: gold bar while it runs, the bot's verdict once done (2026-11-22).
 const GB = b => (b / 1e9).toFixed(1);
-const dur = t => t < 3600 ? `${Math.max(1, Math.round(t / 60))} m` : `${Math.floor(t / 3600)} h ${Math.round(t % 3600 / 60)} m`;
+const dur = t => { const m = Math.max(1, Math.round(t / 60)); return m < 60 ? `${m} m` : `${Math.floor(m / 60)} h ${m % 60} m`; };   // never "1 h 60 m"
 const xpct = x => Math.min(100, Math.floor(x.bytes / x.total * 100));
 const xleft = x => x.left_seconds != null ? ` · about ${dur(x.left_seconds)} left` : "";
 const xmem = (x, w) => x.peak_memory_gb != null ? ` · ${w} ${Math.max(1, Math.round(x.peak_memory_gb))} GB` : "";
@@ -549,8 +549,11 @@ function personal(DATA) {
     sub = `${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}% done, ${fmt(r.modules)} of ${fmt(N)} modules, in spare CPU cycles.`;
     const quiet = ((Date.parse(DATA.generated) || Date.now()) - Date.parse(r.recorded)) / 3600e3;
     if (quiet > 3) sub = `${pct < 10 ? pct.toFixed(1) : Math.floor(pct)}% done, ${fmt(r.modules)} of ${fmt(N)} modules. No update for ${quiet < 48 ? Math.round(quiet) + " h" : Math.round(quiet / 24) + " days"}.`;
+  } else if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(who)) {
+    // not on the board and not a GitHub login: say nothing about them (#@Any%20Name used to print "Any Name is joining")
+    $("headline").innerHTML = HEADLINE; fitBoard(); return;
   } else {
-    line = `<span class="hn">${nm}</span> is joining the Riemann Hypothesis Lean proof`;
+    line = `<span class="hn">@${nm}</span> is joining the Riemann Hypothesis Lean proof`;
     sub = "Their computer's first update shows up here within about 10 minutes.";
   }
   $("headline").innerHTML = `${line}<span class="hs">${sub} <a href="#" id="runtoo">Run one too ↓</a></span>`;

@@ -26,7 +26,7 @@ PARTS = Path.home() / "rh-lean/replay/parts"
 
 
 def cli(*args, home, check=True, timeout=600):
-    env = {**os.environ, "RAH_HOME": str(home), "RAH_SAMPLE_SECONDS": "2"}
+    env = {**os.environ, "RAH_HOME": str(home), "RAH_SAMPLE_SECONDS": "2", "RAH_NO_STATS": "1"}
     r = subprocess.run([sys.executable, "-I", str(SCRIPT), *map(str, args)], capture_output=True, text=True,
                        env=env, timeout=timeout)
     if check and r.returncode != 0:
@@ -1058,6 +1058,117 @@ if a[:2] == ["pr", "create"]:
     save(); print(url); sys.exit(0)
 print("fake gh: unexpected", a, file=sys.stderr); sys.exit(2)
 """
+
+
+class ReviewFixes(Levels):
+    """2026-11-25 review: commands that lost results for good, or never sent them."""
+    locals().update({n: None for n in dir(Levels) if n.startswith("test_")})   # reuse setUp, not Levels' tests
+    def submitted(self):
+        """Patch autosubmit; returns the list of reasons it was called with."""
+        from unittest import mock
+        calls = []
+        p = mock.patch.object(rah, "autosubmit", lambda ctx, a, why: calls.append(why)); p.start(); self.addCleanup(p.stop)
+        p2 = mock.patch.object(rah, "AUTOSUBMIT", "on"); p2.start(); self.addCleanup(p2.stop)
+        return calls
+
+    def auto_on(self):
+        ctx = rah.Ctx(types.SimpleNamespace(folder=str(self.folder), logs=None, test_unofficial_folder=True))
+        ctx.set_conf(submit={"auto": True})
+        return ctx
+
+    def test_finish_dry_run_changes_nothing(self):
+        recs = sorted((self.home / "records").glob("*.json")) if (self.home / "records").exists() else []
+        code, out, err = self.main("finish", "--dry-run")
+        self.assertEqual(code, 0, err); self.assertIn("would", out)
+        now = sorted((self.home / "records").glob("*.json")) if (self.home / "records").exists() else []
+        self.assertEqual(recs, now, "finish --dry-run wrote a record")
+
+    def test_finish_refuses_during_axiom_check(self):
+        (self.home / "logs/axioms.log").write_bytes(b"")        # the build truncates it when the check starts
+        code, out, err = self.main("finish")
+        self.assertEqual(code, 1); self.assertIn("axiom check has not finished", err)
+        self.assertFalse((self.home / "records").exists() and any((self.home / "records").glob("*.json")),
+                         "a final record was written while the axiom check ran")
+
+    def test_finish_refuses_before_export(self):
+        code, out, err = self.main("finish")
+        self.assertEqual(code, 1); self.assertIn("has not been exported yet", err)
+
+    def test_finish_refuses_during_export(self):
+        (self.home / "export-progress.json").write_text(json.dumps({"done": False, "updated": int(time.time())}))
+        code, out, err = self.main("finish")
+        self.assertEqual(code, 1); self.assertIn("an export is running", err)
+
+    def test_second_export_mismatch_keeps_level2_and_signature(self):
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 0, err)
+        code, out, err = self.main("sign", stdin="y\n")
+        self.assertEqual(code, 0, err)
+        bad = self.tmp / "bin/fake-lean4export-differs"                               # a run that does not match
+        bad.write_text(self.exporter.read_text().replace("sys.stdout.buffer.write(chunk)", "sys.stdout.buffer.write(chunk[::-1])"))
+        bad.chmod(0o755)
+        code, out, err = self.main("export", "--exporter", bad)
+        self.assertIn("keeping that result", out)
+        code, _, err = self.main("record")
+        rec = self.latest_record()
+        self.assertEqual(rec.get("export_sha256"), self.sha, "a non-matching re-export erased the matching one")
+        self.assertTrue(rec.get("sign_statement"), "a non-matching re-export erased the signature")
+
+    def test_sign_and_cancel_reach_the_pr_after_the_build(self):
+        self.auto_on(); calls = self.submitted()
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 0, err)
+        code, out, err = self.main("sign", stdin="y\n")
+        self.assertEqual(code, 0, err); self.assertIn("signed", calls)
+        code, out, err = self.main("sign", "--cancel")
+        self.assertEqual(code, 0, err); self.assertIn("signature withdrawn", calls)
+
+    def test_after_final_says_it_cannot_send(self):
+        ctx = self.auto_on()
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 0, err)
+        calls = self.submitted()
+        ctx.set_conf(pr={"build_id": ctx.build_id(), "final_sent": True})
+        code, out, err = self.main("sign", stdin="y\n")
+        self.assertIn("final record was already sent", out); self.assertEqual(calls, [])
+        code, out, err = self.main("export", "--exporter", self.exporter)
+        self.assertEqual(code, 1); self.assertIn("final record was already sent", err)
+
+
+class SetupStats(unittest.TestCase):
+    """setup shows how long the build and the export took on others' computers (from the leaderboard)."""
+    DATA = {"leaderboard": [
+        {"whole_proof": True, "build_hours": 64.3, "machine": "Apple M5 Max", "export": None},
+        {"whole_proof": True, "build_hours": 9.0, "machine": "AMD Ryzen Threadripper PRO 9975WX 32-Cores",
+         "export": {"done": True, "matches": True, "seconds": 9916}},
+        {"whole_proof": True, "build_hours": 48.6, "machine": "Apple M2 Max",
+         "export": {"done": True, "matches": True, "seconds": 94468}},
+        {"whole_proof": True, "build_hours": 41.0, "machine": "Apple M4 Max",
+         "export": {"done": False, "seconds": 84106}},
+        {"whole_proof": False, "build_hours": None, "machine": "Apple M3 Ultra"}]}
+
+    def test_table(self):
+        t = rah.others_text(self.DATA, "Apple  M5 Max")
+        lines = t.splitlines()
+        self.assertIn("4 whole builds", lines[0])
+        self.assertIn("build:  9.0 h to 64 h; half finished within 41 h", t)
+        self.assertIn("export: 2.8 h to 26 h (2 finished)", t)
+        rows = [l for l in lines if l.startswith("  ") and ("Apple" in l or "AMD" in l)]
+        self.assertEqual([r.split()[0] for r in rows], ["AMD", "Apple", "Apple", "Apple"])   # fastest first
+        self.assertTrue(rows[-1].endswith("<- like this computer") and "M5 Max" in rows[-1])
+        self.assertNotIn("M3 Ultra", t)                     # unfinished builds are not listed
+        self.assertIn("41 h       -", t)                    # an export still running shows no time
+
+    def test_empty_and_offline(self):
+        self.assertEqual(rah.others_text({}), "")
+        from unittest import mock
+        with mock.patch.object(rah.urllib.request, "urlopen", side_effect=OSError("offline")), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            rah.show_others(None)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_fmt_dur_never_60_minutes(self):
+        self.assertEqual([rah.fmt_dur(x) for x in (59, 3599, 7170, 86399)], ["1 m", "1 h 0 m", "2 h 0 m", "24 h 0 m"])
 
 
 class RealSubmit(unittest.TestCase):

@@ -27,6 +27,8 @@ and this README (`sign` prints the joint statement from it).
    `submit --disable-auto` turns it off.
 5. `riemann-at-home finish [--submit]`: done on this computer. Stops the build, writes a record with
    `"final": true` and submits it (always when auto-submit is on); the bot then merges the PR.
+   After it, the build takes no more updates, so it refuses while the axiom check or an export is running, or when a
+   whole build hasn't been exported yet (`--force` overrides). `finish --dry-run` only says what it would do.
 6. `riemann-at-home name "Display Name"` / `name --clear`: a label the page shows instead of your GitHub login
    (1 to 32 characters, no control characters). Records then carry `"display_name"`. It's only a label: your pull
    request on GitHub always shows your username, so nobody here is anonymous.
