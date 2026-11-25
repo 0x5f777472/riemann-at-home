@@ -71,4 +71,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sleep 420
-          gh workflow run rahbot.yml --repo "$GITHUB_REPOSITORY" --ref main -f live=true
+          # GitHub sometimes answers HTTP 500 here; one failure used to stop the chain for hours (2026-11-25).
+          for wait in 20 40 60 80 0; do
+            gh workflow run rahbot.yml --repo "$GITHUB_REPOSITORY" --ref main -f live=true && exit 0
+            [ "$wait" = 0 ] && break
+            echo "queueing the next run failed; trying again in ${wait}s"
+            sleep "$wait"
+          done
+          exit 1
