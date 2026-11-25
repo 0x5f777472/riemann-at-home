@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-25T05:59:37Z
+- Updated: 2026-11-25T06:14:09Z
 
 ## Totals
 
@@ -25,7 +25,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, export reproduced, signed the joint statement
 3. ericpruitt (github.com/ericpruitt): all 175,187 modules, built in 9.0 h, AMD Ryzen Threadripper PRO 9975WX 32-Cores, export reproduced, signed the joint statement
 4. Fornax96 (github.com/Fornax96): all 175,187 modules, built in 15.9 h, AMD Ryzen 9 7900X3D 12-Core Processor, export reproduced, signed the joint statement
-5. rib3ye (github.com/rib3ye): all 175,187 modules, built in 48.6 h, Apple M2 Max, export reproduced
+5. rib3ye (github.com/rib3ye): all 175,187 modules, built in 48.6 h, Apple M2 Max, export reproduced, signed the joint statement
 
 ### Whole proof built
 
@@ -37,11 +37,11 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ### Building now
 
-- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 156,568 modules (89.4%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 148,263 modules (84.6%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 119,522 modules (68.2%), Apple M3 Ultra
-- tgragnato (github.com/tgragnato): 39,905 modules (22.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- Andrea Shepard: 26,547 modules (15.2%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
+- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 157,735 modules (90.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+- Genbox (github.com/Genbox): 148,530 modules (84.8%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 119,855 modules (68.4%), Apple M3 Ultra
+- tgragnato (github.com/tgragnato): 40,230 modules (23.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- Andrea Shepard: 28,777 modules (16.4%), AMD Ryzen Threadripper PRO 3975WX 32-Cores
 - framiere (github.com/framiere): 21,921 modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
@@ -85,11 +85,12 @@ We do not certify the mathematics. That the statement is Mathlib's Riemann Hypot
 
 We join the Lean and Mathlib communities in congratulating Levent Alpöge.
 
-Signatures so far: 4.
+Signatures so far: 5.
 - derek-blanchette, signed 2026-11-23
 - jasonhansel, signed 2026-11-23
 - ericpruitt, signed 2026-11-23
 - Fornax96, signed 2026-11-25
+- rib3ye, signed 2026-11-25
 
 ## I’m totally confused what this website is 😭
 
