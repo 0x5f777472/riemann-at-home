@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-25T18:36:44Z
+- Updated: 2026-11-25T18:51:41Z
 
 ## Totals
 
@@ -21,27 +21,27 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volun
 
 ### Validated: built the whole proof and reproduced the export
 
-1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor, export reproduced, signed the joint statement
-2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, export reproduced, signed the joint statement
-3. ericpruitt (github.com/ericpruitt): all 175,187 modules, built in 9.0 h, AMD Ryzen Threadripper PRO 9975WX 32-Cores, export reproduced, signed the joint statement
-4. rib3ye (github.com/rib3ye): all 175,187 modules, built in 48.6 h, Apple M2 Max, export reproduced, signed the joint statement
-5. Fornax96 (github.com/Fornax96): all 175,187 modules, built in 15.9 h, AMD Ryzen 9 7900X3D 12-Core Processor, export reproduced, signed the joint statement
-6. gebhardtr (github.com/gebhardtr): all 175,187 modules, built in 60.4 h, AMD RYZEN AI MAX+ 395 w/ Radeon 8060S, export reproduced, signed the joint statement
-7. xangma (github.com/xangma): all 175,187 modules, built in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, export reproduced, signed the joint statement
+1. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, export reproduced, signed the joint statement
+2. ericpruitt (github.com/ericpruitt): all 175,187 modules, built in 9.0 h, AMD Ryzen Threadripper PRO 9975WX 32-Cores, export reproduced, signed the joint statement
+3. rib3ye (github.com/rib3ye): all 175,187 modules, built in 48.6 h, Apple M2 Max, export reproduced, signed the joint statement
+4. Fornax96 (github.com/Fornax96): all 175,187 modules, built in 15.9 h, AMD Ryzen 9 7900X3D 12-Core Processor, export reproduced, signed the joint statement
+5. gebhardtr (github.com/gebhardtr): all 175,187 modules, built in 60.4 h, AMD RYZEN AI MAX+ 395 w/ Radeon 8060S, export reproduced, signed the joint statement
+6. xangma (github.com/xangma): all 175,187 modules, built in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, export reproduced, signed the joint statement
+7. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor, export reproduced, signed the joint statement
 
 ### Whole proof built
 
 - titojankowski (github.com/titojankowski): all 175,187 modules, built in 64.3 h, Apple M5 Max
 - Ununhexium: all 175,187 modules, built in 57.5 h, AMD Ryzen 7 5700G with Radeon Graphics
-- Andrea Shepard: all 175,187 modules, built in 13.9 h, AMD Ryzen Threadripper PRO 3975WX 32-Cores, exporting now
 - sanzgiri (github.com/sanzgiri): all 175,187 modules, built in 41.0 h, Apple M4 Max, exporting now
+- Andrea Shepard: all 175,187 modules, built in 13.9 h, AMD Ryzen Threadripper PRO 3975WX 32-Cores, exporting now
 
 ### Building now
 
+- Genbox (github.com/Genbox): 170,337 modules (97.2%), 12th Gen Intel(R) Core(TM) i7-12700K
 - muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 169,578 modules (96.8%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 169,197 modules (96.6%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 143,247 modules (81.8%), Apple M3 Ultra
-- tgragnato (github.com/tgragnato): 50,365 modules (28.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- milhouse1337 (github.com/milhouse1337): 143,574 modules (82.0%), Apple M3 Ultra
+- tgragnato (github.com/tgragnato): 50,506 modules (28.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - framiere (github.com/framiere): 21,921 modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
