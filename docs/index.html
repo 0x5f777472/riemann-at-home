@@ -37,7 +37,7 @@
     .global .extra.panel{position:static !important;width:auto !important;height:auto !important;margin:12px 10px 0}
     .global .joinview{order:7}
     .global .panel.blue.boardview{order:5}
-    .global .panel.boardview.runview{order:8}.global .panel.blue.boardview.alsoview{order:8}
+    .global .panel.boardview.runview{order:8}.global .panel.blue.boardview.alsoview{order:8}.global .panel.blue.boardview.morebview{order:8}
     .global .vrow{gap:10px;padding:12px}.global .vrow .rk{display:none}.global .vrow .nm{font-size:20px}
     .global .tier small{display:block;margin:2px 0 0}
     .global .stview{order:9}
@@ -280,6 +280,8 @@
     <h3>Leaderboard</h3><div id="board" class="honor"></div></div>
   <div class="extra panel green boardview runview stack" style="left:22px;top:598px;width:956px">
     <h3>Building now<span id="runcount"></span></h3><div id="running" class="honor"></div></div>
+  <div class="extra panel blue boardview morebview stack" style="left:22px;top:598px;width:956px;display:none">
+    <h3>Leaderboard, continued</h3><div id="board2" class="honor"></div></div>
   <div class="extra panel blue boardview alsoview stack" style="left:22px;top:598px;width:956px">
     <h3>Also checked independently</h3><div id="also" class="honor"></div></div>
   <!-- Joint statement tab (#statement): owner-approved wording, keep exactly -->
@@ -493,14 +495,6 @@ const exportLine = x => !x ? "" : x.done
     `<div class="bar"><i style="width:${(x.bytes / x.total * 100).toFixed(1)}%"></i></div></div>`;
 // The two panels, drawn from a data.json. Called again as soon as the bot publishes new data, so people and their
 // progress update within a minute; the map's replay of new modules still finishes before the page reloads (2026-11-22).
-let BOARD_OPEN = false;                    // compact leaderboard: "Show all" pressed (kept across data refreshes)
-function openBoard(open) {
-  BOARD_OPEN = open;
-  const c = document.querySelector("#board .bcompact"), f = document.querySelector("#board .bfull");
-  if (!c || !f) return;
-  c.hidden = open; f.hidden = !open; fitBoard();
-  if (!open) $("board").parentElement.scrollIntoView({block: "nearest"});
-}
 function renderPanels(DATA) {
 const board = DATA.leaderboard || [];
 // "Join N independent validators": everyone on the leaderboard, updated with the data (every refresh)
@@ -568,10 +562,10 @@ if (!TIERED) {
                       for (const p of small) items.push({p, v: false, cls: " k3"}); }
 }
 const full = items.map(it => it.hdr || it.note || (it.v ? vRow(it.p, it.rank, it.cls) : wRow(it.p, it.cls))).join("");
-// COMPACT (owner, 2026-11-25, temporary): the top TOP rows as one line each, then "Show all N" opens the full board
-// above. To go back to the full board only: COMPACT = false.
-const COMPACT = true, TOP = 5;
-let boardHTML = full;
+// COMPACT (owner, 2026-11-25, temporary): the top TOP rows as one line each; the rest of the board continues in
+// "Leaderboard, continued" below Join in and Building now (owner, 2026-11-26). COMPACT = false: the full board on top.
+const COMPACT = true, TOP = 10;
+let boardHTML = full, board2HTML = "";
 const rowsAll = items.filter(it => it.p);
 if (COMPACT && rowsAll.length > TOP) {
   const shown = new Set(rowsAll.slice(0, TOP));
@@ -588,20 +582,20 @@ if (COMPACT && rowsAll.length > TOP) {
     `${avatar(it.p, 30)}<span class="nm">${person(it.p)}</span><span class="bd">${badges(it.p)}${levelBadge(it.p.level)}` +
     (signed.has(it.p.who || it.p.name) ? '<span class="lvl sg" title="Signed the joint statement">SIGNED</span>' : "") +
     `</span><span class="facts">${cfacts(it.p)}</span></div>`;
-  let compact = "", pendingHdr = "";
-  for (const it of items) {
-    if (it.hdr) pendingHdr = it.hdr;
+  let compact = "", rest = "", pendingHdr = "", hdr = "";   // a tier header goes with the first row under it;
+  for (const it of items) {                                 // the continuation repeats the tier it starts in
+    if (it.hdr) pendingHdr = hdr = it.hdr;
     else if (it.p && shown.has(it)) { compact += pendingHdr + cRow(it); pendingHdr = ""; }
+    else if (it.p) { rest += (rest ? pendingHdr : hdr) + cRow(it); pendingHdr = ""; }
   }
   const hidden = rowsAll.filter(it => !shown.has(it));
   const nv = hidden.filter(it => it.v).length, nw = hidden.filter(it => !it.v && it.p.whole_proof).length,
-        n3 = hidden.filter(it => !it.p.whole_proof).length, nb = board.filter(p => tierOf(p) === "partial").length;
+        n3 = hidden.filter(it => !it.p.whole_proof).length;
   const pl = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const parts = [nv && pl(nv, "more validator", "more validators"), nw && pl(nw, "whole proof", "whole proofs"),
-                 n3 && pl(n3, "300K proof", "300K proofs"), nb && `${nb} building`].filter(Boolean);
-  const total = DATA.summary?.people || board.length;
-  boardHTML = `<div class="bcompact"${BOARD_OPEN ? " hidden" : ""}>${compact}<a href="#" class="showall" data-open="1">Show all ${fmt(total)}${parts.length ? ": " + parts.join(", ") : ""} ▾</a></div>` +
-              `<div class="bfull"${BOARD_OPEN ? "" : " hidden"}>${full}<a href="#" class="showall" data-open="0">Show fewer ▴</a></div>`;
+                 n3 && pl(n3, "300K proof", "300K proofs")].filter(Boolean);
+  boardHTML = `${compact}<a href="#" class="showall">Continued below: ${parts.join(", ")} ▾</a>`;
+  board2HTML = rest;
 }
 // BUILDING NOW: every unfinished build (one per computer); a whole build that is exporting is already listed above.
 const wholeWho = new Set(whole.map(p => p.who || p.name)), whole3 = new Set(board.filter(has3).map(p => p.who || p.name));
@@ -620,7 +614,8 @@ const rRows = running.map((p, k) => {
         `<div class="xb"><i style="width:${(p.export.bytes / p.export.total * 100).toFixed(1)}%"></i></div>` : "") +
       `</div></div>`; }).join("");
 $("board").innerHTML = boardHTML;
-$("board").querySelectorAll(".showall").forEach(a => a.onclick = e => { e.preventDefault(); openBoard(a.dataset.open === "1"); });
+$("board").querySelectorAll(".showall").forEach(a => a.onclick = e => { e.preventDefault(); $("board2").parentElement.scrollIntoView({behavior: "smooth", block: "start"}); });
+$("board2").innerHTML = board2HTML; $("board2").parentElement.style.display = board2HTML ? "" : "none";
 $("also").innerHTML = (VALIDATED.length ? VALIDATED.map(({who, what, url}) =>
     `<div class="val"><b>✓</b> <span class="who">${esc(who)}</span><br><span class="what">${esc(what)}</span> <a href="${esc(url)}" target="_blank">source</a></div>`).join("") +
     `<div class="note">As each person reported it publicly. Their reputation is on the line, and anyone can reproduce the check.</div>` : "");
@@ -670,7 +665,6 @@ function personal(DATA) {
   $("runtoo").onclick = e => { e.preventDefault(); document.querySelector(".joinview").scrollIntoView({behavior: "smooth", block: "center"}); };
   fitBoard();
   const rows = [...document.querySelectorAll("[data-who]")].filter(e => e.dataset.who.toLowerCase() === lc);
-  if (rows.length && !rows.some(e => e.offsetParent !== null) && rows.some(e => e.closest(".bfull"))) openBoard(true);
   const row = rows.find(e => e.offsetParent !== null) || rows[0];
   if (row) { row.classList.add("me"); setTimeout(() => row.scrollIntoView({behavior: "smooth", block: "center"}), 900); }
 }
@@ -693,6 +687,8 @@ function fitBoard() {
   pr.style.height = `${pr.clientHeight - 16 + (h - j.offsetHeight)}px`;   // 16 = the prompt's padding
   j.style.height = r.style.height = `${h}px`;
   let y2 = y + h + STACK_GAP;
+  const b2 = $("board2").parentElement;           // the rest of the leaderboard, under Join in and Building now
+  if (b2.style.display !== "none") { b2.style.top = `${y2}px`; y2 += b2.offsetHeight + STACK_GAP; }
   if (al.style.display !== "none") { al.style.top = `${y2}px`; y2 += al.offsetHeight + STACK_GAP; }
   $("screen").style.height = `${Math.max(SCREEN_H, y2 + 10)}px`;
 }
