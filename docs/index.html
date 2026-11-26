@@ -705,6 +705,9 @@ fitBoard(); personal(DATA); window.addEventListener("hashchange", fitBoard); win
 // Stacked (default, #stack=5): one continuous bar per STACK neighbouring modules (733 across x 48 deep);
 // bar height = builders summed over its modules / (STACK x most builders anywhere), so with one builder
 // a fully built bar reaches the top. Pale top only while some of its modules have no builder yet.
+// Every 4th row of modules (#rows=1 for all), so the ridges stand apart (owner, 2026-11-25).
+const EVERY = Math.max(1, +((H().match(/rows=(\d+)/) || [])[1] || 4));
+const rowShown = r => r % EVERY === 0;
 const STACK = Math.max(1, +((H().match(/stack=(\d+)/) || [])[1] || 1));   // full resolution: one spike per module
 const R = STACK > 1 ? Math.ceil(N / (733 * STACK)) : 239, C = STACK > 1 ? 733 : Math.ceil(N / R);
 // Phones: a front view (no sideways slant): the full width is module positions, rows recede straight up a little.
@@ -723,7 +726,11 @@ function column(col) {                     // [first module, slots, modules buil
   for (let z = 0; z < STACK; z++) { const i = grid[col * STACK + z]; if (i < 0) continue; slots++; if (i0 < 0) i0 = i; if (heights[i]) { k++; s += heights[i]; } }
   return [i0, slots, k, s];
 }
-const barH = (s, slots, r = 0) => s / (slots * maxVal) * maxH * P(r);
+// The builders axis starts one below the fewest builders any built module has (#floor=0 for a zero baseline):
+// every module has most builders, so from 0 the map was a flat block (owner, 2026-11-25).
+const FLOOR = (() => { const m = H().match(/floor=(\d+)/); if (m) return Math.min(+m[1], maxVal - 1);
+  let lo = maxVal; for (const h of heights) if (h && h < lo) lo = h; return Math.max(0, lo - 1); })();
+const barH = (s, slots, r = 0) => Math.max(0, s / slots - FLOOR) / (maxVal - FLOOR) * maxH * P(r);
 // Color: rainbow by position (default), #color=library, one color per top-level library.
 const COLOR = (H().match(/color=(\w+)/) || [])[1] || "spectrum";
 const LIB = (() => { const a = new Int32Array(N); let k = 0;
@@ -749,6 +756,7 @@ function terrain() {
   // Each bar is lit: bright face, darker left side, pale top cap; deeper rows sink into a darker haze.
   const w = Math.max(1, sx * 0.85);           // about one column wide, with a hairline gap
   for (let r = R - 1; r >= 0; r--) {
+    if (!rowShown(r)) continue;
     const depth = r / R, buckets = new Map(), todo = new Path2D(), stepCap = new Path2D();
     for (let c = 0; c < C; c++) {
       const [i0, slots, k, s] = column(r * C + c);
@@ -788,7 +796,7 @@ function terrain() {
   if (PHONE()) return;                         // phones: the readable key under the map replaces these labels
   g.fillStyle = "#e8ecff"; g.font = "bold 11px Arial";
   g.save(); g.translate(px(0, 0) - 22, py(0) - maxH / 2 + 24); g.rotate(-Math.PI / 2); g.fillText("builders", 0, 0); g.restore();
-  g.fillText(`${maxVal}`, px(0, 0) - 10 - 6 * String(maxVal).length, py(0) - maxH + 4); g.fillText("0", px(0, 0) - 12, py(0));
+  g.fillText(`${maxVal}`, px(0, 0) - 10 - 6 * String(maxVal).length, py(0) - maxH + 4); g.fillText(`${FLOOR}`, px(0, 0) - 10 - 6 * String(FLOOR).length, py(0));
   g.save(); g.translate(px(C, 0) + 14, py(0) - 4); g.rotate(-Math.atan2(depthY, depthX)); g.fillText("modules →", 0, 0); g.restore();
   g.font = "bold 10px Arial";
   let lastX = -1e9;
@@ -853,7 +861,7 @@ stars(); terrain();
   const bw = 3 * w;                            // new modules' white bars: 3x wider so first-time visitors see them
   function frame(now) {
     while (next < RECENT.length && now - t0 >= next * W / RECENT.length) {        // its turn: one more builder
-      const i = RECENT[next++]; heights[i]++; live.push({i, at: now, folded: false});
+      const i = RECENT[next++]; heights[i]++; if (rowShown(cell(i)[1])) live.push({i, at: now, folded: false});
     }
     OV.clearRect(0, 0, 1000, 680);
     for (let k = live.length - 1; k >= 0; k--) {
@@ -885,6 +893,7 @@ stars(); terrain();
 let NAMES = null, loading = false;
 const pick = (mx, my) => {               // front-most bar under the mouse; which of its modules by height
   for (let r = 0; r < R; r++) {
+    if (!rowShown(r)) continue;
     const c = Math.round((mx - left - r * kx) / sx); if (c < 0 || c >= C) continue;
     const col = r * C + c, [i0, slots, k, s] = column(col); if (i0 < 0 || !k) continue;
     const y = py(r), h = Math.max(STACK > 1 ? 1.5 : 3, barH(s, slots, r));
