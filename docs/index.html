@@ -436,7 +436,8 @@ If the whole proof finishes, help me run "riemann-at-home export".
 Ask me before installing anything. During setup, show me the tool's notice about what it posts to GitHub and ask me once; if I agree, it posts my progress on its own from then on, so don't ask me again for each update. Also ask me then whether I want to sign the joint statement if my build finishes and my export matches.`;
 $("prompt").textContent = prompt;
 $("copy").onclick = () => { navigator.clipboard.writeText(prompt); $("copy").textContent = "COPIED"; setTimeout(() => $("copy").textContent = "COPY", 1500); };
-const hours = h => h == null ? "" : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;
+const hours = h => h == null ? "" : h < 59.5 / 60 ? `${Math.max(1, Math.round(h * 60))} m`   // under an hour: minutes (owner, 2026-11-26)
+  : h < 100 ? `${(+h).toFixed(1)} h` : `${Math.round(h)} h`;
 const nth = k => k + (["th", "st", "nd", "rd"][(k % 100 - 20) % 10] || ["th", "st", "nd", "rd"][k % 100] || "th");
 const date = t => esc(String(t || "").slice(0, 10));
 const levelBadge = lv => lv >= 3 ? '<span class="lvl l3" title="Export reproduced and re-checked with an independent checker">RE-CHECKED</span>'
