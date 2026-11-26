@@ -218,3 +218,27 @@ Mathlib's RiemannHypothesis; proved theorem is exactly that statement) are their
   itself exits 1). `"module"` is `"unknown"` if the log did not say.
 - data.json: `"crashes"`: one entry per module, `{"module", "codes", "names", "times", "last"}`, the modules that
   crashed on the most people first. Not shown on the page; it is there to learn which module crashes and why.
+
+## Several proofs (2026-11-25): 17M and 300K
+
+- Records may carry `"proof"`: `"300k"`; absent means `"17m"`, so every earlier record and the bot state stay valid.
+  Per proof (the `PROOFS` table in the bot and the CLI; a future proof is one more entry):
+  - 17M: as above (`archive_sha256`, Lean 4.33.1, folder `.../lean`, `modules.txt`, N = 175,187).
+  - 300K: grh-lean (https://github.com/lsernau/grh-lean, Apache-2.0), readable edition `grh/`. Source identity
+    `"source_commit": "72fead102f663d5c7a407964a13dc0cf9d977207"` (instead of `archive_sha256`, which a 300K record
+    must not have); `grh/` tree `2e133df63d7f4da6b3059c4195324f8e9187ba73`; toolchain `leanprover/lean4:v4.35.0`;
+    Mathlib `56a005855ea17e0b0958f73ec801ae140b0a1679`; folder macOS `/Users/Shared/riemann-at-home/grh`, Linux
+    `/opt/riemann-at-home/grh`; module list `bot/modules-300k.txt` (src/**/*.lean sorted byte-wise, N = 803, sha256
+    `f0b574a8...13d1`). Build: plain `lake build`; axioms: `lake env lean scripts/PrintAxioms.lean`. `whole_proof`
+    needs all 803 modules and all five theorems printed; `axioms` = their axioms together, exactly the three.
+  - 300K has no Level 2 reference: `export_*`, `checkers`, `sign_statement` are rejected on 300K records.
+    `olean_digest` has no 300K reference either (not checked, like 17M today).
+- Each proof gets its own `build_id` (one PR per build, same path rules). A build cannot switch proofs.
+- Speed: the same rule; with 803 modules and the 10-minute floor it cannot trigger for 300K (needs 300K timings
+  to tighten).
+- data.json: existing fields keep their 17M meaning. New: top-level `proofs` {key: {label, title, n, toolchain,
+  source, whole_proofs}}; per leaderboard row `proofs` {key: {modules, n, whole, finished, build_hours, computers,
+  machine, rank}} and `tier` ("17m+300k" | "17m" | "300k" | "partial"); `running`/`latest` entries of other proofs
+  carry `"proof"`. Order: both proofs, then 17M only (first_whole_proof_rank), then 300K only (who finished first),
+  then partial builds. Ledger keys `whole_300k`, `hours_300k` only ever move earlier, as for 17M.
+- Version note: the CLI that first knows 300K does not submit 300K records yet (local only).

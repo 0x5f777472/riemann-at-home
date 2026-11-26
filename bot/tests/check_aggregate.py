@@ -69,8 +69,10 @@ assert all(set(e) - {"export"} == {"name", "who", "machine", "modules", "recorde
 assert {"name", "who"} <= set(data["latest"])
 print(f"  running: {len(got)} builds not whole and not final, modules desc  ok")
 
-# order: modules desc; whole proofs by first_whole_proof_rank; then since
+# order (17M-only data, as in these samples): modules desc; whole proofs by first_whole_proof_rank; then since.
+# With 300K builds the tiers come first (tests/check_300k.py).
 rows = data["leaderboard"]
+assert all(r["tier"] == ("17m" if r["whole_proof"] else "partial") for r in rows), "tiers of 17M-only rows"
 assert rows == sorted(rows, key=lambda x: (-x["modules"], x["first_whole_proof_rank"] or 0, x["since"])), "order"
 print("  leaderboard order  ok")
 

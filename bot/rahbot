@@ -1,5 +1,6 @@
 #!/usr/bin/env -S python3 -I
 """rahbot: the Riemann@home v1 bot. Checks volunteers' build records and keeps data.json.
+Two proofs (CONTRACT "Several proofs"): 17M (the original) and 300K (grh-lean, readable edition); see PROOFS.
 
 Spec: ../../shardcheck/CONTRACT.md (formats + acceptance rules). Python 3 stdlib only; run with `python3 -I`.
 One PR per computer (build): it adds submissions/<login>/<build_id>.json and the volunteer's tool overwrites that
@@ -53,7 +54,7 @@ BUILDERS_CAP = 250
 MAX_RECORD_BYTES = 256 * 1024
 CLOCK_SKEW = timedelta(minutes=10)
 
-FIELDS = {"format": str, "tool": str, "archive_sha256": str, "toolchain": str, "mathlib_rev": str,
+FIELDS = {"format": str, "tool": str, "toolchain": str, "mathlib_rev": str,     # + the proof's source_field
           "build_folder": str, "machine": dict, "started": str, "recorded": str, "busy_seconds": (int, float),
           "modules_compiled": int, "bitmap_b64": str, "olean_digest": str, "whole_proof": bool, "axioms": (list, type(None)),
           "build_id": str}
@@ -66,7 +67,8 @@ OPTIONAL = {"export_sha256": str, "export_bytes": int, "checkers": list, "sign_s
             "final": bool,           # set by `riemann-at-home finish`
             "display_name": str,     # shown instead of the login (CONTRACT "Display names")
             "export_progress": dict,  # how far `riemann-at-home export` got (CONTRACT "Export progress")
-            "crashes": list}          # Lean crashes during the build: [{module, code, at}] (newest last, at most 20)
+            "crashes": list,          # Lean crashes during the build: [{module, code, at}] (newest last, at most 20)
+            "proof": str}             # which proof (CONTRACT "Several proofs"); absent = "17m"
 CRASHES_MAX = 20
 CRASH_MODULE_RE = re.compile(r"[^\s\x00-\x1f]{1,200}")
 EXPORT_PROGRESS = {"bytes": int, "seconds": (int, float), "left_seconds": (int, float, type(None)),
@@ -77,6 +79,39 @@ MACHINE_FIELDS = {"os": str, "arch": str, "cpu": str, "cores": int}
 PATH_RE = re.compile(r"^submissions/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([0-9a-f]{16})\.json$")
 BUILD_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+# ---- the proofs (CONTRACT "Several proofs") ------------------------------------------------------------------
+# One entry per proof. A record says which proof it builds with "proof"; absent means "17m", so every record made
+# before the 300K proof existed is still a 17M record. A future proof is one more entry here (and in the CLI's
+# table), plus its module list next to this file. Order matters: the first proof counts most on the leaderboard.
+LEVEL_FIELDS = ("export_sha256", "export_bytes", "checkers", "sign_statement", "export_progress")
+PROOFS = {
+    "17m": {"key": "17m", "label": "17M", "title": "the original proof (Levent Alpöge)", "n": N,
+            "modules_txt": MODULES_TXT, "modules_sha256": MODULES_SHA256,
+            "source_field": "archive_sha256", "source": ARCHIVE_SHA256,     # the official lean.tar.gz
+            "toolchain": TOOLCHAIN, "mathlib_rev": MATHLIB_REV, "build_folders": BUILD_FOLDERS,
+            "axioms": EXPECTED_AXIOMS, "levels": True, "digest_reference": True},
+    # grh-lean (Luke Sernau, Apache-2.0), its readable edition grh/. Source identity = the pinned commit: the CLI
+    # clones it, checks HEAD out at exactly this commit and checks that grh/ is tree GRH_TREE before building.
+    "300k": {"key": "300k", "label": "300K", "title": "the new proof (grh-lean, readable edition)", "n": 803,
+             "modules_txt": HERE / "modules-300k.txt",
+             "modules_sha256": "f0b574a8ad08e8049f098971f03e5cc3087ffb23e2d9f9692a389ccb924813d1",
+             "source_field": "source_commit", "source": "72fead102f663d5c7a407964a13dc0cf9d977207",
+             "toolchain": "leanprover/lean4:v4.35.0", "mathlib_rev": "56a005855ea17e0b0958f73ec801ae140b0a1679",
+             "build_folders": {"/Users/Shared/riemann-at-home/grh", "/opt/riemann-at-home/grh"},
+             # five theorems (riemannHypothesis and the four GRH statements); the record carries the axioms they
+             # depend on together, which must be exactly these three
+             "axioms": EXPECTED_AXIOMS,
+             "levels": False,              # no Level 2 export reference for 300K yet: a whole build is the finish
+             "digest_reference": False},   # no reference build to compare olean_digest with (off for 17M too)
+}
+DEFAULT_PROOF = "17m"
+SOURCE_FIELDS = {p["source_field"] for p in PROOFS.values()}
+
+
+def proof_of(rec) -> str:
+    """The proof a record builds ("17m" when it does not say)."""
+    return rec.get("proof", DEFAULT_PROOF) if isinstance(rec, dict) else DEFAULT_PROOF
 
 # Public full checks of the whole proof, as each person reported it (copied from shardcheck/ui/riemann-at-home.html).
 VALIDATED = [
@@ -89,16 +124,17 @@ VALIDATED = [
 
 
 # ---- helpers ------------------------------------------------------------------------------------------------
-_modules = None
-def modules() -> list:
-    global _modules
-    if _modules is None:
-        raw = MODULES_TXT.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != MODULES_SHA256:
-            sys.exit(f"{MODULES_TXT} is not the published module list (sha256 mismatch)")
-        _modules = raw.decode().split("\n")[:-1]
-        assert len(_modules) == N
-    return _modules
+_modules = {}
+def modules(proof: str = DEFAULT_PROOF) -> list:
+    """The proof's published module list (sorted byte-wise), checked against its pinned sha256."""
+    if proof not in _modules:
+        p = PROOFS[proof]
+        raw = p["modules_txt"].read_bytes()
+        if hashlib.sha256(raw).hexdigest() != p["modules_sha256"]:
+            sys.exit(f"{p['modules_txt']} is not the published module list (sha256 mismatch)")
+        _modules[proof] = raw.decode().split("\n")[:-1]
+        assert len(_modules[proof]) == p["n"]
+    return _modules[proof]
 
 
 def parse_ts(s: str) -> datetime:
@@ -107,8 +143,10 @@ def parse_ts(s: str) -> datetime:
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
-def decode_bitmap(b64: str) -> bytes:
-    """bitmap_b64 -> exactly ceil(N/8) bytes. Raises ValueError. Bounded decompression (no gzip bombs)."""
+def decode_bitmap(b64: str, n: int = N) -> bytes:
+    """bitmap_b64 -> exactly ceil(n/8) bytes (n = the proof's module count). Raises ValueError. Bounded
+    decompression (no gzip bombs)."""
+    N = n
     try:
         gz = base64.b64decode(b64, validate=True)
     except Exception:
@@ -135,8 +173,8 @@ def encode_bitmap(raw: bytes) -> str:
     return base64.b64encode(gzip.compress(raw, mtime=0)).decode()
 
 
-def bits_from_indices(idx) -> bytes:
-    b = bytearray((N + 7) // 8)
+def bits_from_indices(idx, n: int = N) -> bytes:
+    b = bytearray((n + 7) // 8)
     for i in idx:
         b[i >> 3] |= 1 << (i & 7)
     return bytes(b)
@@ -259,14 +297,24 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     # schema
     if not isinstance(rec, dict):
         return ["record is not a JSON object"], flags, None
-    missing = [k for k in FIELDS if k not in rec]
+    pk = proof_of(rec)
+    if not isinstance(pk, str) or pk not in PROOFS:
+        return [f"proof {pk!r} is not one of {sorted(PROOFS)}"], flags, None
+    P = PROOFS[pk]
+    fields = {**FIELDS, P["source_field"]: str}        # 17M: archive_sha256; 300K: source_commit
+    optional = OPTIONAL if P["levels"] else {k: t for k, t in OPTIONAL.items() if k not in LEVEL_FIELDS}
+    missing = [k for k in fields if k not in rec]
     if "anonymous" in rec:                             # dropped: the pull request always shows the GitHub username
         rej.append("anonymous is not offered: your pull request always shows your GitHub username. "
                    "Use a display name (`riemann-at-home name \"...\"`) or none")
-    extra = [k for k in rec if k not in FIELDS and k not in OPTIONAL and k != "anonymous"]
+    levels_here = [k for k in rec if k in LEVEL_FIELDS and k not in optional]
+    if levels_here:
+        rej.append(f"{levels_here} are 17M only: the {P['label']} proof has no export reference yet, so a whole "
+                   "build with the expected axioms is its finish")
+    extra = [k for k in rec if k not in fields and k not in optional and k != "anonymous" and k not in levels_here]
     if missing: rej.append(f"schema: missing fields {missing}")
     if extra: rej.append(f"schema: unknown fields {extra}")
-    for k, t in {**FIELDS, **OPTIONAL}.items():
+    for k, t in {**fields, **OPTIONAL}.items():
         if k in rec and (not isinstance(rec[k], t) or (t is int and isinstance(rec[k], bool))):
             rej.append(f"schema: {k} has the wrong type")
     m = rec.get("machine")
@@ -280,10 +328,11 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     # format / tool known
     if rec["format"] != FORMAT: rej.append(f"format {rec['format']!r} is not {FORMAT!r}")
     if rec["tool"] not in KNOWN_TOOLS: rej.append(f"tool {rec['tool']!r} is not a known release")
-    # constants
-    for k, want in (("archive_sha256", ARCHIVE_SHA256), ("toolchain", TOOLCHAIN), ("mathlib_rev", MATHLIB_REV)):
-        if rec[k] != want: rej.append(f"{k} {rec[k]!r} is not the pinned {want!r}")
-    if rec["build_folder"] not in BUILD_FOLDERS: rej.append(f"build_folder {rec['build_folder']!r} is not a fixed build folder")
+    # constants (the proof's own)
+    for k, want in ((P["source_field"], P["source"]), ("toolchain", P["toolchain"]), ("mathlib_rev", P["mathlib_rev"])):
+        if rec[k] != want: rej.append(f"{k} {rec[k]!r} is not the pinned {want!r}" + ("" if pk == DEFAULT_PROOF else f" for {P['label']}"))
+    if rec["build_folder"] not in P["build_folders"]:
+        rej.append(f"build_folder {rec['build_folder']!r} is not a fixed {P['label']} build folder")
     # identity: path login == PR author; path build_id == record build_id; prev is this build's
     if not BUILD_ID_RE.match(rec["build_id"]): rej.append(f"build_id {rec['build_id']!r} is not 16 lowercase hex chars")
     pm = PATH_RE.match(repo_path or "")
@@ -298,6 +347,9 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
         rej.append("this build was already marked final; start a new build for more")
     if prev is not None and prev.get("build_id") != rec["build_id"]:
         rej.append(f"previous record is from build {prev.get('build_id')!r}, not this build {rec['build_id']!r}")
+    if prev is not None and proof_of(prev) != pk:
+        rej.append(f"this build was a {PROOFS.get(proof_of(prev), {}).get('label', proof_of(prev))} build; a build "
+                   "cannot switch proofs (each proof gets its own build_id)")
     # times
     try:
         started, recorded = parse_ts(rec["started"]), parse_ts(rec["recorded"])
@@ -309,8 +361,9 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     if rec["busy_seconds"] < 0 or rec["busy_seconds"] > (recorded - started).total_seconds() + 60:
         rej.append("busy_seconds is negative or longer than started..recorded")
     # bitmap
+    n = P["n"]
     try:
-        raw = decode_bitmap(rec["bitmap_b64"])
+        raw = decode_bitmap(rec["bitmap_b64"], n)
     except ValueError as e:
         rej.append(f"bitmap: {e}")
         return rej, flags, None
@@ -320,12 +373,12 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     if pop == 0: rej.append("bitmap is empty")
     # whole proof
     if rec["whole_proof"]:
-        if pop != N: rej.append(f"whole_proof claimed but only {pop:,} of {N:,} modules compiled")
-        ax = rec["axioms"]
+        if pop != n: rej.append(f"whole_proof claimed but only {pop:,} of {n:,} modules compiled")
+        ax, want_ax = rec["axioms"], P["axioms"]
         if ax is None: rej.append("whole_proof claimed but the axiom check did not run (axioms is null)")
-        elif not all(isinstance(x, str) for x in ax) or len(ax) != len(EXPECTED_AXIOMS) or set(ax) != set(EXPECTED_AXIOMS):
-            bad = sorted(set(map(str, ax)) - set(EXPECTED_AXIOMS))
-            rej.append(f"whole_proof axioms {ax} are not exactly {EXPECTED_AXIOMS}" + (f" (extra: {bad})" if bad else ""))
+        elif not all(isinstance(x, str) for x in ax) or len(ax) != len(want_ax) or set(ax) != set(want_ax):
+            bad = sorted(set(map(str, ax)) - set(want_ax))
+            rej.append(f"whole_proof axioms {ax} are not exactly {want_ax}" + (f" (extra: {bad})" if bad else ""))
     elif rec["axioms"] is not None and not all(isinstance(a, str) for a in rec["axioms"]):
         rej.append("axioms must be null or a list of names")
     # levels: export reproduced (2), independent checker accepted it (3); signing needs Level 2+
@@ -373,7 +426,7 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     prev_raw, since = None, started
     if prev is not None:
         try:
-            prev_raw = decode_bitmap(prev["bitmap_b64"])
+            prev_raw = decode_bitmap(prev["bitmap_b64"], n)
             since = parse_ts(prev["recorded"])
         except (KeyError, ValueError) as e:
             rej.append(f"previous accepted record unreadable: {e}")
@@ -394,8 +447,10 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
         rej.append(f"speed implausible: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (limit {reject_at:,}/h for {cores} cores)")
     elif rate > flag_at:
         flags.append(f"fast: {new:,} new modules in {hours:.2f} h = {rate:,.0f}/h (flag above {flag_at:,}/h for {cores} cores)")
-    # digest (off until M0)
-    if check_digest and not rej:
+    # digest (off until M0; there is no reference build for 300K at all)
+    if check_digest and not rej and not P["digest_reference"]:
+        flags.append(f"olean_digest not checked: no {P['label']} reference build")
+    elif check_digest and not rej:
         try:
             want = reference_digest(raw)
             if rec["olean_digest"].lower() != want:
@@ -446,15 +501,29 @@ def export_view(r):
     return v
 
 
+def ledger_keys(proof: str):
+    """The finish-time ledger's keys for a proof: (finish time, build hours). 17M keeps its old names."""
+    return ("whole", "hours") if proof == DEFAULT_PROOF else (f"whole_{proof}", f"hours_{proof}")
+
+
+def tier_of(finished: list) -> str:
+    """Leaderboard tier from the proofs a person finished (PROOFS order): "17m+300k", "17m", "300k", or "partial"."""
+    return "+".join(finished) if finished else "partial"
+
+
 def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> dict:
     """signed_map: login -> time their signing version was accepted (the bot records it); people missing from it get
     the signing record's `recorded` time (aggregate without the bot's ledger).
-    firsts: login -> {"whole": first whole-proof `recorded`, "validated": first Level 2+ `recorded`} (the bot's ledger,
-    updated here). A build is ONE file that each `submit` overwrites, so the records alone only show the newest
-    version: without the ledger, re-submitting a finished build moved its finish date (issue #12, 2026-11-25).
-    Each entry only ever moves earlier.
+    firsts: login -> {"whole": first whole-proof `recorded`, "validated": first Level 2+ `recorded`, "hours": build
+    hours then; and for other proofs "whole_300k", "hours_300k"} (the bot's ledger, updated here). A build is ONE file
+    that each `submit` overwrites, so the records alone only show the newest version: without the ledger,
+    re-submitting a finished build moved its finish date (issue #12, 2026-11-25). Each entry only ever moves earlier.
     published: the data.json already on main. Its finish, Level 2 and signing times are merged in (earlier wins), so
-    losing the bot's state (and its backups) cannot move them either."""
+    losing the bot's state (and its backups) cannot move them either.
+    Leaderboard (CONTRACT "Several proofs"): one row per person. The original fields (modules, whole_proof,
+    build_hours, finished, first_whole_proof_rank, level, ...) stay about 17M; `proofs` has one entry per proof the
+    person built. Rows are ordered by tier: every proof finished, then 17M only, then 300K only, then partial builds;
+    inside a tier by who finished the tier's first proof first; partial builds by modules, then since."""
     signed_map = {} if signed_map is None else signed_map
     firsts = {} if firsts is None else firsts
     signatures = []
@@ -475,53 +544,74 @@ def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> 
             login = by_key.get(r.get("who") or r.get("name"))
             if not login:
                 continue
-            for k, field in (("whole", "finished"), ("validated", "validated_at")):
-                if r.get(field):
+            got = [("whole", r.get("finished")), ("validated", r.get("validated_at"))]
+            got += [(ledger_keys(pk)[0], (pv or {}).get("finished")) for pk, pv in (r.get("proofs") or {}).items()
+                    if pk in PROOFS and isinstance(pv, dict)]
+            for k, t in got:
+                if t:
                     e = firsts.setdefault(login, {})
-                    e[k] = min(e.get(k) or r[field], r[field])
+                    e[k] = min(e.get(k) or t, t)
         for g in published.get("signatures") or []:
             login = by_key.get(g.get("who") or g.get("name"))
             if login and g.get("signed"):
                 signed_map[login] = min(signed_map.get(login) or g["signed"], g["signed"])
-    counts = bytearray(N)
+    counts = bytearray(N)                              # terrain: the 17M proof's modules
     rows, latest, running, crashes = [], None, [], {}
     for who, builds in sorted(people.items()):
         name, shown = ident[who]
-        union = 0                                      # the person = union of their builds
-        for _, _, raw in builds.values():
-            union |= int.from_bytes(raw, "little")
-        raw = union.to_bytes((N + 7) // 8, "little")
-        for i in indices(raw):                         # one person counts once per module, however many builds
-            if counts[i] < BUILDERS_CAP:
-                counts[i] += 1
-        recs = [v[1] for v in builds.values()]
-        wholes = sorted((r for r in recs if r["whole_proof"]), key=lambda r: r["recorded"])
-        whole = wholes[0] if wholes else None          # first whole build
         mine = firsts.setdefault(who, {})
-        if whole:
-            mine["whole"] = min(mine.get("whole") or whole["recorded"], whole["recorded"])
-            mine.setdefault("hours", round(whole["busy_seconds"] / 3600, 1))   # as it was when they finished
+        by_proof = {}
+        for build_id, v in builds.items():
+            by_proof.setdefault(proof_of(v[1]), {})[build_id] = v
+        proofs = {}
+        for pk, pb in by_proof.items():                # per proof: union of that proof's builds
+            P, union = PROOFS[pk], 0
+            for _, _, raw in pb.values():
+                union |= int.from_bytes(raw, "little")
+            precs = [v[1] for v in pb.values()]
+            pw = sorted((r for r in precs if r["whole_proof"]), key=lambda r: r["recorded"])
+            kw, kh = ledger_keys(pk)
+            if pw:
+                mine[kw] = min(mine.get(kw) or pw[0]["recorded"], pw[0]["recorded"])
+                mine.setdefault(kh, round(pw[0]["busy_seconds"] / 3600, 1))   # as it was when they finished
+            proofs[pk] = {"modules": union.bit_count(), "n": P["n"], "whole": bool(pw),
+                          "finished": mine[kw] if pw else None, "build_hours": mine[kh] if pw else None,
+                          "computers": len(pb), "rank": None,
+                          "machine": mach(max(precs, key=lambda r: (r["modules_compiled"], r["recorded"])))}
+            if pk == DEFAULT_PROOF:
+                raw17 = union.to_bytes((N + 7) // 8, "little")
+                for i in indices(raw17):               # one person counts once per module, however many builds
+                    if counts[i] < BUILDERS_CAP:
+                        counts[i] += 1
+        recs = [v[1] for v in by_proof.get(DEFAULT_PROOF, {}).values()]     # the 17M fields below
+        allrecs = [v[1] for v in builds.values()]
+        p17 = proofs.get(DEFAULT_PROOF) or {}
+        whole = bool(p17.get("whole"))
         lv2 = [r["recorded"] for r in recs if record_level(r) >= 2]
         if lv2:
             mine["validated"] = min(mine.get("validated") or min(lv2), min(lv2))
         if not mine:
             del firsts[who]
-        largest = max(recs, key=lambda r: (r["modules_compiled"], r["recorded"]))
-        level = max(record_level(r) for r in recs)
+        level = max((record_level(r) for r in recs), default=1)
         signing = sorted((r for r in recs if r.get("sign_statement") and record_level(r) >= 2), key=lambda r: r["recorded"])
         if signing:
             signed_map.setdefault(who, signing[0]["recorded"])
             signatures.append({"who": shown, "name": name, "signed": signed_map[who], "machine": mach(signing[0]),
                                "level": level, "checkers": sorted({c["name"] for r in recs for c in r.get("checkers") or []
                                                                    if c.get("result") == "accept" and c.get("name") in KNOWN_CHECKERS})})
-        rows.append({"name": name, "who": shown, "_login": who, "level": level, "modules": popcount(raw), "whole_proof": whole is not None,
-                     "build_hours": mine["hours"] if whole else None,
-                     "finished": mine["whole"] if whole else None,
+        finished = [pk for pk in PROOFS if (proofs.get(pk) or {}).get("whole")]
+        rows.append({"name": name, "who": shown, "_login": who, "level": level, "modules": p17.get("modules", 0),
+                     "whole_proof": whole,
+                     "build_hours": p17["build_hours"] if whole else None,
+                     "finished": p17["finished"] if whole else None,
                      "validated_at": mine["validated"] if lv2 else None,
-                     "machine": mach(largest), "computers": len(builds),
-                     "since": min(r["started"] for r in recs),
-                     "_first_whole": mine["whole"] if whole else None})
-        for r in recs:                                 # which modules crash Lean, and on whose computers
+                     # machine: of their largest 17M build (as before); 300K-only people: of their 300K build
+                     "machine": (p17 or next(iter(proofs[pk] for pk in PROOFS if pk in proofs)))["machine"],
+                     "computers": len(builds),
+                     "since": min(r["started"] for r in allrecs),
+                     "proofs": {pk: proofs[pk] for pk in PROOFS if pk in proofs},
+                     "tier": tier_of(finished)})
+        for r in allrecs:                              # which modules crash Lean, and on whose computers
             for c in r.get("crashes") or []:
                 k = crashes.setdefault(c["module"], {"module": c["module"], "codes": set(), "names": set(), "times": 0, "last": ""})
                 k["codes"].add(c["code"]); k["names"].add(name); k["times"] += 1; k["last"] = max(k["last"], c["at"])
@@ -529,10 +619,13 @@ def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> 
         if exp:
             rows[-1]["export"] = export_view(exp)
         for build_id, (_, r, _) in builds.items():
+            pk = proof_of(r)
             exporting = bool(r.get("export_progress")) and not r["export_progress"]["done"]
             if (not r["whole_proof"] or exporting) and not r.get("final"):   # running: building, or exporting
                 e = {"name": name, "who": shown, "build_id": build_id, "machine": mach(r),
                      "modules": r["modules_compiled"], "recorded": r["recorded"]}
+                if pk != DEFAULT_PROOF:
+                    e["proof"] = pk                    # absent = 17M, as in records
                 if exporting:
                     e["export"] = export_view(r)
                 if shown is None:
@@ -540,14 +633,28 @@ def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> 
                 running.append(e)
             if latest is None or r["recorded"] > latest["recorded"]:
                 latest = {"name": name, "who": shown, "modules": r["modules_compiled"], "recorded": r["recorded"], "machine": mach(r)}
-    for rank, row in enumerate(sorted((x for x in rows if x["_first_whole"]), key=lambda x: x["_first_whole"]), 1):
-        row["first_whole_proof_rank"] = rank
+                if pk != DEFAULT_PROOF:
+                    latest["proof"] = pk
+    # who finished each proof first: 17M keeps its old field, every proof gets proofs[pk]["rank"]
+    for pk in PROOFS:
+        done = sorted((x for x in rows if (x["proofs"].get(pk) or {}).get("whole")),
+                      key=lambda x: (x["proofs"][pk]["finished"], x["_login"]))
+        for rank, row in enumerate(done, 1):
+            row["proofs"][pk]["rank"] = rank
     for row in rows:
-        row.setdefault("first_whole_proof_rank", None)
-        del row["_first_whole"]
-    # modules desc; among whole proofs, who finished first; otherwise earliest since
-    rows.sort(key=lambda x: (-x["modules"], not x["whole_proof"], x["first_whole_proof_rank"] or 10**9, x["since"],
-                             x.pop("_login")))
+        row["first_whole_proof_rank"] = (row["proofs"].get(DEFAULT_PROOF) or {}).get("rank")
+    order = list(PROOFS)
+
+    def place(x):
+        """Tier first (more proofs finished; then the heavier proof: PROOFS order), then inside the tier who
+        finished its first proof first; partial builds by modules (17M first), then since."""
+        fin = [order.index(pk) for pk in order if (x["proofs"].get(pk) or {}).get("whole")]
+        if fin:
+            return (0, -len(fin), fin, x["proofs"][order[fin[0]]]["rank"], (), x["since"], x["_login"])
+        return (1, 0, [], 0, tuple(-(x["proofs"].get(pk) or {}).get("modules", 0) for pk in order), x["since"], x["_login"])
+    rows.sort(key=place)
+    for row in rows:
+        del row["_login"]
     libs, prev = [], None
     for i, m in enumerate(mods):
         top = m.split(".")[0]
@@ -561,9 +668,15 @@ def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> 
         "summary": {"people": len(rows), "whole_proofs": sum(r["whole_proof"] for r in rows),
                     "modules_built_once": sum(1 for c in counts if c >= 1),
                     "modules_built_3x": sum(1 for c in counts if c >= 3)},
+        # the proofs this board counts (CONTRACT "Several proofs"); `n`, `libraries` and the terrain are 17M's
+        "proofs": {pk: {"label": P["label"], "title": P["title"], "n": P["n"], "toolchain": P["toolchain"],
+                        "source": {P["source_field"]: P["source"]},
+                        "whole_proofs": sum(1 for r in rows if (r["proofs"].get(pk) or {}).get("whole"))}
+                   for pk, P in PROOFS.items()},
         "leaderboard": rows,
         "latest": latest,
-        "running": sorted(running, key=lambda x: (-x["modules"], x["recorded"], x["name"], x.get("build_id", ""))),
+        "running": sorted(running, key=lambda x: (-x["modules"] / PROOFS[x.get("proof", DEFAULT_PROOF)]["n"],
+                                                  x["recorded"], x["name"], x.get("build_id", ""))),
         "signatures": sorted(signatures, key=lambda x: (x["signed"], x["name"])),
         "validated": VALIDATED,
         # Lean crashes reported by builds (the tool restarts a crashed build): which module, how often, for whom
@@ -642,9 +755,10 @@ def homepage_markdown(data: dict, index_html: str) -> str:
         "",
         "Every independent build of the AI proof of the Riemann Hypothesis.",
         "",
-        f"Levent Alpöge's Lean proof of the Riemann Hypothesis has {f(n)} modules. Volunteers build it on their own "
-        "computers with the official tools, and each computer reports its progress through a public GitHub pull "
-        "request. A bot checks every report and publishes this page.",
+        f"Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has {f(n)} modules. A second, much shorter "
+        "proof (300K: the readable edition of grh-lean, about 300,000 lines) is built the same way. Volunteers build "
+        "them on their own computers with the official tools, and each computer reports its progress through a "
+        "public GitHub pull request. A bot checks every report and publishes this page.",
         "",
         f"- Live page: {SITE_URL}",
         "- Code and instructions: https://github.com/riemann-at-home/riemann-at-home",
@@ -657,28 +771,63 @@ def homepage_markdown(data: dict, index_html: str) -> str:
         f"- Builders: {f(sm['people'])}",
         f"- Modules built at least once: {f(sm['modules_built_once'])} of {f(n)} ({pct(sm['modules_built_once'])})",
         f"- Modules built 3 or more times: {f(sm['modules_built_3x'])}",
-        f"- Whole proofs finished: {f(sm['whole_proofs'])}",
-        "",
+        f"- Whole proofs finished (17M): {f(sm['whole_proofs'])}",
     ]
-    # One leaderboard, as on the page (2026-11-23): validators, then whole proofs, then everyone building.
-    whole = sorted((r for r in data.get("leaderboard") or [] if r.get("whole_proof")),
-                   key=lambda r: r.get("first_whole_proof_rank") or 10**9)
-    built = lambda r: (f"all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else "")
-                       + (f", {r['machine']}" if r.get("machine") else ""))
-    vals = sorted((r for r in whole if (r.get("level") or 0) >= 2), key=lambda r: str(r.get("validated_at") or r.get("finished")))
+    for pk, pv in (data.get("proofs") or {}).items():
+        if pk != DEFAULT_PROOF:
+            out.append(f"- Whole proofs finished ({pv['label']}): {f(pv.get('whole_proofs', 0))}")
+    out.append("")
+    # One leaderboard, as on the page: one row per person, in tiers (both proofs, 17M only, 300K only); inside the
+    # 17M tiers validators first (as on the page since 2026-11-23), then everyone building.
+    info = data.get("proofs") or {DEFAULT_PROOF: {"label": "17M", "n": n}}
+    board = data.get("leaderboard") or []
+    hrs = lambda x: f"{x:.1f} h" if x < 100 else f"{x:.0f} h"
+    def built(r):
+        out = []
+        for pk, pv in (r.get("proofs") or {}).items():
+            if pv.get("whole"):
+                lab = info.get(pk, {}).get("label", pk)
+                out.append(f"{lab}: all {f(pv['modules'])} modules" + (f" in {hrs(pv['build_hours'])}" if pv.get("build_hours") else ""))
+        if not out and r.get("whole_proof"):           # a data.json from before `proofs`
+            out.append(f"all {f(r['modules'])} modules" + (f", built in {r['build_hours']:.1f} h" if r.get("build_hours") else ""))
+        return "; ".join(out) + (f", {r['machine']}" if r.get("machine") else "")
     signed = {g.get("who") or g.get("name") for g in data.get("signatures") or []}
-    out += ["## Leaderboard", "", "### Validated: built the whole proof and reproduced the export", ""]
-    out += [f"{k}. {who(r)}: {built(r)}, export reproduced" + (", signed the joint statement" if (r.get("who") or r["name"]) in signed else "")
-            for k, r in enumerate(vals, 1)] or ["No one yet."]
-    rest = [r for r in whole if (r.get("level") or 0) < 2]
-    if rest:
-        out += ["", "### Whole proof built", ""]
-        out += [f"- {who(r)}: {built(r)}" + (", exporting now" if (r.get("export") or {}).get("done") is False else "") for r in rest]
-    out += ["", "### Building now", ""]
-    done_who = {r.get("who") or r["name"] for r in whole}
-    run = sorted((r for r in data.get("running") or [] if not (r["modules"] >= n and (r.get("who") or r["name"]) in done_who)),
-                 key=lambda r: -r["modules"])
-    out += [f"- {who(r)}: {f(r['modules'])} modules ({pct(r['modules'])})" + (f", {r['machine']}" if r.get("machine") else "")
+    def extra(r):
+        out = ""
+        if (r.get("level") or 0) >= 2:
+            out += ", export reproduced" + (", signed the joint statement" if (r.get("who") or r["name"]) in signed else "")
+        elif (r.get("export") or {}).get("done") is False:
+            out += ", exporting now"
+        return out
+    tiers = {}
+    for r in board:
+        t = r.get("tier") or ("17m" if r.get("whole_proof") else "partial")
+        tiers.setdefault(t, []).append(r)
+    def ordered(rs):                                   # 17M tiers: validators first, in the order they got there
+        return (sorted((r for r in rs if (r.get("level") or 0) >= 2), key=lambda r: str(r.get("validated_at") or r.get("finished")))
+                + [r for r in rs if (r.get("level") or 0) < 2])
+    out += ["## Leaderboard", ""]
+    rank, any_row = 0, False
+    for t, title in [("+".join(info), "Both proofs built")] + [(pk, f"{v['label']} proof built") for pk, v in info.items()]:
+        rs = tiers.get(t) or []
+        if not rs:
+            continue
+        any_row = True
+        out += [f"### {title}", ""]
+        for r in (ordered(rs) if DEFAULT_PROOF in t.split("+") else rs):
+            rank += 1
+            out.append(f"{rank}. {who(r)}: {built(r)}{extra(r)}")
+        out.append("")
+    if not any_row:
+        out += ["No one has built a whole proof yet.", ""]
+    out += ["### Building now", ""]
+    done_who = {(r.get("who") or r["name"], pk) for r in board for pk, pv in (r.get("proofs") or {}).items() if pv.get("whole")}
+    done_who |= {(r.get("who") or r["name"], DEFAULT_PROOF) for r in board if r.get("whole_proof")}
+    tot = lambda r: (info.get(r.get("proof", DEFAULT_PROOF)) or {}).get("n", n)
+    run = sorted((r for r in data.get("running") or [] if not (r["modules"] >= tot(r) and (r.get("who") or r["name"], r.get("proof", DEFAULT_PROOF)) in done_who)),
+                 key=lambda r: -r["modules"] / tot(r))
+    out += [f"- {who(r)}: {f(r['modules'])} of {f(tot(r))} {(info.get(r.get('proof', DEFAULT_PROOF)) or {}).get('label', '')} modules "
+            f"({r['modules'] / tot(r) * 100:.1f}%)" + (f", {r['machine']}" if r.get("machine") else "")
             for r in run] or ["No builds in progress."]
     val = data.get("validated") or []
     if val:
@@ -1097,6 +1246,10 @@ def cmd_poll(a):
         write_json_backed_up(site / "data.json", data, backup=False)   # git keeps history
         shutil.copyfile(MODULES_TXT, site / "modules.txt")             # CONTRACT: published next to index.html
         files = ["docs/data.json", "docs/modules.txt"]
+        for pk, P in PROOFS.items():                                   # and each other proof's list
+            if pk != DEFAULT_PROOF:
+                shutil.copyfile(P["modules_txt"], site / P["modules_txt"].name)
+                files.append(f"docs/{P['modules_txt'].name}")
         try:                                                           # the homepage as markdown, for AI readers
             (site / "index.md").write_text(homepage_markdown(data, (site / "index.html").read_text()))
             files.append("docs/index.md")
