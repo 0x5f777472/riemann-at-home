@@ -1730,6 +1730,29 @@ class Proof300K(unittest.TestCase):
         self.assertNotIn("proof", rec17); self.assertEqual(rec17["archive_sha256"], rah.ARCHIVE_SHA256)
         self.assertNotEqual(rec17["build_id"], rec["build_id"])
 
+    def test_submit_300k_same_pr_path(self):
+        """300K is submitted like 17M (the bot ranks it since 2026-11-25): one PR per build, nothing is held back."""
+        fake_300k(self.tmp / "g", compiled={0, 1, 4})
+        out = Path(cli("record", "--proof", "300k", "--folder", self.tmp / "g", "--test-unofficial-folder",
+                       home=self.home).stdout.strip().splitlines()[-1])
+        rec = json.loads(out.read_text()); bid = rec["build_id"]
+        P = rah.PROOFS["300k"]; bits = [i % 3 == 0 for i in range(P["n"])]     # as a real 300K build would send it
+        rec.update(build_folder=P["folders"]["Darwin"], bitmap_b64=rah.encode_bitmap(bits), modules_compiled=sum(bits))
+        out.write_text(json.dumps(rec))
+        repo = self.tmp / "repo"; repo.mkdir()
+        g = ["git", "-C", str(repo)]
+        subprocess.run(g + ["init", "-q", "-b", "main"], check=True)
+        subprocess.run(g + ["remote", "add", "origin", "https://github.com/example-org/riemann-at-home.git"], check=True)
+        subprocess.run(g + ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q",
+                            "--allow-empty", "-m", "init"], check=True)
+        r = cli("submit", "--proof", "300k", "--repo", repo, "--record", out, "--login", "test-volunteer", "--dry-run",
+                "--no-gh-check", home=self.home)
+        self.assertNotIn("submitted yet", r.stdout)
+        self.assertIn("DRY RUN", r.stdout)
+        self.assertIn(f"as:     submissions/test-volunteer/{bid}.json on branch rah/{bid}", r.stdout)
+        self.assertIn("gh pr create", r.stdout)
+        self.assertFalse((repo / "submissions").exists())
+
     def test_record_refuses_another_source(self):
         fake_300k(self.tmp / "g", commit="ce4eb6fb2591d62095c5aa61b7a21414c7385bd5")
         ctx = rah.Ctx(self.ns(proof="300k", folder=str(self.tmp / "g")))

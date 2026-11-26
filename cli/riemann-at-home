@@ -2307,15 +2307,8 @@ def agree(ctx: Ctx, name=None, upstream=None):
     ensure_companion(ctx)
 
 
-SUBMIT_LATER = {"300k": "300K results can't be submitted yet: the leaderboard doesn't take them. Your build and its "
-                         "records stay on this computer, and they will be submitted once the leaderboard supports them."}
-
-
 def cmd_submit(ctx: Ctx, a):
-    if ctx.proof in SUBMIT_LATER and not (getattr(a, "agree", False) or a.enable_auto or a.disable_auto
-                                          or a.interval is not None):
-        print(SUBMIT_LATER[ctx.proof])                # nothing is pushed, opened or posted for this proof yet
-        return 0
+    # every proof submits the same way (one PR per build); a 300K record says "proof": "300k" (CONTRACT "Several proofs")
     if getattr(a, "agree", False):
         agree(ctx, a.name, a.upstream)
         if ctx.p["levels"]:

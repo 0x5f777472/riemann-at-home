@@ -54,7 +54,8 @@ before setup asked. 300K: `git clone` of https://github.com/lsernau/grh-lean, ch
 the record is whole only when all five theorems were printed. Records carry `"proof": "300k"` and
 `"source_commit"` instead of `archive_sha256`. Its files live in `~/.riemann-at-home/300k/` (own build_id, logs,
 records, PR state); consent, display name and submit settings are shared. `status` shows every proof set up here.
-`export`, `recheck` and `sign` are 17M only. In this version 300K `submit` (and auto-submit) posts nothing.
+`export`, `recheck` and `sign` are 17M only. `submit` (and auto-submit) posts 300K records the same way as 17M ones:
+one pull request per build, on the same leaderboard.
 
 ## Levels
 

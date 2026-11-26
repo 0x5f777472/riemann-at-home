@@ -18,8 +18,8 @@ the original **17M** build. `setup` asks which one to build: 1) the new proof (3
 `72fead102f663d5c7a407964a13dc0cf9d977207`, Lean 4.35.0, Mathlib `56a00585`, folder macOS
 `/Users/Shared/riemann-at-home/grh`, Linux `/opt/riemann-at-home/grh`; 20 min to 2 h on most computers. A whole 300K
 build whose five theorems use only the three standard axioms is its finish (there is no export step for it yet).
-**For now 300K builds are local only:** `submit` says so and posts nothing; they will be submitted once the
-leaderboard supports them. Computers already set up for 17M keep working exactly as before (add the new proof with
+300K builds are submitted like 17M ones (one pull request per build, the record says `"proof": "300k"`)
+and ranked on the same leaderboard: both proofs first, then 17M, then 300K. Computers already set up for 17M keep working exactly as before (add the new proof with
 `setup --proof 300k`, then `build --proof 300k`).
 
 ## Join with an AI assistant

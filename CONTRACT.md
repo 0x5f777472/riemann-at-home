@@ -241,4 +241,5 @@ Mathlib's RiemannHypothesis; proved theorem is exactly that statement) are their
   machine, rank}} and `tier` ("17m+300k" | "17m" | "300k" | "partial"); `running`/`latest` entries of other proofs
   carry `"proof"`. Order: both proofs, then 17M only (first_whole_proof_rank), then 300K only (who finished first),
   then partial builds. Ledger keys `whole_300k`, `hours_300k` only ever move earlier, as for 17M.
-- Version note: the CLI that first knows 300K does not submit 300K records yet (local only).
+- Version note: the CLI that first knew 300K kept 300K records local; since the bot ranks them (2026-11-25) the CLI
+  submits them through the same PR path as 17M.
