@@ -1193,6 +1193,15 @@ class FastExit(unittest.TestCase):
             self.skipTest("set RAH_L4E_MAIN to lean4export v4.33.0's Main.lean")
         self.assertIsNotNone(rah.patch_fast_exit(p.read_text()))
 
+    def test_export_uses_fast_exit_by_default(self):
+        """issue #24: a full export with the fast exit matched the reference, so it is the default (2026-11-26)."""
+        from unittest import mock
+        got = {}
+        def fake_export(ctx, a): got["fast"] = a.fast_exit; return 0
+        with mock.patch.object(rah, "cmd_export", fake_export), mock.patch.object(rah, "Ctx", lambda a: types.SimpleNamespace(p={"levels": True})):
+            for argv, want in ((["export"], True), (["export", "--fast-exit"], True), (["export", "--no-fast-exit"], False)):
+                rah.main(argv + ["--proof", "17m"]); self.assertEqual(got.pop("fast"), want, argv)
+
     def test_fast_exit_uses_its_own_tools_folder(self):
         from unittest import mock
         home = Path(tempfile.mkdtemp(dir=TMP)); self.addCleanup(shutil.rmtree, home, True)

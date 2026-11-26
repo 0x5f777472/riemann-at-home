@@ -69,9 +69,10 @@ one pull request per build, on the same leaderboard.
   `5ea74b912147c5c93cc2b6d70cc727cf908df2f62ac6a20480a3fa02f6be244e`. A match puts `export_sha256` and
   `export_bytes` into the records. Until a whole build has reproduced it, the exact exporter invocation is
   unverified, and the tool says so when the hash does not match.
-  Trial: `export --fast-exit` builds a separate copy of lean4export with two lines added after its last write (flush,
+  Fast exit (on by default): export builds its copy of lean4export with two lines added after its last write (flush,
   then exit), so it skips freeing its cache one object at a time, which took hours at "99%" on computers short of
-  memory (issue #24). The output should be identical; the comparison with the reference hash checks it every run.
+  memory (issue #24). A full export with it matched the reference (1 h 19 m on a 126 GB machine), and the
+  comparison with the reference hash checks every run. `export --no-fast-exit` uses the unpatched exporter.
 - **Level 3 · Independent re-check** (optional): `riemann-at-home recheck --nanoda` or `--con-leche` saves the
   export once to `~/.riemann-at-home/export/` (61.6 GB of disk), confirms it is the reference export, then runs the
   checker on that file after the exporter has exited, so the two never need memory at the same time. The second

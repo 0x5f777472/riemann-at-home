@@ -2561,7 +2561,7 @@ def exporter_command(ctx: Ctx, a) -> list:
     exporter built the old way is never reused."""
     if getattr(a, "exporter", None):                         # testing: a stand-in exporter
         return [a.exporter, "Main", "--", *EXPORT_TARGETS]
-    fast = bool(getattr(a, "fast_exit", False))
+    fast = bool(getattr(a, "fast_exit", False))         # export's default is on (matched the reference, issue #24)
     src = ctx.home / "tools" / (f"lean4export-{EXPORTER_TAG}-lean-{TOOLCHAIN.rsplit(':', 1)[-1]}"
                                 + ("-fastexit" if fast else ""))   # never mixed up with the unpatched build
     exe = src / ".lake/build/bin/lean4export"
@@ -2577,8 +2577,8 @@ def exporter_command(ctx: Ctx, a) -> list:
                 patched = patch_fast_exit((tmp / "Main.lean").read_text())
                 if patched is None:
                     shutil.rmtree(tmp, ignore_errors=True)
-                    raise Fail(f"lean4export {EXPORTER_TAG}'s Main.lean is not the one --fast-exit fits; "
-                               "run export without --fast-exit")
+                    raise Fail(f"lean4export {EXPORTER_TAG}'s Main.lean is not the one the fast exit fits; "
+                               "run export --no-fast-exit")
                 (tmp / "Main.lean").write_text(patched)
             tmp.rename(src)
         tc = toolchain_of(src)
@@ -3509,8 +3509,9 @@ def main(argv=None):
                         help="Level 2: hash the proof export (lean4export, streamed, never stored) against the reference")
     ex.add_argument("--check", action="store_true",
                     help="just check that the exporter works on this computer (exports one compiled module, about a minute)")
-    ex.add_argument("--fast-exit", action="store_true",
-                    help="trial: skip lean4export's slow memory cleanup after the last byte (issue #24); same output")
+    ex.add_argument("--fast-exit", action=argparse.BooleanOptionalAction, default=True,
+                    help="skip lean4export's slow memory cleanup after the last byte (issue #24); same output. "
+                         "On by default since a full export matched the reference with it; --no-fast-exit turns it off")
     rc = sub.add_parser("recheck", parents=[hidden, lvl], help="Level 3 (optional): re-check the export independently")
     g = rc.add_mutually_exclusive_group(required=True)
     g.add_argument("--nanoda", action="store_true", help=f"nanoda (needs about {CHECKERS['nanoda']} GB of memory)")
