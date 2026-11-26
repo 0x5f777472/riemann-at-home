@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T13:38:54Z
+- Updated: 2026-11-26T13:53:34Z
 
 ## Totals
 
@@ -16,7 +16,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Modules built at least once: 175,187 of 175,187 (100.0%)
 - Modules built 3 or more times: 175,187
 - Whole proofs finished (17M): 15
-- Whole proofs finished (300K): 13
+- Whole proofs finished (300K): 14
 
 ## Leaderboard
 
@@ -52,18 +52,18 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 22. jk563 (github.com/jk563): 300K: all 803 modules in 0.8 h, AMD Ryzen 5 5600X 6-Core Processor
 23. jimjones: 300K: all 803 modules in 0.6 h, Apple M2 Pro
 24. tgragnato (github.com/tgragnato): 300K: all 803 modules in 1.0 h, Intel(R) Celeron(R) J6413 @ 1.80GHz
+25. ptescher (github.com/ptescher): 300K: all 803 modules in 6.0 h, Apple M4
 
 ### Building now
 
-- ptescher (github.com/ptescher): 775 of 803 300K modules (96.5%), Apple M4
-- lupine.sh: 147,609 of 175,187 17M modules (84.3%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
-- ksdme (github.com/ksdme): 445 of 803 300K modules (55.4%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
-- tgragnato (github.com/tgragnato): 65,721 of 175,187 17M modules (37.5%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- janfrode (github.com/janfrode): 266 of 803 300K modules (33.1%), Apple M5 Max
-- apoland (github.com/apoland): 25,442 of 175,187 17M modules (14.5%), QEMU Virtual CPU version 2.5+
+- lupine.sh: 152,169 of 175,187 17M modules (86.9%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
+- janfrode (github.com/janfrode): 506 of 803 300K modules (63.0%), Apple M5 Max
+- ksdme (github.com/ksdme): 468 of 803 300K modules (58.3%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
+- tgragnato (github.com/tgragnato): 65,975 of 175,187 17M modules (37.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- nuwan: 154 of 803 300K modules (19.2%), Apple M4
+- apoland (github.com/apoland): 28,285 of 175,187 17M modules (16.1%), QEMU Virtual CPU version 2.5+
 - framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
 - talonius (github.com/talonius): 16,269 of 175,187 17M modules (9.3%), AMD Ryzen 9 9950X3D 16-Core Processor
-- nuwan: 33 of 803 300K modules (4.1%), Apple M4
 - Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
 - cardoso-neto (github.com/cardoso-neto): 871 of 175,187 17M modules (0.5%), AMD Ryzen 7 7700X 8-Core Processor
 - luvchurchill (github.com/luvchurchill): 1 of 175,187 17M modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
