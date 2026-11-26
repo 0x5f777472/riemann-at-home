@@ -8,11 +8,11 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T01:55:51Z
+- Updated: 2026-11-26T02:10:24Z
 
 ## Totals
 
-- Builders: 18
+- Builders: 19
 - Modules built at least once: 175,187 of 175,187 (100.0%)
 - Modules built 3 or more times: 175,187
 - Whole proofs finished (17M): 11
@@ -39,10 +39,11 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 
 ### Building now
 
-- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 175,184 of 175,187 17M modules (100.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 175,186 of 175,187 17M modules (100.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
 - Genbox (github.com/Genbox): 175,184 of 175,187 17M modules (100.0%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 156,267 of 175,187 17M modules (89.2%), Apple M3 Ultra
-- tgragnato (github.com/tgragnato): 55,602 of 175,187 17M modules (31.7%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- milhouse1337 (github.com/milhouse1337): 156,896 of 175,187 17M modules (89.6%), Apple M3 Ultra
+- VoX (github.com/VoX): 535 of 803 300K modules (66.6%), AMD Ryzen 7 7800X3D 8-Core Processor
+- tgragnato (github.com/tgragnato): 55,751 of 175,187 17M modules (31.8%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 of 175,187 17M modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
