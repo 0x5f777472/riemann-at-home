@@ -8,7 +8,7 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T09:00:00Z
+- Updated: 2026-11-26T09:14:46Z
 
 ## Totals
 
@@ -51,14 +51,14 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 
 ### Building now
 
-- milhouse1337 (github.com/milhouse1337): 169,163 of 175,187 17M modules (96.6%), Apple M3 Ultra
-- lupine.sh: 63,334 of 175,187 17M modules (36.2%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
-- tgragnato (github.com/tgragnato): 61,624 of 175,187 17M modules (35.2%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- ptescher (github.com/ptescher): 132 of 803 300K modules (16.4%), Apple M4
-- ksdme (github.com/ksdme): 130 of 803 300K modules (16.2%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
+- milhouse1337 (github.com/milhouse1337): 169,831 of 175,187 17M modules (96.9%), Apple M3 Ultra
+- lupine.sh: 70,159 of 175,187 17M modules (40.0%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
+- tgragnato (github.com/tgragnato): 61,967 of 175,187 17M modules (35.4%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- ptescher (github.com/ptescher): 176 of 803 300K modules (21.9%), Apple M4
+- ksdme (github.com/ksdme): 150 of 803 300K modules (18.7%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
 - framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
 - talonius (github.com/talonius): 16,269 of 175,187 17M modules (9.3%), AMD Ryzen 9 9950X3D 16-Core Processor
-- apoland (github.com/apoland): 13,016 of 175,187 17M modules (7.4%), QEMU Virtual CPU version 2.5+
+- apoland (github.com/apoland): 13,615 of 175,187 17M modules (7.8%), QEMU Virtual CPU version 2.5+
 - Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
 - cardoso-neto (github.com/cardoso-neto): 871 of 175,187 17M modules (0.5%), AMD Ryzen 7 7700X 8-Core Processor
 - luvchurchill (github.com/luvchurchill): 1 of 175,187 17M modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
