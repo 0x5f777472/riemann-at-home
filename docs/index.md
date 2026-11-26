@@ -8,15 +8,15 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T04:07:16Z
+- Updated: 2026-11-26T04:21:49Z
 
 ## Totals
 
-- Builders: 20
+- Builders: 21
 - Modules built at least once: 175,187 of 175,187 (100.0%)
 - Modules built 3 or more times: 175,187
 - Whole proofs finished (17M): 12
-- Whole proofs finished (300K): 3
+- Whole proofs finished (300K): 4
 
 ## Leaderboard
 
@@ -41,13 +41,14 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 ### 300K proof built
 
 13. VoX (github.com/VoX): 300K: all 803 modules in 0.5 h, AMD Ryzen 7 7800X3D 8-Core Processor
+14. talonius (github.com/talonius): 300K: all 803 modules in 0.2 h, AMD Ryzen 9 9950X3D 16-Core Processor
 
 ### Building now
 
 - Genbox (github.com/Genbox): 175,186 of 175,187 17M modules (100.0%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 160,128 of 175,187 17M modules (91.4%), Apple M3 Ultra
-- Andrew Poland: 490 of 803 300K modules (61.0%), QEMU Virtual CPU version 2.5+
-- tgragnato (github.com/tgragnato): 57,743 of 175,187 17M modules (33.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- milhouse1337 (github.com/milhouse1337): 160,755 of 175,187 17M modules (91.8%), Apple M3 Ultra
+- Andrew Poland: 637 of 803 300K modules (79.3%), QEMU Virtual CPU version 2.5+
+- tgragnato (github.com/tgragnato): 57,896 of 175,187 17M modules (33.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
 - framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
 - Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
 - luvchurchill (github.com/luvchurchill): 1 of 175,187 17M modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
