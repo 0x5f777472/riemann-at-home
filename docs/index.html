@@ -402,9 +402,7 @@ const RECENT = (() => {
   else if (DEMO) { for (let k = 0; k < 600; k++) { const i = Math.floor(Math.random() * N); if (heights[i]) idx.push(i); } }
   idx = [...new Set(idx)].filter(i => i >= 0 && i < N && heights[i] > 0);
   for (let k = idx.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [idx[k], idx[j]] = [idx[j], idx[k]]; }
-  idx = idx.slice(0, 300);                     // at most one every ~2 s: a calm trickle; the rest are drawn in full already
-  for (const i of idx) heights[i]--;
-  return idx;
+  return idx;                                  // shuffled; QUEUE (below, once rows are known) picks the ones replayed
 })();
 // Step reached on the modules (derived on the page, no bot field yet): a whole build covers every module, and an
 // export covers the whole proof, so one such entry lifts every bar's cap. 0 built only · 1 gold · 2 green · 3 cyan.
@@ -813,6 +811,10 @@ function terrain() {
   }
 }
 $("cap").textContent = "";
+// The replay queue: up to 300 of the recent modules, only from rows the map draws (a spike in a hidden row
+// would be invisible and leave a silent gap). They start one lower and grow back during the replay.
+const QUEUE = RECENT.filter(i => rowShown(cell(i)[1])).slice(0, 300);
+for (const i of QUEUE) heights[i]--;
 stars(); terrain();
 // Phones: library key under the map (name, size, how much is built); tapping a row highlights that library.
 { const fmtN = n => n.toLocaleString("en-US");
@@ -843,9 +845,12 @@ stars(); terrain();
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
   const OV = ctx2d("overlay"), TG = $("terrain").getContext("2d");
-  const W = 600e3;                             // spread over 10 minutes: at most 300, so one every 2 s or slower
+  // One spike at a time, about every 1.2 s (300 take 6 min), or slower when there are few, up to every 5 s.
+  // Never more than one per frame and no catching up: when the tab was hidden (no frames), the replay picks up
+  // where it was instead of firing everything it missed at once. Spacing is jittered so it doesn't tick.
+  const GAP = Math.min(5000, Math.max(1200, 360e3 / Math.max(1, QUEUE.length)));
   const t0 = performance.now(), GROW = 700, FADE = 5000, live = [];
-  let next = 0;
+  let next = 0, nextAt = t0 + 800, lastNow = t0;
   const w = Math.max(1, sx * 0.85);
   const colGeom = i => {                       // the bar holding module i, as drawn by terrain(): x, base y, height, hue, L
     const [c, r] = cell(i), col = r * C + c, [i0, slots, , s2] = column(col), depth = r / R;
@@ -860,8 +865,11 @@ stars(); terrain();
   };
   const bw = 3 * w;                            // new modules' white bars: 3x wider so first-time visitors see them
   function frame(now) {
-    while (next < RECENT.length && now - t0 >= next * W / RECENT.length) {        // its turn: one more builder
-      const i = RECENT[next++]; heights[i]++; if (rowShown(cell(i)[1])) live.push({i, at: now, folded: false});
+    if (now - lastNow > 1000) nextAt = Math.max(nextAt, now + 300);            // back from a hidden tab: resume, don't burst
+    lastNow = now;
+    if (next < QUEUE.length && now >= nextAt) {                                // its turn: one more builder
+      const i = QUEUE[next++]; heights[i]++; live.push({i, at: now, folded: false});
+      nextAt = now + GAP * (0.6 + 0.8 * Math.random());
     }
     OV.clearRect(0, 0, 1000, 680);
     for (let k = live.length - 1; k >= 0; k--) {
@@ -884,7 +892,7 @@ stars(); terrain();
     try {
       const d = await (await fetch((DEMO ? "realistic-sample.json?" : "data.json?") + Date.now())).json();
       if (d.generated !== DATA.generated && d.generated !== shown) { shown = d.generated; renderPanels(d); fitBoard(); personal(d); }
-      if (d.generated !== DATA.generated && (next >= RECENT.length || performance.now() - t0 > 720e3)) location.reload();
+      if (d.generated !== DATA.generated && (next >= QUEUE.length || performance.now() - t0 > 720e3)) location.reload();
     } catch (e) {}
   }, 60000);
 }
