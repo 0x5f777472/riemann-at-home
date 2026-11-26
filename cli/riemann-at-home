@@ -106,6 +106,65 @@ AUDIT_LEAN = """import Main
 """
 IS_MAC = platform.system() == "Darwin"
 
+# ---------------------------------------------------------------- the proofs (CONTRACT "Several proofs")
+# One entry per proof. Records say which proof with "proof"; absent means "17m", so every 17M record, folder and
+# ~/.riemann-at-home from before the 300K proof is unchanged. A future proof is one more entry here (and in the bot).
+# "state": where this proof's per-computer files live under ~/.riemann-at-home ("" = the top, as before):
+# build_id, logs/, records/, config.json (its PR, levels). Consent, display name and submit settings are the
+# person's, shared by every proof (SHARED_KEYS), and so is the tool's clone of the repo (repo/).
+GRH_COMMIT = "72fead102f663d5c7a407964a13dc0cf9d977207"     # github.com/lsernau/grh-lean main, 2026-11-25
+GRH_TREE = "2e133df63d7f4da6b3059c4195324f8e9187ba73"       # its grh/ folder (git tree), checked after checkout
+PROOFS = {
+    "17m": {"key": "17m", "label": "17M", "name": "the original proof", "n": N_MODULES,
+            "toolchain": TOOLCHAIN, "mathlib_rev": MATHLIB_REV, "folders": FIXED_FOLDERS,
+            "source_field": "archive_sha256", "source": ARCHIVE_SHA256,
+            "target": "Main",                 # `lake build Main`
+            "theorems": ["riemannHypothesis"],   # whose axioms the record carries (the audit prints all five)
+            "state": "", "levels": True, "whole_gb": WHOLE_BUILD_GB,
+            "takes": "about 2 days on a fast computer (a week or more on a laptop)"},
+    # grh-lean by Luke Sernau (Apache-2.0), its readable edition: the grh/ folder of the pinned commit.
+    "300k": {"key": "300k", "label": "300K", "name": "the new proof", "n": 803,
+             "toolchain": "leanprover/lean4:v4.35.0", "mathlib_rev": "56a005855ea17e0b0958f73ec801ae140b0a1679",
+             "folders": {"Darwin": "/Users/Shared/riemann-at-home/grh", "Linux": "/opt/riemann-at-home/grh"},
+             "source_field": "source_commit", "source": GRH_COMMIT,
+             "repo": "https://github.com/lsernau/grh-lean", "subdir": "grh", "tree": GRH_TREE,
+             # sha256 of the 803 module names (src/**/*.lean, sorted byte-wise, one per line): bot/modules-300k.txt
+             "modules_sha256": "f0b574a8ad08e8049f098971f03e5cc3087ffb23e2d9f9692a389ccb924813d1",
+             "target": None,                  # plain `lake build`: the edition's default targets (Lib, New, Main)
+             "audit": "scripts/PrintAxioms.lean",   # its own axiom check; must say exactly AUDIT_LEAN
+             "theorems": ["riemannHypothesis", "riemannZeta_eq_zero_re", "LFunction_ne_zero_of_half_lt_re",
+                          "LFunction_eq_zero_re", "LFunction_eq_zero_re_of_isPrimitive"],
+             "state": "300k", "levels": False, "whole_gb": 25, "takes": "20 min to 2 h on most computers"},
+}
+DEFAULT_PROOF = "17m"                 # what a record, a folder or a command means when it does not say
+SHARED_KEYS = ("consent", "display", "submit", "proofs", "repo")   # the person's choices, not one build's
+LEVELS_ONLY_17M = ("export, recheck and sign are for the 17M proof only: the 300K proof has no reference export yet, "
+                   "so a whole 300K build whose five theorems use only the three standard axioms is its finish.")
+
+
+def proof_of_folder(folder: Path):
+    """Which proof a build folder holds: one of the fixed folders, else the one its lean-toolchain pins; or None."""
+    for pk, P in PROOFS.items():
+        if str(folder) in P["folders"].values():
+            return pk
+    try:
+        tc = (folder / "lean-toolchain").read_text().strip()
+    except OSError:
+        return None
+    hits = [pk for pk, P in PROOFS.items() if P["toolchain"] == tc]
+    return hits[0] if len(hits) == 1 else None
+
+
+def chosen_proof(base: Path) -> str:
+    """The proof a command means when it does not say: the one setup chose for this computer (the first not yet
+    finished, for "both"), else 17M, so a computer set up before the 300K proof keeps working exactly as before."""
+    try:
+        ch = json.loads((base / "config.json").read_text()).get("proofs") or {}
+    except (OSError, ValueError):
+        ch = {}
+    act = ch.get("active") if isinstance(ch, dict) else None
+    return act if act in PROOFS else DEFAULT_PROOF
+
 
 class Fail(Exception):
     pass
@@ -113,17 +172,24 @@ class Fail(Exception):
 
 # ---------------------------------------------------------------- paths and small helpers
 
-def fixed_folder() -> Path:
-    f = FIXED_FOLDERS.get(platform.system())
+def fixed_folder(proof: str = DEFAULT_PROOF) -> Path:
+    f = PROOFS[proof]["folders"].get(platform.system())
     if not f:
         raise Fail(f"no fixed build folder defined for {platform.system()} yet (macOS and Linux only)")
     return Path(f)
 
 
 class Ctx:
-    def __init__(self, a):
-        self.home = Path(os.environ.get("RAH_HOME") or Path.home() / ".riemann-at-home")
-        self.folder = Path(a.folder) if getattr(a, "folder", None) else fixed_folder()
+    def __init__(self, a, proof: str = None):
+        self.base = Path(os.environ.get("RAH_HOME") or Path.home() / ".riemann-at-home")   # the person's files
+        pk = proof or getattr(a, "proof", None)
+        if pk not in PROOFS and getattr(a, "folder", None):
+            pk = proof_of_folder(Path(a.folder))      # e.g. a supervisor started by an older version (no --proof)
+        self.proof = pk if pk in PROOFS else chosen_proof(self.base)
+        self.p = PROOFS[self.proof]
+        self.home = self.base / self.p["state"] if self.p["state"] else self.base           # this proof's build
+        self.base_config = self.base / "config.json"
+        self.folder = Path(a.folder) if getattr(a, "folder", None) else fixed_folder(self.proof)
         self.logs = Path(a.logs) if getattr(a, "logs", None) else self.home / "logs"
         self.records = self.home / "records"
         self.status = self.logs / "status.txt"
@@ -145,16 +211,43 @@ class Ctx:
         self.build_id_file.write_text(b + "\n")
         return b
 
-    def conf(self) -> dict:
+    @staticmethod
+    def _load(p: Path) -> dict:
         try:
-            return json.loads(self.config.read_text())
+            d = json.loads(p.read_text())
+            return d if isinstance(d, dict) else {}
         except (OSError, ValueError):
             return {}
 
+    def conf(self) -> dict:
+        """This build's config.json, plus the person's shared choices (SHARED_KEYS) from the top config.json."""
+        own = self._load(self.config)
+        if self.config == self.base_config:
+            return own
+        shared = self._load(self.base_config)
+        return {**{k: v for k, v in own.items() if k not in SHARED_KEYS},
+                **{k: shared[k] for k in SHARED_KEYS if k in shared}}
+
     def set_conf(self, **kw):
-        c = {**self.conf(), **kw}
-        self.home.mkdir(parents=True, exist_ok=True)
-        self.config.write_text(json.dumps(c, indent=1) + "\n")
+        def write(p: Path, upd: dict):
+            if upd:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(json.dumps({**self._load(p), **upd}, indent=1) + "\n")
+        if self.config == self.base_config:
+            return write(self.config, kw)
+        write(self.base_config, {k: v for k, v in kw.items() if k in SHARED_KEYS})
+        write(self.config, {k: v for k, v in kw.items() if k not in SHARED_KEYS})
+
+    def me(self) -> list:
+        """This script, for a background command about this same proof (with RAH_HOME = self.env())."""
+        return [sys.executable, "-I", str(Path(__file__).resolve())]
+
+    def pargs(self) -> list:
+        """--proof for a command started from this one, so it works on the same proof whatever setup chose."""
+        return ["--proof", self.proof]
+
+    def env(self) -> dict:
+        return {**os.environ, "RAH_HOME": str(self.base)}
 
     @property
     def lib(self) -> Path:
@@ -388,14 +481,26 @@ def busy_seconds(ctx: Ctx, running: bool, now: float = None) -> tuple:
     return started, int(round(total))
 
 
-def parse_axioms(text: str):
-    """The axioms Lean prints for riemannHypothesis, or None if the check did not print them."""
-    m = re.search(r"'riemannHypothesis' depends on axioms:\s*\[([^\]]*)\]", text)
+def parse_axioms(text: str, theorem: str = "riemannHypothesis"):
+    """The axioms Lean prints for `theorem`, or None if the check did not print them."""
+    m = re.search(rf"'{re.escape(theorem)}' depends on axioms:\s*\[([^\]]*)\]", text)
     if m:
         return [a.strip() for a in m[1].split(",") if a.strip()]
-    if re.search(r"'riemannHypothesis' does not depend on any axioms", text):
+    if re.search(rf"'{re.escape(theorem)}' does not depend on any axioms", text):
         return []
     return None
+
+
+def proof_axioms(ctx, text: str):
+    """The axioms a record carries: those of every theorem the proof counts, together (first seen first), or None
+    if the check did not print them all. 17M: riemannHypothesis. 300K: its five theorems."""
+    out = []
+    for t in ctx.p["theorems"]:
+        ax = parse_axioms(text, t)
+        if ax is None:
+            return None
+        out += [x for x in ax if x not in out]
+    return out
 
 
 # ---------------------------------------------------------------- processes
@@ -610,48 +715,164 @@ def mathlib_cache_present(folder: Path) -> bool:
 
 def others_text(data: dict, my_cpu: str = "") -> str:
     """How long the build and the export took on other volunteers' computers, from the leaderboard's data.json:
-    one line per finished build, fastest first, so a newcomer can see where a computer like theirs lands."""
-    rows = [r for r in data.get("leaderboard") or [] if r.get("whole_proof") and r.get("build_hours")]
-    if not rows:
-        return ""
-    rows.sort(key=lambda r: r["build_hours"])
-    hours = [r["build_hours"] for r in rows]
-    exports = [r for r in rows if (r.get("export") or {}).get("done") and (r.get("export") or {}).get("matches")]
+    one line per finished build, fastest first, so a newcomer can see where a computer like theirs lands. The
+    original proof (17M) first, then each other proof (from each row's `proofs`)."""
     def h(x):
         return f"{x:.0f} h" if x >= 10 else f"{x:.1f} h"
-    out = [f"How long it took others ({len(rows)} whole builds so far, from the leaderboard):",
-           f"  build:  {h(hours[0])} to {h(hours[-1])}; half finished within {h(hours[(len(hours) - 1) // 2])}"]
-    if exports:
-        ex = sorted(r["export"]["seconds"] / 3600 for r in exports)
-        out.append(f"  export: {h(ex[0])} to {h(ex[-1])} ({len(ex)} finished); it is slowest on computers with "
-                   "less than about 140 GB of memory")
-    out.append(f"  {'computer':<44} {'build':>6}  {'export':>6}")
     mine = " ".join(my_cpu.split()).lower()
-    for r in rows:
-        e = r.get("export") or {}
-        ex = h(e["seconds"] / 3600) if e.get("done") and e.get("matches") else "-"
-        cpu = " ".join(str(r.get("machine") or "?").split())
-        like = "  <- like this computer" if mine and cpu.lower() == mine else ""
-        out.append(f"  {cpu[:44]:<44} {h(r['build_hours']):>6}  {ex:>6}{like}")
+    def like(cpu):
+        return "  <- like this computer" if mine and cpu.lower() == mine else ""
+    out = []
+    rows = [r for r in data.get("leaderboard") or [] if r.get("whole_proof") and r.get("build_hours")]
+    if rows:
+        rows.sort(key=lambda r: r["build_hours"])
+        hours = [r["build_hours"] for r in rows]
+        exports = [r for r in rows if (r.get("export") or {}).get("done") and (r.get("export") or {}).get("matches")]
+        out += [f"How long it took others ({len(rows)} whole builds so far, from the leaderboard):",
+                f"  build:  {h(hours[0])} to {h(hours[-1])}; half finished within {h(hours[(len(hours) - 1) // 2])}"]
+        if exports:
+            ex = sorted(r["export"]["seconds"] / 3600 for r in exports)
+            out.append(f"  export: {h(ex[0])} to {h(ex[-1])} ({len(ex)} finished); it is slowest on computers with "
+                       "less than about 140 GB of memory")
+        out.append(f"  {'computer':<44} {'build':>6}  {'export':>6}")
+        for r in rows:
+            e = r.get("export") or {}
+            ex = h(e["seconds"] / 3600) if e.get("done") and e.get("matches") else "-"
+            cpu = " ".join(str(r.get("machine") or "?").split())
+            out.append(f"  {cpu[:44]:<44} {h(r['build_hours']):>6}  {ex:>6}{like(cpu)}")
+    for pk, P in PROOFS.items():
+        if pk == DEFAULT_PROOF:
+            continue
+        got = [((r.get("proofs") or {}).get(pk) or {}) for r in data.get("leaderboard") or []]
+        got = sorted((g for g in got if g.get("whole") and g.get("build_hours")), key=lambda g: g["build_hours"])
+        if not got:
+            continue
+        hours = [g["build_hours"] for g in got]
+        if out:
+            out.append("")
+        out += [f"The {P['label']} proof ({P['name']}): {len(got)} whole build{'s' if len(got) != 1 else ''} so far, "
+                f"{h(hours[0])} to {h(hours[-1])}; half finished within {h(hours[(len(hours) - 1) // 2])}",
+                f"  {'computer':<44} {'build':>6}"]
+        for g in got:
+            cpu = " ".join(str(g.get("machine") or "?").split())
+            out.append(f"  {cpu[:44]:<44} {h(g['build_hours']):>6}{like(cpu)}")
     return "\n".join(out)
 
 
-def show_others(ctx: Ctx):
-    """Print others_text from the live leaderboard. Optional: any failure prints nothing."""
+def fetch_board():
+    """The live leaderboard's data.json, or None (optional: any failure, or RAH_NO_STATS, gives None)."""
+    if os.environ.get("RAH_NO_STATS"):
+        return None
     try:
         req = urllib.request.Request(SITE_URL + "data.json", headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=10) as r:
-            text = others_text(json.loads(r.read(5_000_000)), machine().get("cpu", ""))
+            return json.loads(r.read(5_000_000))
+    except Exception:
+        return None
+
+
+def show_others(ctx, data=None):
+    """Print others_text from the live leaderboard. Optional: any failure prints nothing."""
+    try:
+        data = data if data is not None else fetch_board()
+        text = others_text(data, machine().get("cpu", "")) if data else ""
     except Exception:
         return
     if text:
         print(text + "\n")
 
 
+# The question setup asks (owner's wording, 2026-11-25). 1 = the default, and what a run without a terminal gets.
+SETUP_QUESTION = """Which proof do you want to build?
+Both are Lean proofs of the Riemann Hypothesis using the same three axioms. Both put you on the leaderboard.
+
+  1) The new proof  [300K]  recommended
+     About 300,000 lines. 20 min to 2 h on most computers, 24 GB of memory.
+     The quickest way onto the leaderboard.
+  2) The original proof  [17M]  the big challenge
+     175,187 modules. Builds took 9 h to 64 h; the export wants about 140 GB of memory.
+     Counts most on the leaderboard.
+  3) Both  [17M] [300K]  ranks highest
+     The new proof first, then the original.
+"""
+SETUP_ANSWERS = {"1": ["300k"], "2": ["17m"], "3": ["300k", "17m"]}
+
+
+def legacy_17m(ctx) -> bool:
+    """Set up for 17M before setup asked which proof: keep it that way."""
+    return (ctx.base / "build_id").exists()        # every earlier setup made one (and only 17M existed)
+
+
+def ask_proof(ctx, data=None) -> list:
+    """Setup's question. In a terminal: 1, 2 or 3 (Enter = 1). Without one (an AI assistant, a script): 1."""
+    ctx._asked = True
+    print(SETUP_QUESTION)
+    show_others(ctx, data)
+    if not sys.stdin.isatty():
+        print("Not asked (no terminal): setting up the new proof (300K). For the original instead: "
+              "riemann-at-home setup --proof 17m; for both: riemann-at-home setup --proof both\n"
+              "(If an AI assistant is running this: tell the person these three choices and let them pick.)\n")
+        return SETUP_ANSWERS["1"]
+    while True:
+        try:
+            ans = input("Choose [1]: ").strip() or "1"
+        except EOFError:
+            ans = "1"
+        if ans in SETUP_ANSWERS:
+            return SETUP_ANSWERS[ans]
+        print("Please type 1, 2 or 3.")
+
+
+def setup_choice(ctx, a) -> list:
+    """Which proofs this setup sets up, in build order."""
+    want = getattr(a, "proof", None)
+    if want == "both":
+        return ["300k", "17m"]
+    if want in PROOFS:
+        return [want]
+    if getattr(a, "archive", None) or getattr(a, "parts_url", PART_URL) != PART_URL:
+        return [DEFAULT_PROOF]                        # given the 17M archive or its parts: that's the 17M proof
+    ch = ctx.conf().get("proofs") or {}
+    if ch.get("active") in PROOFS:                    # running setup again: the same proofs as last time
+        return [ch["active"]] + [x for x in ch.get("next") or [] if x in PROOFS]
+    if legacy_17m(ctx):
+        print("This computer is set up for the original proof (17M), so setup carries on with it. To build the new "
+              "proof (300K) too: riemann-at-home setup --proof 300k\n")
+        return [DEFAULT_PROOF]
+    return ask_proof(ctx, fetch_board())
+
+
 def cmd_setup(ctx: Ctx, a):
-    disk_heads_up(ctx)
-    if not os.environ.get("RAH_NO_STATS"):
-        show_others(ctx)
+    order = setup_choice(ctx, a)
+    ch = ctx.conf().get("proofs") or {}
+    active = ch.get("active") if ch.get("active") in PROOFS else (DEFAULT_PROOF if legacy_17m(ctx) else None)
+    for k, pk in enumerate(order):
+        c = Ctx(a, proof=pk)
+        if getattr(a, "folder", None) and len(order) > 1:
+            c.folder = Path(a.folder) / PROOFS[pk]["folders"]["Linux"].rsplit("/", 1)[-1]   # testing: lean/, grh/
+        if order != [DEFAULT_PROOF]:                  # 17M alone: setup reads exactly as before
+            print(f"== {PROOFS[pk]['label']}: {PROOFS[pk]['name']}" + (f" ({k + 1} of {len(order)})" if len(order) > 1 else ""))
+        disk_heads_up(c)
+        if pk == DEFAULT_PROOF and len(order) == 1 and not getattr(ctx, "_asked", False):
+            show_others(c)
+        (setup_17m if pk == DEFAULT_PROOF else setup_git)(c, a)
+        print(f"this computer's build_id: {c.build_id()}" if order == [DEFAULT_PROOF]
+              else f"this computer's {PROOFS[pk]['label']} build_id: {c.build_id()}\n")
+    if active and active not in order:                # another proof is already set up here: it stays the default
+        print(f"Commands without --proof still mean {PROOFS[active]['label']} here; for this one add "
+              f"--proof {order[0]} (for example: riemann-at-home build --proof {order[0]}).")
+        ctx.set_conf(proofs={**ch, "active": active})
+        nxt = f"riemann-at-home build --proof {order[0]}"
+    else:
+        ctx.set_conf(proofs={"active": order[0], "next": order[1:]})
+        nxt = "riemann-at-home build"
+    ask_consent(Ctx(a, proof=order[0]))
+    print(f"ready. Next: {nxt}" + (f"   (when the {PROOFS[order[0]]['label']} build is done, the "
+                                   f"{PROOFS[order[1]]['label']} build starts by itself)" if len(order) > 1 else ""))
+
+
+def setup_17m(ctx: Ctx, a):
+    """The original proof: the official archive from alpo.ge, checked and unpacked; Lean 4.33.1; Mathlib cache."""
     folder = ctx.folder
     if folder.exists():
         tc = toolchain_of(folder)
@@ -674,24 +895,90 @@ def cmd_setup(ctx: Ctx, a):
         unpack(archive, folder)
         if toolchain_of(folder) != TOOLCHAIN:
             raise Fail(f"unpacked archive pins {toolchain_of(folder)}, expected {TOOLCHAIN}")
+    install_lean(ctx, a, "Mathlib")
+
+
+def install_lean(ctx: Ctx, a, cache_target):
+    """Steps 2 and 3 of every proof's setup: its pinned Lean through elan, then Mathlib's compiled cache."""
+    tc, folder = ctx.p["toolchain"], ctx.folder
     elan = ensure_elan()
-    if toolchain_installed(elan):
-        print(f"[2/3] Lean {TOOLCHAIN} already installed")
+    if toolchain_installed(elan, tc):
+        print(f"[2/3] Lean {tc} already installed")
     else:
-        print(f"[2/3] installing Lean {TOOLCHAIN}")
-        if run([elan, "toolchain", "install", TOOLCHAIN], env=lean_env()).returncode != 0:
+        print(f"[2/3] installing Lean {tc}")
+        if run([elan, "toolchain", "install", tc], env=lean_env()).returncode != 0:
             raise Fail("toolchain install failed")
+    cmd = [which("lake") or "lake", "exe", "cache", "get"] + ([cache_target] if cache_target else [])
+    shown = " ".join(["lake"] + cmd[1:])
     if mathlib_cache_present(folder) and not a.force_cache:
         print("[3/3] Mathlib compiled cache already here")
     elif a.skip_cache:
         print("[3/3] skipping Mathlib cache (--skip-cache)")
     else:
-        print("[3/3] fetching Mathlib's compiled cache (lake exe cache get Mathlib)")
-        if run([which("lake") or "lake", "exe", "cache", "get", "Mathlib"], cwd=folder, env=lean_env()).returncode != 0:
-            raise Fail("`lake exe cache get Mathlib` failed; run setup again to retry")
-    print(f"this computer's build_id: {ctx.build_id()}")
-    ask_consent(ctx)
-    print(f"ready. Next: riemann-at-home build")
+        print(f"[3/3] fetching Mathlib's compiled cache ({shown})")
+        if run(cmd, cwd=folder, env=lean_env()).returncode != 0:
+            raise Fail(f"`{shown}` failed; run setup again to retry")
+
+
+SOURCE_FILE = ".riemann-at-home-source.json"   # in a git-sourced build folder: the commit and tree it came from
+
+
+def source_problem(folder: Path, P: dict):
+    """Why `folder` is not the proof's pinned source (None if it is): the commit and tree setup checked, recorded in
+    SOURCE_FILE, plus the pinned toolchain and Mathlib."""
+    try:
+        src = json.loads((folder / SOURCE_FILE).read_text())
+    except (OSError, ValueError):
+        return f"{folder} was not set up by riemann-at-home (no {SOURCE_FILE}); move it aside and run setup again"
+    if src.get("commit") != P["source"] or src.get("tree") != P["tree"]:
+        return f"{folder} is from commit {src.get('commit')}, expected {P['source']}; move it aside and run setup again"
+    if toolchain_of(folder) != P["toolchain"]:
+        return f"{folder} pins {toolchain_of(folder) or 'no toolchain'}, expected {P['toolchain']}"
+    if mathlib_rev_of(folder) != P["mathlib_rev"]:
+        return f"{folder} pins Mathlib {mathlib_rev_of(folder)}, expected {P['mathlib_rev']}"
+    return None
+
+
+def setup_git(ctx: Ctx, a):
+    """A proof published as a git repository (300K): clone it, check out exactly the pinned commit, check HEAD and
+    the edition's tree, and move that folder (grh/) into the fixed build folder. Then its Lean and Mathlib cache."""
+    P, folder = ctx.p, ctx.folder
+    if folder.exists():
+        err = source_problem(folder, P)
+        if err:
+            raise Fail(err)
+        print(f"[1/3] proof folder already here at commit {P['source'][:12]}: {folder} (skipping the clone)")
+    else:
+        if not shutil.which("git"):
+            raise Fail("git is needed to get this proof (macOS: xcode-select --install; Linux: your package manager)")
+        url = getattr(a, "source_url", None) or P["repo"]
+        parent = folder.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            raise Fail(f"cannot create {parent}. Run once:  sudo mkdir -p {parent} && sudo chown $USER {parent}")
+        staging = parent / f".cloning-{os.getpid()}"
+        shutil.rmtree(staging, ignore_errors=True)
+        print(f"[1/3] cloning {url} at commit {P['source']}")
+        try:
+            if run(["git", "clone", "-q", "--no-checkout", url, staging]).returncode != 0:
+                raise Fail(f"git clone {url} failed; run setup again to retry")
+            g = lambda *x: subprocess.run(["git", "-C", str(staging), *x], capture_output=True, text=True)
+            if g("-c", "advice.detachedHead=false", "checkout", "-q", "--detach", P["source"]).returncode != 0:
+                raise Fail(f"{url} has no commit {P['source']}")
+            head, tree = g("rev-parse", "HEAD").stdout.strip(), g("rev-parse", f"HEAD:{P['subdir']}").stdout.strip()
+            if head != P["source"] or tree != P["tree"] or g("status", "--porcelain").stdout.strip():
+                raise Fail(f"the checkout is not the pinned source (HEAD {head}, {P['subdir']}/ tree {tree}; "
+                           f"expected {P['source']}, {P['tree']})")
+            print(f"      HEAD {head} ok, {P['subdir']}/ tree {tree} ok; moving it to {folder}")
+            (staging / P["subdir"]).rename(folder)
+            (folder / SOURCE_FILE).write_text(json.dumps({"repo": url, "commit": head, "tree": tree}) + "\n")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        err = source_problem(folder, P)
+        if err:
+            raise Fail(err)
+    install_lean(ctx, a, None)
 
 
 # ---------------------------------------------------------------- build control
@@ -765,8 +1052,8 @@ def check_update(ctx: "Ctx") -> dict:
             res["changes"] = [l for l in log.splitlines() if l][:20]
             res["available"] = bool(res["changes"])
     try:
-        ctx.home.mkdir(parents=True, exist_ok=True)
-        (ctx.home / "update.json").write_text(json.dumps(res, indent=1) + "\n")
+        ctx.base.mkdir(parents=True, exist_ok=True)
+        (ctx.base / "update.json").write_text(json.dumps(res, indent=1) + "\n")
     except OSError:
         pass
     return res
@@ -774,7 +1061,7 @@ def check_update(ctx: "Ctx") -> dict:
 
 def update_state(ctx: "Ctx") -> dict:
     try:
-        return json.loads((ctx.home / "update.json").read_text())
+        return json.loads((ctx.base / "update.json").read_text())
     except (OSError, ValueError):
         return {}
 
@@ -826,15 +1113,17 @@ def cmd_update(ctx: Ctx, a):
                        text=True)
     if m.returncode != 0:
         raise Fail("couldn't update (your copy has its own commits?): " + (m.stderr or m.stdout).strip()[:300])
-    (ctx.home / "update.json").write_text(json.dumps({"checked": iso(time.time()), "available": False,
+    (ctx.base / "update.json").write_text(json.dumps({"checked": iso(time.time()), "available": False,
                                                       "changes": []}) + "\n")
-    me = [sys.executable, "-I", str(Path(__file__).resolve())]
-    if supervisor(ctx):                           # restart the build with the new code; Lean picks up where it was
-        mode, paused = stored_mode(ctx), is_paused(ctx)
-        subprocess.run(me + ["stop", "--folder", str(ctx.folder)], check=False)
-        subprocess.run(me + ["build", f"--{mode}", "--folder", str(ctx.folder)], check=False)
-        if paused:
-            subprocess.run(me + ["pause", "--folder", str(ctx.folder)], check=False)
+    me = ctx.me()
+    for c in [ctx] + [Ctx(a, proof=pk) for pk in PROOFS if pk != ctx.proof and not getattr(a, "folder", None)]:
+        if supervisor(c):                         # restart each build with the new code; Lean picks up where it was
+            mode, paused = stored_mode(c), is_paused(c)
+            loc = ["--folder", str(c.folder)] + c.pargs()
+            subprocess.run(me + ["stop"] + loc, check=False, env=c.env())
+            subprocess.run(me + ["build", f"--{mode}"] + loc, check=False, env=c.env())
+            if paused:
+                subprocess.run(me + ["pause"] + loc, check=False, env=c.env())
     page = ctx.logs / "page.pid"                  # this computer's local page (written by `page`): restart it
     try:
         pid, port = (int(x) for x in page.read_text().split())
@@ -846,8 +1135,8 @@ def cmd_update(ctx: Ctx, a):
             if not pid_alive(pid):
                 break
             time.sleep(0.25)
-        subprocess.Popen(me + ["page", "--folder", str(ctx.folder), "--port", str(port)], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        subprocess.Popen(me + ["page", "--folder", str(ctx.folder), "--port", str(port)] + ctx.pargs(),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=ctx.env())
         print("local page restarted")
     print("updated")
     return 0
@@ -867,7 +1156,7 @@ def free_gb(folder: Path) -> float:
 
 def disk_message(ctx: Ctx) -> str:
     return (f"only {free_gb(ctx.folder):.1f} GB free on the build disk, so the build stopped to leave "
-            f"{MIN_FREE_GB:g} GB for the rest of your computer (a whole build needs about {WHOLE_BUILD_GB} GB). "
+            f"{MIN_FREE_GB:g} GB for the rest of your computer (a whole build needs about {ctx.p['whole_gb']} GB). "
             "Free some space, then `riemann-at-home build` continues from here. "
             "`record` and `submit` still work for what is built.")
 
@@ -878,9 +1167,10 @@ def disk_heads_up(ctx: Ctx) -> None:
     while not folder.exists() and folder != folder.parent:
         folder = folder.parent
     free = shutil.disk_usage(folder).free / 1e9
-    print(f"Heads up: building the whole proof takes about 2 days on a fast computer (a week or more on a laptop) and "
-          f"needs roughly {WHOLE_BUILD_GB} GB of free disk (estimated from builds so far). This computer has {free:.0f} GB free.")
-    if free < WHOLE_BUILD_GB:
+    gb = ctx.p["whole_gb"]
+    print(f"Heads up: building the whole {'' if ctx.proof == DEFAULT_PROOF else ctx.p['label'] + ' '}proof takes {ctx.p['takes']} and "
+          f"needs roughly {gb} GB of free disk (estimated from builds so far). This computer has {free:.0f} GB free.")
+    if free < gb:
         print(f"That's not enough for the whole proof, and that's fine: the build stops by itself when "
               f"{MIN_FREE_GB:g} GB are left, so your computer always keeps room, and every module you built still "
               "counts on the leaderboard.")
@@ -915,8 +1205,9 @@ def cmd_build(ctx: Ctx, a):
     if other:
         raise Fail(f"another build is already running in {ctx.folder} (lake pid {', '.join(map(str, other))}), "
                    "not started by this tool. Stop that one first.")
-    if toolchain_of(ctx.folder) != TOOLCHAIN:
-        raise Fail(f"{ctx.folder} is not set up (expected lean-toolchain {TOOLCHAIN}); run: riemann-at-home setup")
+    if toolchain_of(ctx.folder) != ctx.p["toolchain"]:
+        raise Fail(f"{ctx.folder} is not set up (expected lean-toolchain {ctx.p['toolchain']}); run: "
+                   f"riemann-at-home setup --proof {ctx.proof}")
     if not which("lake"):
         raise Fail("lake not found; run: riemann-at-home setup")
     if free_gb(ctx.folder) < MIN_FREE_GB:
@@ -925,20 +1216,27 @@ def cmd_build(ctx: Ctx, a):
     if a.submit_repo:                         # older, dry-run-only setting
         ctx.set_conf(repo=str(Path(a.submit_repo).expanduser().resolve()))
     ctx.mode_file.write_text(mode)
-    cmd = [sys.executable, "-I", str(Path(__file__).resolve()), "_run", "--folder", str(ctx.folder),
-           "--logs", str(ctx.logs), "--target", a.target] + (["--test-unofficial-folder"] if a.test_unofficial_folder else [])
+    target = build_target(ctx, a)
+    cmd = ctx.me() + ["_run", "--folder", str(ctx.folder), "--logs", str(ctx.logs)] + ctx.pargs() + \
+        (["--target", target] if target else []) + (["--test-unofficial-folder"] if a.test_unofficial_folder else [])
     with open(ctx.logs / "supervisor.log", "ab") as lf:
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=lf, stderr=lf, start_new_session=True,
-                             env={**os.environ, "RAH_HOME": str(ctx.home)})
+                             env=ctx.env())
     for _ in range(100):
         if read_pid(ctx.pgid_file) and supervisor(ctx) == p.pid:
             break
         if p.poll() is not None:
             raise Fail(f"build failed to start; see {ctx.logs / 'supervisor.log'}")
         time.sleep(0.1)
-    print(f"building `lake build {a.target}` in {ctx.folder} ({mode}), in the background.\n"
+    print(f"building {'' if ctx.proof == DEFAULT_PROOF else 'the ' + ctx.p['label'] + ' proof, '}"
+          f"`{' '.join(['lake', 'build'] + ([target] if target else []))}` in {ctx.folder} ({mode}), in the background.\n"
           f"  log: {ctx.logs / 'build.log'}\n  riemann-at-home status | pause | resume | stop")
     return 0
+
+
+def build_target(ctx: Ctx, a):
+    """What `lake build` builds: --target if given (testing), else the proof's own (17M: Main; 300K: the defaults)."""
+    return getattr(a, "target", None) or ctx.p["target"]
 
 
 def crashed_modules(log_tail: str) -> list:
@@ -994,7 +1292,8 @@ def cmd_run(ctx: Ctx, a):
         return 1
     mode = stored_mode(ctx)
     tcmd = (["/usr/bin/time", "-l"] if IS_MAC else ["/usr/bin/time", "-v"]) if Path("/usr/bin/time").exists() else []
-    cmd = tcmd + ["nice", "-n", "19", which("lake") or "lake", "--no-ansi", "build", a.target]
+    target = build_target(ctx, a)
+    cmd = tcmd + ["nice", "-n", "19", which("lake") or "lake", "--no-ansi", "build"] + ([target] if target else [])
     stopping, terminated, disk_low = threading.Event(), threading.Event(), threading.Event()
     cur = {}
 
@@ -1037,7 +1336,8 @@ def cmd_run(ctx: Ctx, a):
     threading.Thread(target=disk_guard, daemon=True).start()
     setup_sweeper(ctx, stopping)              # keeps a whole build near 160 GB instead of 1.2 TB
     update_checker(ctx, stopping)             # daily: is there a newer version? (tells, never installs)
-    setup_export_check(ctx, stopping)         # 5 min in: will the export step work on this computer? (issue #14)
+    if ctx.p["levels"]:
+        setup_export_check(ctx, stopping)     # 5 min in: will the export step work on this computer? (issue #14)
 
     (ctx.logs / "supervisor.features").write_text(f"{os.getpid()} autosubmit-v2\n")   # rereads interval/config
 
@@ -1084,20 +1384,54 @@ def cmd_run(ctx: Ctx, a):
     if crashed:
         log_event(ctx, "BUILD_GAVE_UP")
     final_submit = rc == 0 or disk_low.is_set() or crashed      # the board gets the last count either way
-    if rc == 0 and a.target == "Main" and not terminated.is_set():
-        audit = ctx.home / "audit"
-        audit.mkdir(parents=True, exist_ok=True)
-        (audit / "Audit.lean").write_text(AUDIT_LEAN)
-        with open(ctx.logs / "axioms.log", "wb") as f:
-            r = subprocess.run([which("lake") or "lake", "--no-ansi", "env", "lean", f"--root={audit}",
-                                str(audit / "Audit.lean")], cwd=ctx.folder, stdout=f, stderr=subprocess.STDOUT,
-                               env=lean_env())
-        log_event(ctx, f"AXIOMS_EXIT={r.returncode}")
+    if rc == 0 and target == ctx.p["target"] and not terminated.is_set():
+        log_event(ctx, f"AXIOMS_EXIT={axiom_check(ctx)}")
     if final_submit:
         autosubmit(ctx, a, "final")
+    if rc == 0 and target == ctx.p["target"] and not terminated.is_set():
+        start_next_proof(ctx)
     ctx.pgid_file.unlink(missing_ok=True)
     ctx.pid_file.unlink(missing_ok=True)
     return rc
+
+
+def axiom_check(ctx: Ctx) -> int:
+    """After a whole build: which axioms the theorems use, into logs/axioms.log. 17M: our own copy of the check
+    (AUDIT_LEAN, with --root). Other proofs: their own script, which must say exactly AUDIT_LEAN. Returns the exit code."""
+    lake = which("lake") or "lake"
+    if ctx.p.get("audit"):
+        script = ctx.folder / ctx.p["audit"]
+        if read(script) != AUDIT_LEAN:
+            (ctx.logs / "axioms.log").write_text(f"riemann-at-home: {script} is not the expected axiom check\n")
+            return 1
+        cmd = [lake, "--no-ansi", "env", "lean", ctx.p["audit"]]
+    else:
+        audit = ctx.home / "audit"
+        audit.mkdir(parents=True, exist_ok=True)
+        (audit / "Audit.lean").write_text(AUDIT_LEAN)
+        cmd = [lake, "--no-ansi", "env", "lean", f"--root={audit}", str(audit / "Audit.lean")]
+    with open(ctx.logs / "axioms.log", "wb") as f:
+        return subprocess.run(cmd, cwd=ctx.folder, stdout=f, stderr=subprocess.STDOUT, env=lean_env()).returncode
+
+
+def start_next_proof(ctx: Ctx):
+    """Setup chose "both": when this proof is whole with the expected axioms, start the next one (same speed)."""
+    ch = ctx.conf().get("proofs") or {}
+    ax = proof_axioms(ctx, read(ctx.logs / "axioms.log"))
+    if ch.get("active") != ctx.proof or not ch.get("next") or ax is None or sorted(ax) != sorted(EXPECTED_AXIOMS):
+        return
+    nxt, rest = ch["next"][0], ch["next"][1:]
+    ctx.set_conf(proofs={"active": nxt, "next": rest})
+    nc = Ctx(argparse.Namespace(folder=None, logs=None), proof=nxt)
+    with open(ctx.logs / "build.log", "a") as f:
+        f.write(f"\nriemann-at-home: the {ctx.p['label']} proof is done; starting the {nc.p['label']} build "
+                "(you chose both at setup).\n")
+    if toolchain_of(nc.folder) != nc.p["toolchain"]:
+        with open(ctx.logs / "build.log", "a") as f:
+            f.write(f"riemann-at-home: {nc.folder} is not set up; run: riemann-at-home setup --proof {nxt}\n")
+        return
+    subprocess.Popen(ctx.me() + ["build", f"--{stored_mode(ctx)}"] + nc.pargs(), stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=ctx.env())
 
 
 def autosubmit(ctx: Ctx, a, why: str):
@@ -1105,15 +1439,15 @@ def autosubmit(ctx: Ctx, a, why: str):
     disk, which rereads config.json each time. Output goes to logs/autosubmit.log. Never raises."""
     if AUTOSUBMIT == "off":
         return
-    me = [sys.executable, "-I", str(Path(__file__).resolve())]
-    loc = ["--folder", str(ctx.folder), "--logs", str(ctx.logs)]
+    me = ctx.me()
+    loc = ["--folder", str(ctx.folder), "--logs", str(ctx.logs)] + ctx.pargs()
     with open(ctx.logs / "autosubmit.log", "a") as f:
         f.write(f"--- autosubmit ({why}) {iso(time.time())}\n")
         f.flush()
         try:
             extra = ["--test-unofficial-folder"] if getattr(a, "test_unofficial_folder", False) else []
             subprocess.run(me + ["_autosubmit"] + loc + extra, stdout=f, stderr=subprocess.STDOUT,
-                           env={**os.environ, "RAH_HOME": str(ctx.home)}, timeout=6 * 3600)
+                           env=ctx.env(), timeout=6 * 3600)
         except Exception as e:
             f.write(f"autosubmit failed: {e}\n")
 
@@ -1212,12 +1546,33 @@ def built_by_this_tool(ctx: Ctx) -> int:
     return sum(max(0, g[-1][1] - g[0][1]) for g in session_samples(ctx))
 
 
+def status_proofs(ctx: Ctx, a) -> list:
+    """Which proofs `status` shows: the one asked for (--proof or --folder), else every proof set up on this
+    computer (its folder or its build_id exists), else the default one."""
+    if getattr(a, "proof", None) in PROOFS or getattr(a, "folder", None):
+        return [ctx]
+    out = [c for c in (Ctx(a, proof=pk) for pk in PROOFS) if c.folder.exists() or c.build_id_file.exists()]
+    return sorted(out, key=lambda c: c.proof != ctx.proof) or [ctx]
+
+
 def cmd_status(ctx: Ctx, a):
+    cs = status_proofs(ctx, a)
+    for k, c in enumerate(cs):
+        if len(cs) > 1:
+            print(("\n" if k else "") + f"proof     {c.p['label']}: {c.p['name']}" +
+                  (" (commands without --proof)" if c.proof == ctx.proof else f" (add --proof {c.proof})"))
+        status_one(c, a)
+    return 0
+
+
+def status_one(ctx: Ctx, a):
     done = count_compiled(ctx.lib) if ctx.lib.exists() else 0
+    n = ctx.p["n"]
     sup = supervisor(ctx)
     ev = events(ctx)
-    print(f"folder    {ctx.folder}{'' if ctx.folder.exists() else '  (not set up: riemann-at-home setup)'}")
-    print(f"compiled  {done:,} / {N_MODULES:,} modules ({100 * done / N_MODULES:.2f}%)")
+    hint = "riemann-at-home setup" + ("" if ctx.proof == DEFAULT_PROOF else f" --proof {ctx.proof}")
+    print(f"folder    {ctx.folder}{'' if ctx.folder.exists() else f'  (not set up: {hint})'}")
+    print(f"compiled  {done:,} / {n:,} modules ({100 * done / n:.2f}%)")
     if sup:
         state = "PAUSED" if is_paused(ctx) else f"running, {stored_mode(ctx)}"
         active = len(build_pids(ctx, ("lean",)))
@@ -1248,8 +1603,9 @@ def cmd_status(ctx: Ctx, a):
     elif sup and r is None:
         print(f"speed     measuring (first reading about {SAMPLE_SECONDS / 60:.0f} min after the build started)")
     elif sup and r is not None:
-        left = N_MODULES - done
-        eta = f", about {left / r / 24:.1f} days to go at this speed" if r > 0 else ""
+        left = n - done
+        eta = "" if r <= 0 else f", about {left / r / 24:.1f} days to go at this speed" \
+            if ctx.proof == DEFAULT_PROOF or left / r >= 48 else f", about {fmt_dur(left / r * 3600)} to go at this speed"
         print(f"speed     {r:,.0f} modules/hour over the last {SPEED_WINDOW // 60} min{eta}")
     elif built and busy >= 600:
         print(f"speed     {built / busy * 3600:,.0f} modules/hour on average ({built:,} built while measured)")
@@ -1270,7 +1626,14 @@ def cmd_status(ctx: Ctx, a):
         print(f"update    available ({len(up['changes'])} change(s)): riemann-at-home update")
     ax = read(ctx.logs / "axioms.log")
     if ax:
-        print(f"axioms    {parse_axioms(ax)}")
+        print(f"axioms    {proof_axioms(ctx, ax)}" + (f" ({len(ctx.p['theorems'])} theorems)" if len(ctx.p['theorems']) > 1 else ""))
+    if not ctx.p["levels"]:
+        pa = proof_axioms(ctx, ax) if ax else None
+        if done == n and pa is not None:
+            print(f"level     whole {ctx.p['label']} proof built" + (", only the three standard axioms: this proof is "
+                  "finished (it has no export step yet)" if sorted(pa) == sorted(EXPECTED_AXIOMS) else
+                  f", but the axioms are not the expected {EXPECTED_AXIOMS}"))
+        return 0
     ex = levels_state(ctx).get("export")
     if ex and ex.get("sha256") == EXPORT_SHA256:
         lv = levels_state(ctx)
@@ -1279,7 +1642,7 @@ def cmd_status(ctx: Ctx, a):
               + (", joint statement signed" if lv.get("sign_statement") else ""))
     elif ex:
         print(f"export    sha256 {ex.get('sha256')} does not match the reference ({UNVERIFIED})")
-    elif done == N_MODULES and parse_axioms(ax) is not None:
+    elif done == n and parse_axioms(ax) is not None:
         print("level     1: whole proof built. Next: riemann-at-home export")
     if sign_when_done(ctx) and not levels_state(ctx).get("sign_statement"):
         print("statement signed in advance: takes effect when your export matches (undo: riemann-at-home sign --cancel)")
@@ -1289,17 +1652,25 @@ def cmd_status(ctx: Ctx, a):
 # ---------------------------------------------------------------- record
 
 def make_record(ctx: Ctx, a, final: bool = False) -> dict:
-    folder = ctx.folder
-    official = str(folder) == str(fixed_folder())
+    folder, P = ctx.folder, ctx.p
+    official = str(folder) == str(fixed_folder(ctx.proof))
     if not official and not a.test_unofficial_folder:
-        raise Fail(f"records come from the fixed folder {fixed_folder()} only (got {folder})")
-    if toolchain_of(folder) != TOOLCHAIN:
-        raise Fail(f"{folder} pins {toolchain_of(folder) or 'no toolchain'}, expected {TOOLCHAIN}")
-    if mathlib_rev_of(folder) != MATHLIB_REV:
-        raise Fail(f"{folder} pins Mathlib {mathlib_rev_of(folder)}, expected {MATHLIB_REV}")
+        raise Fail(f"records come from the fixed folder {fixed_folder(ctx.proof)} only (got {folder})")
+    if toolchain_of(folder) != P["toolchain"]:
+        raise Fail(f"{folder} pins {toolchain_of(folder) or 'no toolchain'}, expected {P['toolchain']}")
+    if mathlib_rev_of(folder) != P["mathlib_rev"]:
+        raise Fail(f"{folder} pins Mathlib {mathlib_rev_of(folder)}, expected {P['mathlib_rev']}")
+    if P.get("tree") and not a.test_unofficial_folder:          # a git-sourced proof: the commit setup checked
+        err = source_problem(folder, P)
+        if err:
+            raise Fail(err)
     mods = all_modules(folder)
-    if len(mods) != N_MODULES and not a.test_unofficial_folder:
-        raise Fail(f"{folder}/src has {len(mods):,} modules, expected {N_MODULES:,}: not the official archive")
+    if len(mods) != P["n"] and not a.test_unofficial_folder:
+        raise Fail(f"{folder}/src has {len(mods):,} modules, expected {P['n']:,}: not the official "
+                   + ("archive" if ctx.proof == DEFAULT_PROOF else "source"))
+    if P.get("tree") and not a.test_unofficial_folder:
+        if hashlib.sha256(("\n".join(mods) + "\n").encode()).hexdigest() != P["modules_sha256"]:
+            raise Fail(f"{folder}/src does not have the {P['label']} proof's module list: not the official source")
     done = compiled_modules(ctx.lib)
     bits = [m in done for m in mods]
     cache = HashCache(ctx.home / "olean-hashes.json")
@@ -1324,13 +1695,14 @@ def make_record(ctx: Ctx, a, final: bool = False) -> dict:
     busy = max(0, min(busy, recorded - started))
     axioms = None
     if n == len(mods) and mods:
-        axioms = parse_axioms(read(ctx.logs / "axioms.log"))
+        axioms = proof_axioms(ctx, read(ctx.logs / "axioms.log"))
     rec = {
         "format": FORMAT,
         "tool": TOOL,
-        "archive_sha256": ARCHIVE_SHA256,
-        "toolchain": TOOLCHAIN,
-        "mathlib_rev": MATHLIB_REV,
+        **({} if ctx.proof == DEFAULT_PROOF else {"proof": ctx.proof}),   # absent = 17M (CONTRACT "Several proofs")
+        P["source_field"]: P["source"],
+        "toolchain": P["toolchain"],
+        "mathlib_rev": P["mathlib_rev"],
         "build_folder": str(folder) if official else "unofficial",
         "build_id": bid,
         "machine": machine(),
@@ -1344,7 +1716,7 @@ def make_record(ctx: Ctx, a, final: bool = False) -> dict:
         "axioms": axioms,
         "final": bool(final),
     }
-    assert list(rec) == RECORD_KEYS
+    assert list(rec) == record_keys(ctx.proof)
     shown = ctx.conf().get("display")
     if isinstance(shown, dict) and name_problem(shown.get("display_name")) is None:
         rec["display_name"] = shown["display_name"]
@@ -1361,6 +1733,15 @@ def make_record(ctx: Ctx, a, final: bool = False) -> dict:
 KEEP_RECORDS = 50
 
 
+def record_keys(proof: str) -> list:
+    """The required keys of a record of this proof, in order: 17M's are RECORD_KEYS; another proof says so with
+    "proof" and names its source with its own field (300K: source_commit) where 17M has archive_sha256."""
+    if proof == DEFAULT_PROOF:
+        return RECORD_KEYS
+    i = RECORD_KEYS.index("archive_sha256")
+    return RECORD_KEYS[:i] + ["proof", PROOFS[proof]["source_field"]] + RECORD_KEYS[i + 1:]
+
+
 def write_record(ctx: Ctx, rec: dict) -> Path:
     """records/<UTC time>.json locally (history; the repo keeps one file per build). Keeps the last 50."""
     ctx.records.mkdir(parents=True, exist_ok=True)
@@ -1374,7 +1755,7 @@ def write_record(ctx: Ctx, rec: dict) -> Path:
 def cmd_record(ctx: Ctx, a):
     rec = make_record(ctx, a)
     out = write_record(ctx, rec)
-    print(f"{rec['modules_compiled']:,} / {N_MODULES:,} modules, busy {rec['busy_seconds'] / 3600:.1f} h"
+    print(f"{rec['modules_compiled']:,} / {ctx.p['n']:,} {'' if ctx.proof == DEFAULT_PROOF else ctx.p['label'] + ' '}modules, busy {rec['busy_seconds'] / 3600:.1f} h"
           f"{', WHOLE PROOF' if rec['whole_proof'] else ''}\n{out}")
     if called_by_supervisor(ctx) and (ctx.conf().get("submit") or {}).get("auto"):
         cmd_autosubmit(ctx, a)                    # a supervisor started before `_autosubmit` existed
@@ -1396,11 +1777,11 @@ def finish_problem(ctx: Ctx):
     mods, done = all_modules(ctx.folder), compiled_modules(ctx.lib)
     if not mods or any(m not in done for m in mods):
         return None                                   # a partial build: finishing it is a normal choice
-    if parse_axioms(read(ctx.logs / "axioms.log")) is None:
+    if proof_axioms(ctx, read(ctx.logs / "axioms.log")) is None:
         return ("every module is built but the axiom check has not finished (it runs right after the last module, "
                 "a few minutes). Finishing now would send a final record that says the proof is not whole. "
                 "Wait until `riemann-at-home status` shows the axioms.")
-    if not (ctx.conf().get("levels") or {}).get("export"):
+    if ctx.p["levels"] and not (ctx.conf().get("levels") or {}).get("export"):
         return ("your whole build has not been exported yet. `finish` closes this build for good, so an export "
                 "result (Level 2) could never be added. Run `riemann-at-home export` first.")
     return None
@@ -1422,7 +1803,7 @@ def cmd_finish(ctx: Ctx, a):
         cmd_stop(ctx, a)
     rec = make_record(ctx, a, final=True)
     out = write_record(ctx, rec)
-    print(f"final record: {rec['modules_compiled']:,} / {N_MODULES:,} modules\n{out}")
+    print(f"final record: {rec['modules_compiled']:,} / {ctx.p['n']:,} {'' if ctx.proof == DEFAULT_PROOF else ctx.p['label'] + ' '}modules\n{out}")
     if not (a.submit or a.dry_run or (ctx.conf().get("submit") or {}).get("auto")):
         print("submit it with: riemann-at-home submit")
         return 0
@@ -1434,10 +1815,15 @@ def cmd_finish(ctx: Ctx, a):
 
 def validate_record(rec: dict):
     errs = []
-    extra = [k for k in rec if k not in RECORD_KEYS]           # a set of keys: order does not matter
-    if (not set(RECORD_KEYS) <= set(rec) or any(k not in OPTIONAL_KEYS for k in extra)
+    pk = rec.get("proof", DEFAULT_PROOF)
+    if pk not in PROOFS or "proof" in rec and pk == DEFAULT_PROOF:   # 17M records never say "proof"
+        return [f"proof {pk!r} is not one of {[k for k in PROOFS if k != DEFAULT_PROOF]} (17M records leave it out)"]
+    P, keys = PROOFS[pk], record_keys(pk)
+    optional = OPTIONAL_KEYS if P["levels"] else [k for k in OPTIONAL_KEYS if k not in LEVEL_KEYS + PROGRESS_KEYS]
+    extra = [k for k in rec if k not in keys]                  # a set of keys: order does not matter
+    if (not set(keys) <= set(rec) or any(k not in optional for k in extra)
             or sum(k in rec for k in NAME_KEYS) > 1):
-        errs.append(f"keys {sorted(rec)} != {RECORD_KEYS} (+ optional {LEVEL_KEYS + PROGRESS_KEYS + CRASH_KEYS}, at most one of {NAME_KEYS})")
+        errs.append(f"keys {sorted(rec)} != {keys} (+ optional {[k for k in optional if k not in NAME_KEYS]}, at most one of {NAME_KEYS})")
     cr = rec.get("crashes")
     if cr is not None and not (isinstance(cr, list) and len(cr) <= CRASHES_MAX and all(
             isinstance(c, dict) and set(c) == {"module", "code", "at"} and isinstance(c["module"], str)
@@ -1448,13 +1834,13 @@ def validate_record(rec: dict):
         errs.append(f"display_name: {name_problem(rec['display_name'])}")
     if "anonymous" in rec:
         errs.append("anonymous is not offered: the pull request always shows your GitHub username")
-    for k, v in (("format", FORMAT), ("archive_sha256", ARCHIVE_SHA256), ("toolchain", TOOLCHAIN),
-                 ("mathlib_rev", MATHLIB_REV)):
+    for k, v in (("format", FORMAT), (P["source_field"], P["source"]), ("toolchain", P["toolchain"]),
+                 ("mathlib_rev", P["mathlib_rev"])):
         if rec.get(k) != v:
             errs.append(f"{k} is {rec.get(k)!r}, expected {v!r}")
     if not re.fullmatch(r"[0-9a-f]{16}", str(rec.get("build_id"))):
         errs.append("build_id must be 16 lowercase hex chars")
-    if rec.get("build_folder") not in FIXED_FOLDERS.values():
+    if rec.get("build_folder") not in P["folders"].values():
         errs.append(f"build_folder {rec.get('build_folder')!r} is not a fixed folder")
     if rec.get("tool") != TOOL:
         errs.append(f"tool is {rec.get('tool')!r}, expected {TOOL!r}")
@@ -1472,9 +1858,10 @@ def validate_record(rec: dict):
     if len(json.dumps(rec, indent=2)) > 256 * 1024:
         errs.append("record over 256 KB")
     try:
-        bits = decode_bitmap(rec["bitmap_b64"], N_MODULES)   # exact length: no bits past module N-1
+        n = P["n"]
+        bits = decode_bitmap(rec["bitmap_b64"], n)           # exact length: no bits past module N-1
         raw = gzip.decompress(base64.b64decode(rec["bitmap_b64"]))
-        if N_MODULES % 8 and raw[-1] >> (N_MODULES % 8):
+        if n % 8 and raw[-1] >> (n % 8):
             errs.append("bitmap has bits past module N-1")
         if sum(bits) != rec.get("modules_compiled"):
             errs.append("modules_compiled != popcount(bitmap)")
@@ -1668,7 +2055,7 @@ def comparable(rec: dict) -> dict:
 def submit_real(ctx: Ctx, a, src: Path, rec: dict, login: str, upstream: str) -> int:
     """This build's one PR: branch rah/<build_id> = upstream main + one commit that writes
     submissions/<login>/<build_id>.json, force-pushed on every update. Opens the PR the first time."""
-    repo = ctx.home / "repo"                     # the tool's own clone; never the volunteer's checkouts
+    repo = ctx.base / "repo"                     # the tool's own clone (one for all proofs); never the volunteer's checkouts
     bid = rec["build_id"]
     rel = f"submissions/{login}/{bid}.json"
     branch = f"rah/{bid}"
@@ -1721,11 +2108,12 @@ def submit_real(ctx: Ctx, a, src: Path, rec: dict, login: str, upstream: str) ->
             raise Fail(WORKFLOW_SCOPE_FIX) from None
         raise
     if pr["state"] != "open":
-        title = f"Riemann@home build {bid} ({login})"
+        lab = PROOFS[rec.get("proof", DEFAULT_PROOF)]["label"]
+        title = f"Riemann@home build {bid} ({login})" if lab == "17M" else f"Riemann@home {lab} build {bid} ({login})"
         m = rec["machine"]
-        body = (f"Riemann@home build record for one computer (build `{bid}`). The tool updates this pull request "
-                f"while the build runs; the bot checks each version.\n\n"
-                f"- modules compiled: {rec['modules_compiled']:,} / {N_MODULES:,}\n"
+        body = (f"Riemann@home build record for one computer (build `{bid}`, the {lab} proof). The tool updates this "
+                f"pull request while the build runs; the bot checks each version.\n\n"
+                f"- modules compiled: {rec['modules_compiled']:,} / {PROOFS[rec.get('proof', DEFAULT_PROOF)]['n']:,}\n"
                 f"- machine: {m.get('cpu')}, {m.get('cores')} cores, {m.get('os')} ({m.get('arch')})\n")
         url = gh(["pr", "create", "--repo", upstream, "--head", f"{owner}:{branch}", "--base", "main",
                   "--title", title, "--body", body], "open the pull request").strip().splitlines()[-1]
@@ -1785,8 +2173,8 @@ def latest_record(ctx: Ctx) -> Path:
 def submit_lock(ctx: Ctx):
     """One submit at a time (the build's auto-submit and a manual one could overlap)."""
     import fcntl
-    ctx.home.mkdir(parents=True, exist_ok=True)
-    f = open(ctx.home / "submit.lock", "w")
+    ctx.base.mkdir(parents=True, exist_ok=True)
+    f = open(ctx.base / "submit.lock", "w")                 # all proofs share the clone: one submit at a time
     fcntl.flock(f, fcntl.LOCK_EX)
     return f
 
@@ -1827,7 +2215,8 @@ def ask_consent(ctx: Ctx):
         return
     name = input("Name on the leaderboard (Enter = your GitHub username, or type a display name): ").strip()
     agree(ctx, name or None)
-    ask_sign_when_done(ctx)
+    if ctx.p["levels"]:                           # the joint statement is about the 17M proof
+        ask_sign_when_done(ctx)
     share_nudge(ctx, "joined")
 
 
@@ -1918,10 +2307,19 @@ def agree(ctx: Ctx, name=None, upstream=None):
     ensure_companion(ctx)
 
 
+SUBMIT_LATER = {"300k": "300K results can't be submitted yet: the leaderboard doesn't take them. Your build and its "
+                         "records stay on this computer, and they will be submitted once the leaderboard supports them."}
+
+
 def cmd_submit(ctx: Ctx, a):
+    if ctx.proof in SUBMIT_LATER and not (getattr(a, "agree", False) or a.enable_auto or a.disable_auto
+                                          or a.interval is not None):
+        print(SUBMIT_LATER[ctx.proof])                # nothing is pushed, opened or posted for this proof yet
+        return 0
     if getattr(a, "agree", False):
         agree(ctx, a.name, a.upstream)
-        ask_sign_when_done(ctx)                     # the optional second question, as at setup
+        if ctx.p["levels"]:
+            ask_sign_when_done(ctx)                 # the optional second question, as at setup (17M only)
         share_nudge(ctx, "joined")
         return 0
     if a.interval is not None:
@@ -1948,7 +2346,7 @@ def cmd_submit(ctx: Ctx, a):
             print("auto-submit off")
         return 0
     if a.repo and not a.dry_run:
-        raise Fail(f"--repo is only for --dry-run; real submits use the tool's own clone at {ctx.home / 'repo'}")
+        raise Fail(f"--repo is only for --dry-run; real submits use the tool's own clone at {ctx.base / 'repo'}")
     src = Path(a.record) if a.record else latest_record(ctx)
     rec = json.loads(src.read_text())
     errs = validate_record(rec)
@@ -1959,7 +2357,7 @@ def cmd_submit(ctx: Ctx, a):
     login = a.login or gh_login()
     if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})", login):
         raise Fail(f"{login!r} does not look like a GitHub login")
-    repo = Path(a.repo).expanduser().resolve() if a.repo else ctx.home / "repo"
+    repo = Path(a.repo).expanduser().resolve() if a.repo else ctx.base / "repo"
     upstream = a.upstream or (ctx.conf().get("submit") or {}).get("upstream")
     if not upstream and a.repo:
         url = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"], capture_output=True,
@@ -1988,8 +2386,10 @@ def cmd_submit(ctx: Ctx, a):
     if pr["state"] == "open":
         head = "update the open PR (quiet: no new PR)"
     else:
+        lab = PROOFS[rec.get("proof", DEFAULT_PROOF)]["label"]
         plan.append(["gh", "pr", "create", "--repo", upstream, "--head", f"<{upstream.split('/')[0]} or {login}>:{branch}",
-                     "--base", "main", "--title", f"Riemann@home build {bid} ({login})", "--body", "..."])
+                     "--base", "main", "--title", f"Riemann@home {'' if lab == '17M' else lab + ' '}build {bid} ({login})",
+                     "--body", "..."])
         head = "open this build's one PR"
     print(f"DRY RUN: nothing is written, committed, pushed or opened.\nrecord: {src}\nas:     {rel} on branch {branch}\n"
           f"step:   {head} -> {upstream}\nwould run:")
@@ -2022,17 +2422,16 @@ def ensure_companion(ctx: Ctx):
     if not sup or (pid and pid_alive(pid, "_autosubmit_loop")):
         return
     with open(ctx.logs / "autosubmit.log", "ab") as lf:
-        p = subprocess.Popen([sys.executable, "-I", str(Path(__file__).resolve()), "_autosubmit_loop", "--folder",
-                              str(ctx.folder), "--logs", str(ctx.logs)], stdin=subprocess.DEVNULL, stdout=lf,
-                             stderr=lf, start_new_session=True, env={**os.environ, "RAH_HOME": str(ctx.home)})
+        p = subprocess.Popen(ctx.me() + ["_autosubmit_loop", "--folder", str(ctx.folder), "--logs", str(ctx.logs)]
+                             + ctx.pargs(), stdin=subprocess.DEVNULL, stdout=lf, stderr=lf, start_new_session=True,
+                             env=ctx.env())
     pidf.write_text(str(p.pid))
 
 
 def cmd_autosubmit_loop(ctx: Ctx, a):
     """The companion loop (see ensure_companion). Ends when the build stops or auto-submit is turned off."""
     sup = old_supervisor(ctx)
-    me = [sys.executable, "-I", str(Path(__file__).resolve()), "_autosubmit", "--folder", str(ctx.folder),
-          "--logs", str(ctx.logs)]
+    me = ctx.me() + ["_autosubmit", "--folder", str(ctx.folder), "--logs", str(ctx.logs)] + ctx.pargs()
     while sup and supervisor(ctx) == sup and (ctx.conf().get("submit") or {}).get("auto"):
         time.sleep(autosubmit_interval(ctx))
         if supervisor(ctx) != sup or not (ctx.conf().get("submit") or {}).get("auto"):
@@ -2041,8 +2440,7 @@ def cmd_autosubmit_loop(ctx: Ctx, a):
             f.write(f"--- autosubmit (progress, every {autosubmit_interval(ctx):g} s) {iso(time.time())}\n")
             f.flush()
             try:
-                subprocess.run(me, stdout=f, stderr=subprocess.STDOUT, env={**os.environ, "RAH_HOME": str(ctx.home)},
-                               timeout=6 * 3600)
+                subprocess.run(me, stdout=f, stderr=subprocess.STDOUT, env=ctx.env(), timeout=6 * 3600)
             except Exception as e:
                 f.write(f"autosubmit failed: {e}\n")
     (ctx.logs / "autosubmit-loop.pid").unlink(missing_ok=True)
@@ -2056,7 +2454,7 @@ def cmd_autosubmit(ctx: Ctx, a):
         if a.cmd != "record":                     # (an older supervisor calls `record`, which already wrote one)
             rec = make_record(ctx, a)
             out = write_record(ctx, rec)
-            print(f"{rec['modules_compiled']:,} / {N_MODULES:,} modules\n{out}")
+            print(f"{rec['modules_compiled']:,} / {ctx.p['n']:,} {'' if ctx.proof == DEFAULT_PROOF else ctx.p['label'] + ' '}modules\n{out}")
         sc = ctx.conf().get("submit") or {}
         if sc.get("auto"):
             ns = argparse.Namespace(enable_auto=False, disable_auto=False, interval=None, repo=None, record=None, login=None,
@@ -2115,7 +2513,7 @@ def levels_state(ctx: Ctx, digest: str = None) -> dict:
 def level_fields(ctx: Ctx, rec: dict) -> dict:
     """The optional record fields earned so far. Only a reproduced export goes into a record (the bot rejects any
     other export hash); checkers and the signature only on top of that."""
-    if not rec.get("whole_proof"):
+    if not rec.get("whole_proof") or not ctx.p["levels"]:
         return {}
     out = {}
     ep = export_progress(ctx, rec["olean_digest"])
@@ -2137,7 +2535,7 @@ def whole_build(ctx: Ctx, a, what: str) -> dict:
     """A record of the build, which must be whole with the axiom check passed."""
     rec = make_record(ctx, a)
     if not rec["whole_proof"]:
-        raise Fail(f"{what} needs the whole build first: {rec['modules_compiled']:,} / {N_MODULES:,} modules compiled "
+        raise Fail(f"{what} needs the whole build first: {rec['modules_compiled']:,} / {ctx.p['n']:,} modules compiled "
                    "and the axiom check run (`riemann-at-home build` runs it when the build finishes)")
     if sorted(rec["axioms"]) != sorted(EXPECTED_AXIOMS):
         raise Fail(f"{what} needs a passing axiom check; riemannHypothesis depends on {rec['axioms']}, "
@@ -2957,7 +3355,7 @@ def set_mode_from_page(ctx: Ctx, mode: str):
     """The page's Full / Gentle / Pause buttons. Only for a build this tool started."""
     if not supervisor(ctx):
         raise Fail("no build started by riemann-at-home is running")
-    ns = argparse.Namespace(gentle=mode == "gentle", full=mode == "full", target="Main", submit_repo=None, submit=False,
+    ns = argparse.Namespace(gentle=mode == "gentle", full=mode == "full", target=None, submit_repo=None, submit=False,
                             test_unofficial_folder=False)
     if mode == "paused":
         return cmd_pause(ctx, ns)
@@ -3052,6 +3450,9 @@ def main(argv=None):
     hidden = argparse.ArgumentParser(add_help=False)
     hidden.add_argument("--folder", help=argparse.SUPPRESS)        # testing: a build folder other than the fixed one
     hidden.add_argument("--logs", help=argparse.SUPPRESS)          # testing / logs of an older build script
+    hidden.add_argument("--proof", choices=list(PROOFS) + ["both"],
+                        help="which proof: 300k (the new one) or 17m (the original); setup also takes both. "
+                             "Default: the one setup chose (17m on a computer set up before setup asked)")
     ap = argparse.ArgumentParser(prog="riemann-at-home", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=TOOL)
@@ -3061,13 +3462,14 @@ def main(argv=None):
     s.add_argument("--parts-url", default=PART_URL, help=argparse.SUPPRESS)
     s.add_argument("--skip-cache", action="store_true", help=argparse.SUPPRESS)
     s.add_argument("--force-cache", action="store_true", help=argparse.SUPPRESS)
+    s.add_argument("--source-url", help=argparse.SUPPRESS)        # testing: clone the 300K source from here
     for name, h in (("build", "start the official build in the background, or change its speed"),
                     ("resume", "continue a paused build (or start a stopped one)")):
         b = sub.add_parser(name, parents=[hidden], help=h)
         g = b.add_mutually_exclusive_group()
         g.add_argument("--gentle", action="store_true", help="background priority: only spare CPU (default)")
         g.add_argument("--full", action="store_true", help="all cores (still lowest priority, nice 19)")
-        b.add_argument("--target", default="Main", help=argparse.SUPPRESS)
+        b.add_argument("--target", help=argparse.SUPPRESS)          # default: the proof's own
         b.add_argument("--submit", action="store_true", help="update this build's pull request about every 10 min")
         b.add_argument("--submit-repo", help=argparse.SUPPRESS)       # older: dry runs into a given clone
         b.add_argument("--test-unofficial-folder", action="store_true", help=argparse.SUPPRESS)
@@ -3131,11 +3533,16 @@ def main(argv=None):
     y.add_argument("--test-unofficial-folder", action="store_true")
     sub.add_parser("_autosubmit_loop", parents=[hidden])  # internal: interval loop for a build started by an older version
     x = sub.add_parser("_run", parents=[hidden])   # internal: the background supervisor
-    x.add_argument("--target", default="Main")
+    x.add_argument("--target")
     x.add_argument("--test-unofficial-folder", action="store_true")
     a = ap.parse_args(argv)
     try:
+        if a.proof == "both" and a.cmd != "setup":
+            raise Fail("--proof both is for setup only; other commands take --proof 300k or --proof 17m")
         ctx = Ctx(a)
+        if a.cmd in ("export", "recheck", "sign") and not ctx.p["levels"]:
+            raise Fail(LEVELS_ONLY_17M + (" (This computer's default is the 300K proof; for the 17M one add --proof 17m.)"
+                                          if getattr(a, "proof", None) is None else ""))
         fn = {"setup": cmd_setup, "build": cmd_build, "pause": cmd_pause, "resume": cmd_resume, "stop": cmd_stop,
               "status": cmd_status, "sweep": cmd_sweep, "update": cmd_update, "record": cmd_record, "finish": cmd_finish, "name": cmd_name, "submit": cmd_submit, "page": cmd_page,
               "export": cmd_export, "recheck": cmd_recheck, "sign": cmd_sign, "_autosubmit": cmd_autosubmit,

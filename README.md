@@ -9,6 +9,19 @@ A proof of the Riemann Hypothesis, written with AI and checked in Lean, was publ
 do the same and watch it add up: the proof is 175,187 Lean modules, and the page shows how many people have built each
 one, who is building right now, and who has built the whole thing.
 
+## Two proofs: start with the new one (300K)
+
+A second, much shorter Lean proof appeared: grh-lean by Luke Sernau (https://github.com/lsernau/grh-lean,
+Apache-2.0). Riemann@home builds its readable edition (`grh/`, about 300,000 lines, 803 modules) as **300K**, next to
+the original **17M** build. `setup` asks which one to build: 1) the new proof (300K, recommended and the default),
+2) the original (17M, the big challenge), or 3) both (new first). 300K: pinned commit
+`72fead102f663d5c7a407964a13dc0cf9d977207`, Lean 4.35.0, Mathlib `56a00585`, folder macOS
+`/Users/Shared/riemann-at-home/grh`, Linux `/opt/riemann-at-home/grh`; 20 min to 2 h on most computers. A whole 300K
+build whose five theorems use only the three standard axioms is its finish (there is no export step for it yet).
+**For now 300K builds are local only:** `submit` says so and posts nothing; they will be submitted once the
+leaderboard supports them. Computers already set up for 17M keep working exactly as before (add the new proof with
+`setup --proof 300k`, then `build --proof 300k`).
+
 ## Join with an AI assistant
 
 Paste this into Claude, ChatGPT, or another assistant that can run commands:

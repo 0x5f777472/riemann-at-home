@@ -41,6 +41,21 @@ and this README (`sign` prints the joint statement from it).
 8. `riemann-at-home page`: this computer's page at http://localhost:8642/ ("This computer": its terrain, what is
    compiling now, speed). Its "Global dashboard" button opens https://riemann-at-home.github.io/riemann-at-home/.
 
+## Two proofs (`--proof 300k|17m`)
+
+`setup` asks which proof to build (1 = the new 300K proof, the default and what a run without a terminal gets;
+2 = the original 17M; 3 = both, 300K first, and 17M starts by itself when 300K is whole). `--proof` on any command
+picks one (`setup --proof both` too); without it a command means what setup chose, and 17M on a computer set up
+before setup asked. 300K: `git clone` of https://github.com/lsernau/grh-lean, checkout of exactly commit
+`72fead102f663d5c7a407964a13dc0cf9d977207`, HEAD and the `grh/` tree (`2e133df6...`) checked, `grh/` moved to
+`/Users/Shared/riemann-at-home/grh` (Linux `/opt/riemann-at-home/grh`), Lean 4.35.0 via elan, `lake exe cache get`.
+`build --proof 300k` runs plain `lake build` (the edition's default targets) in the background like 17M, then
+`lake env lean scripts/PrintAxioms.lean` (refused unless that file is exactly the expected five `#print axioms`);
+the record is whole only when all five theorems were printed. Records carry `"proof": "300k"` and
+`"source_commit"` instead of `archive_sha256`. Its files live in `~/.riemann-at-home/300k/` (own build_id, logs,
+records, PR state); consent, display name and submit settings are shared. `status` shows every proof set up here.
+`export`, `recheck` and `sign` are 17M only. In this version 300K `submit` (and auto-submit) posts nothing.
+
 ## Levels
 
 - **Level 1 · Build**: any compiled modules. A whole build (all 175,187 modules) also runs the axiom check.

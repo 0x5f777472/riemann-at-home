@@ -1601,6 +1601,295 @@ class Slow(unittest.TestCase):
         self.assertGreater(busy, 3)
 
 
+def fake_300k(root: Path, n=6, compiled=None, commit=None, tree=None):
+    """A miniature 300K build folder (the grh/ edition): its toolchain, Mathlib, source file, axiom script."""
+    P = rah.PROOFS["300k"]
+    (root / "src/Lib").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "lean-toolchain").write_text(P["toolchain"] + "\n")
+    (root / "lake-manifest.json").write_text(json.dumps({"packages": [{"name": "mathlib", "rev": P["mathlib_rev"]}]}))
+    (root / "scripts/PrintAxioms.lean").write_text(rah.AUDIT_LEAN)
+    (root / rah.SOURCE_FILE).write_text(json.dumps({"commit": commit or P["source"], "tree": tree or P["tree"]}))
+    mods = [f"Lib.M{i}" for i in range(n - 2)] + ["Main", "Statements"]
+    lib = root / ".lake/build/lib/lean"
+    for i, m in enumerate(mods):
+        (root / "src" / (m.replace(".", "/") + ".lean")).write_text(f"-- {m}\n")
+        if compiled is None or i in compiled:
+            o = lib / (m.replace(".", "/") + ".olean"); o.parent.mkdir(parents=True, exist_ok=True)
+            o.write_bytes(m.encode()); o.with_suffix(".trace").write_text("{}")
+    return sorted(mods, key=lambda m: m.encode())
+
+
+PINNED_300K = "72fead102f663d5c7a407964a13dc0cf9d977207"     # CONTRACT "Several proofs" (literal: tests the tool's table)
+THEOREMS_300K = ["riemannHypothesis", "riemannZeta_eq_zero_re", "LFunction_ne_zero_of_half_lt_re", "LFunction_eq_zero_re",
+                 "LFunction_eq_zero_re_of_isPrimitive"]
+FIVE = "".join(f"'{t}' depends on axioms: [propext, Classical.choice, Quot.sound]\n" for t in THEOREMS_300K)
+
+
+class Proof300K(unittest.TestCase):
+    """The second proof, 300K (CONTRACT "Several proofs", 2026-11-25): setup asks which proof (default 300K), records
+    say "proof": "300k", its state lives apart from 17M's, and 17M computers keep working as before."""
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(dir=TMP, prefix="k-"))
+        self.home = self.tmp / "h"; self.home.mkdir()
+        self.env = unittest.mock.patch.dict(os.environ, {"RAH_HOME": str(self.home), "RAH_NO_STATS": "1"})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def ns(self, **kw):
+        return types.SimpleNamespace(**{"folder": None, "logs": None, "proof": None, "archive": None,
+                                        "parts_url": rah.PART_URL, **kw})
+
+    def choose(self, tty, answer="", **kw):
+        a = self.ns(**kw)
+        ctx = rah.Ctx(a)
+        buf = io.StringIO()
+        stdin = io.StringIO(answer + "\n"); stdin.isatty = lambda: tty
+        with contextlib.redirect_stdout(buf), unittest.mock.patch("sys.stdin", stdin), \
+                unittest.mock.patch("builtins.input", lambda prompt="": answer):
+            got = rah.setup_choice(ctx, a)
+        return got, buf.getvalue()
+
+    def test_setup_question_default_and_choices(self):
+        got, out = self.choose(tty=False)
+        self.assertEqual(got, ["300k"], "no terminal: the new proof")
+        self.assertIn("Which proof do you want to build?", out)
+        self.assertIn("1) The new proof  [300K]  recommended", out)
+        self.assertIn("2) The original proof  [17M]  the big challenge", out)
+        self.assertIn("3) Both  [17M] [300K]  ranks highest", out)
+        self.assertIn("riemann-at-home setup --proof 17m", out)
+        self.assertNotIn("—", out)                     # no em dashes in what volunteers read
+        self.assertEqual(self.choose(tty=True, answer="")[0], ["300k"], "Enter = 1")
+        self.assertEqual(self.choose(tty=True, answer="2")[0], ["17m"])
+        self.assertEqual(self.choose(tty=True, answer="3")[0], ["300k", "17m"], "both: the new proof first")
+        self.assertEqual(self.choose(tty=False, proof="both")[0], ["300k", "17m"])
+        self.assertEqual(self.choose(tty=False, proof="17m")[0], ["17m"])
+        self.assertEqual(self.choose(tty=False, archive="/x/lean.tar.gz")[0], ["17m"], "the 17M archive means 17M")
+
+    def test_setup_keeps_a_17m_computer_on_17m(self):
+        (self.home / "build_id").write_text("0123456789abcdef\n")         # set up before setup asked
+        got, out = self.choose(tty=False)
+        self.assertEqual(got, ["17m"]); self.assertNotIn("Which proof", out)
+        self.assertIn("setup --proof 300k", out)
+        ctx = rah.Ctx(self.ns())
+        self.assertEqual((ctx.proof, ctx.home, ctx.folder), ("17m", self.home, rah.fixed_folder("17m")))
+
+    def test_state_apart_and_shared_choices(self):
+        c17, c3 = rah.Ctx(self.ns(proof="17m")), rah.Ctx(self.ns(proof="300k"))
+        self.assertEqual(c3.home, self.home / "300k"); self.assertEqual(c3.logs, self.home / "300k/logs")
+        self.assertEqual(str(c3.folder), rah.PROOFS["300k"]["folders"][os.uname().sysname])
+        self.assertNotEqual(c17.build_id(), c3.build_id())                 # one build_id per proof
+        self.assertEqual(c3.build_id(), rah.Ctx(self.ns(proof="300k")).build_id())
+        c17.set_conf(consent={"agreed": "2026-11-25T00:00:00Z", "login": "x"}, display={"display_name": "Ada"},
+                     pr={"build_id": c17.build_id(), "state": "open", "number": 5})
+        self.assertTrue(rah.has_consent(c3))                               # agreed once, for the person
+        self.assertEqual(c3.conf()["display"], {"display_name": "Ada"})
+        self.assertIsNone(c3.conf().get("pr"))                            # each build has its own PR
+        c3.set_conf(pr={"build_id": c3.build_id(), "state": "open", "number": 9}, submit={"auto": True})
+        self.assertEqual(c17.conf()["pr"]["number"], 5); self.assertEqual(c17.conf()["submit"], {"auto": True})
+        self.assertEqual(json.loads((self.home / "300k/config.json").read_text())["pr"]["number"], 9)
+        # commands without --proof: what setup chose; 17M before that
+        self.assertEqual(rah.Ctx(self.ns()).proof, "17m")
+        c17.set_conf(proofs={"active": "300k", "next": []})
+        self.assertEqual(rah.Ctx(self.ns()).proof, "300k")
+        f17 = self.tmp / "p17"; fake_folder(f17)
+        self.assertEqual(rah.Ctx(self.ns(folder=str(f17))).proof, "17m", "a 17M folder is a 17M build")
+
+    def test_record_shape_300k_and_17m_unchanged(self):
+        mods = fake_300k(self.tmp / "g", compiled={0, 1, 4})
+        r = cli("record", "--proof", "300k", "--folder", self.tmp / "g", "--test-unofficial-folder", home=self.home)
+        out = Path(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(out.parent, self.home / "300k/records")
+        rec = json.loads(out.read_text())
+        self.assertEqual([k for k in rec if k not in rah.OPTIONAL_KEYS], rah.record_keys("300k"))
+        self.assertEqual(rec["proof"], "300k"); self.assertNotIn("archive_sha256", rec)
+        self.assertEqual(rec["source_commit"], PINNED_300K)
+        self.assertEqual((rec["toolchain"], rec["mathlib_rev"]), ("leanprover/lean4:v4.35.0", "56a005855ea17e0b0958f73ec801ae140b0a1679"))
+        self.assertEqual(rec["modules_compiled"], 3); self.assertFalse(rec["whole_proof"])
+        self.assertEqual(sum(rah.decode_bitmap(rec["bitmap_b64"], len(mods))), 3)
+        # whole: every module, and the axiom check printed all five theorems
+        shutil.rmtree(self.tmp / "g"); fake_300k(self.tmp / "g")
+        (self.home / "300k/logs").mkdir(parents=True, exist_ok=True)
+        (self.home / "300k/logs/axioms.log").write_text(FIVE.splitlines(True)[0])     # only riemannHypothesis
+        rec = json.loads(Path(cli("record", "--proof", "300k", "--folder", self.tmp / "g", "--test-unofficial-folder",
+                                  home=self.home).stdout.strip().splitlines()[-1]).read_text())
+        self.assertFalse(rec["whole_proof"], "300K is whole only when all five theorems were checked")
+        (self.home / "300k/logs/axioms.log").write_text(FIVE)
+        rec = json.loads(Path(cli("record", "--proof", "300k", "--folder", self.tmp / "g", "--test-unofficial-folder",
+                                  home=self.home).stdout.strip().splitlines()[-1]).read_text())
+        self.assertTrue(rec["whole_proof"]); self.assertEqual(rec["axioms"], rah.EXPECTED_AXIOMS)
+        # 17M: no "proof" key, the same keys as ever, state at the top of RAH_HOME
+        fake_folder(self.tmp / "p")
+        r = cli("record", "--folder", self.tmp / "p", "--test-unofficial-folder", home=self.home)
+        out = Path(r.stdout.strip().splitlines()[-1]); rec17 = json.loads(out.read_text())
+        self.assertEqual(out.parent, self.home / "records")
+        self.assertEqual([k for k in rec17 if k not in rah.OPTIONAL_KEYS], rah.RECORD_KEYS)
+        self.assertNotIn("proof", rec17); self.assertEqual(rec17["archive_sha256"], rah.ARCHIVE_SHA256)
+        self.assertNotEqual(rec17["build_id"], rec["build_id"])
+
+    def test_record_refuses_another_source(self):
+        fake_300k(self.tmp / "g", commit="ce4eb6fb2591d62095c5aa61b7a21414c7385bd5")
+        ctx = rah.Ctx(self.ns(proof="300k", folder=str(self.tmp / "g")))
+        with unittest.mock.patch.object(rah, "fixed_folder", lambda proof="17m": self.tmp / "g"):
+            with self.assertRaises(rah.Fail) as e:
+                rah.make_record(ctx, self.ns(test_unofficial_folder=False))
+        self.assertIn("expected 72fead10", str(e.exception))
+
+    def test_validate_300k_matches_the_bot(self):
+        n = rah.PROOFS["300k"]["n"]
+        bits = [True] * n
+        rec = {"format": rah.FORMAT, "tool": rah.TOOL, "proof": "300k", "source_commit": rah.GRH_COMMIT,
+               "toolchain": "leanprover/lean4:v4.35.0", "mathlib_rev": "56a005855ea17e0b0958f73ec801ae140b0a1679",
+               "build_folder": "/Users/Shared/riemann-at-home/grh", "build_id": "0123456789abcdef",
+               "machine": {"os": "Darwin 25.4.0", "arch": "arm64", "cpu": "Apple M3 Pro", "cores": 12},
+               "started": "2026-11-25T10:00:00Z", "recorded": "2026-11-25T11:10:00Z", "busy_seconds": 3600,
+               "modules_compiled": n, "bitmap_b64": rah.encode_bitmap(bits), "olean_digest": "0" * 64,
+               "whole_proof": True, "axioms": rah.EXPECTED_AXIOMS, "final": False}
+        self.assertEqual(rah.validate_record(rec), [])
+        for k, v, msg in (("toolchain", rah.TOOLCHAIN, "toolchain"), ("source_commit", "0" * 40, "source_commit"),
+                          ("build_folder", "/Users/Shared/riemann-at-home/lean", "fixed folder"),
+                          ("export_sha256", rah.EXPORT_SHA256, "keys"), ("proof", "17m", "proof"), ("proof", "1b", "proof")):
+            self.assertTrue(any(msg in e for e in rah.validate_record({**rec, k: v})), (k, rah.validate_record({**rec, k: v})))
+        d = {**rec, "bitmap_b64": rah.encode_bitmap([True] * rah.N_MODULES), "modules_compiled": rah.N_MODULES}
+        self.assertTrue(any("bitmap" in e for e in rah.validate_record(d)), "a 17M-sized bitmap is not a 300K one")
+        bot = Path(__file__).resolve().parents[2] / "bot/rahbot"
+        if bot.exists() and "PROOFS" in bot.read_text():                   # the bot agrees (once it knows 300K)
+            rb = importlib.machinery.SourceFileLoader("rahbot_cli_test", str(bot)).load_module()
+            with contextlib.redirect_stdout(io.StringIO()):
+                rej = rb.check_record(rec, "kim", "submissions/kim/0123456789abcdef.json", None,
+                                      now=rb.parse_ts("2026-11-26T00:00:00Z"))[0]
+            self.assertEqual(rej, [])
+
+    def test_export_recheck_sign_are_17m_only(self):
+        for cmd in (["export"], ["recheck", "--nanoda"], ["sign"]):
+            r = cli(*cmd, "--proof", "300k", home=self.home, check=False)
+            self.assertEqual(r.returncode, 1); self.assertIn("for the 17M proof only", r.stderr)
+        r = cli("build", "--proof", "both", home=self.home, check=False)
+        self.assertEqual(r.returncode, 1); self.assertIn("setup only", r.stderr)
+
+    def test_others_text_both_proofs(self):
+        data = {"leaderboard": [
+            {"whole_proof": True, "build_hours": 9.0, "machine": "AMD Ryzen 9 5950X", "export": None,
+             "proofs": {"17m": {"whole": True, "build_hours": 9.0}, "300k": {"whole": True, "build_hours": 0.4, "machine": "AMD Ryzen 9 5950X"}}},
+            {"whole_proof": True, "build_hours": 64.3, "machine": "Apple M5 Max", "export": None},
+            {"whole_proof": False, "build_hours": None, "machine": "Apple M3 Pro",
+             "proofs": {"300k": {"whole": True, "build_hours": 1.2, "machine": "Apple M3 Pro"}}},
+            {"whole_proof": False, "build_hours": None, "machine": "Apple M4",
+             "proofs": {"300k": {"whole": False, "build_hours": None, "machine": "Apple M4"}}}]}
+        t = rah.others_text(data, "Apple M3 Pro")
+        self.assertIn("2 whole builds so far", t.splitlines()[0])              # 17M, as before
+        self.assertIn("The 300K proof (the new proof): 2 whole builds so far, 0.4 h to 1.2 h", t)
+        rows = [l for l in t.split("The 300K proof")[1].splitlines()[2:]]
+        self.assertEqual([r.split()[0] for r in rows], ["AMD", "Apple"])          # fastest first
+        self.assertTrue(rows[-1].endswith("<- like this computer"))
+        self.assertNotIn("Apple M4", t)
+        only = rah.others_text({"leaderboard": [data["leaderboard"][2]]})
+        self.assertTrue(only.startswith("The 300K proof") and "How long it took others" not in only, only)
+
+    def test_whole_300k_build_runs_its_axiom_check_and_status_shows_both(self):
+        """The real supervisor (`_run`) on a fake lake: plain `lake build` (the edition's defaults), then
+        `lake env lean scripts/PrintAxioms.lean`; status lists 17M and 300K."""
+        g = self.tmp / "g"; mods = fake_300k(g, compiled=set())
+        elan = self.tmp / "elan"; (elan / "bin").mkdir(parents=True)
+        calls = self.tmp / "calls"
+        lake = elan / "bin/lake"
+        touch = "; ".join(f"mkdir -p {g}/.lake/build/lib/lean/{os.path.dirname(m.replace('.', '/')) or '.'}; "
+                          f"echo x > {g}/.lake/build/lib/lean/{m.replace('.', '/')}.olean; "
+                          f"echo x > {g}/.lake/build/lib/lean/{m.replace('.', '/')}.trace" for m in mods)
+        five = FIVE.replace("'", "'\\''")
+        lake.write_text(f"#!/bin/sh\necho \"$@\" >> {calls}\n"
+                        f"case \"$*\" in *build) {touch}; exit 0;; *PrintAxioms.lean) printf '%s' '{five}'; exit 0;; esac\nexit 0\n")
+        lake.chmod(0o755)
+        env = {**os.environ, "ELAN_HOME": str(elan), "RAH_AUTOSUBMIT": "off", "RAH_SAMPLE_SECONDS": "1",
+               "RAH_UPDATE_URL": str(self.tmp / "no-such-repo")}       # no network: the daily update check fails here
+        r = subprocess.run([sys.executable, "-I", str(SCRIPT), "_run", "--proof", "300k", "--folder", g,
+                            "--logs", self.home / "300k/logs"], capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = calls.read_text().splitlines()
+        self.assertEqual(lines[0], "--no-ansi build", "300K builds the edition's default targets")
+        self.assertEqual(lines[1], "--no-ansi env lean scripts/PrintAxioms.lean")
+        st = cli("status", "--proof", "300k", "--folder", g, home=self.home).stdout
+        self.assertIn(f"compiled  {len(mods)} / 803 modules", st)
+        self.assertIn("axioms    ['propext', 'Classical.choice', 'Quot.sound'] (5 theorems)", st)
+        # without --proof: every proof set up here, 17M first when it is the default
+        rah.Ctx(self.ns(proof="17m")).build_id()
+        st = cli("status", home=self.home).stdout
+        self.assertIn("proof     17M: the original proof (commands without --proof)", st)
+        self.assertIn("proof     300K: the new proof (add --proof 300k)", st)
+
+    def test_both_starts_the_17m_build_when_300k_is_done(self):
+        c3 = rah.Ctx(self.ns(proof="300k", folder=str(self.tmp / "g"), logs=str(self.home / "300k/logs")))
+        c3.logs.mkdir(parents=True); (c3.logs / "axioms.log").write_text(FIVE); (c3.logs / "mode.txt").write_text("full")
+        c3.set_conf(proofs={"active": "300k", "next": ["17m"]})
+        f17 = self.tmp / "p17"; fake_folder(f17)
+        with unittest.mock.patch.object(rah, "fixed_folder", lambda proof="17m": f17 if proof == "17m" else self.tmp / "g"), \
+                unittest.mock.patch.object(rah.subprocess, "Popen") as popen:
+            rah.start_next_proof(c3)
+        self.assertEqual(popen.call_args[0][0][-4:], ["build", "--full", "--proof", "17m"])
+        self.assertEqual(c3.conf()["proofs"], {"active": "17m", "next": []})
+        with unittest.mock.patch.object(rah.subprocess, "Popen") as popen:       # nothing more after that
+            rah.start_next_proof(c3)
+        popen.assert_not_called()
+
+    def test_setup_300k_clones_the_pinned_commit(self):
+        """setup --proof 300k from a local stand-in for github.com/lsernau/grh-lean: clone, check out exactly the
+        pinned commit, check HEAD and the grh/ tree, move grh/ into the build folder; a wrong commit is refused."""
+        up = self.tmp / "grh-lean"; (up / "grh/src/Lib").mkdir(parents=True)
+        (up / "grh/lean-toolchain").write_text(rah.PROOFS["300k"]["toolchain"] + "\n")
+        (up / "grh/lake-manifest.json").write_text(json.dumps({"packages": [{"name": "mathlib", "rev": rah.PROOFS["300k"]["mathlib_rev"]}]}))
+        (up / "grh/src/Lib/A.lean").write_text("-- A\n"); (up / "README.md").write_text("compact edition\n")
+        g = lambda *x: subprocess.run(["git", "-C", str(up), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *x],
+                                      capture_output=True, text=True, check=True).stdout.strip()
+        g("init", "-q", "-b", "main"); g("add", "-A"); g("commit", "-q", "-m", "proof")
+        pinned, tree = g("rev-parse", "HEAD"), g("rev-parse", "HEAD:grh")
+        (up / "README.md").write_text("later\n"); g("commit", "-q", "-am", "later")    # main moved on
+        elan = self.tmp / "elan"; (elan / "bin").mkdir(parents=True)
+        for tool, body in (("elan", 'case "$*" in "toolchain list") echo "leanprover/lean4:v4.35.0";; esac'),
+                           ("lake", f'echo "$@" >> {self.tmp}/lake-calls')):
+            (elan / "bin" / tool).write_text(f"#!/bin/sh\n{body}\nexit 0\n"); (elan / "bin" / tool).chmod(0o755)
+        folder = self.tmp / "shared/grh"
+        def setup(commit, t):
+            a = self.ns(proof="300k", folder=str(folder), source_url=f"file://{up}", skip_cache=False, force_cache=False)
+            P = {**rah.PROOFS["300k"], "source": commit, "tree": t}
+            buf = io.StringIO()
+            with unittest.mock.patch.dict(os.environ, {"ELAN_HOME": str(elan)}), \
+                    unittest.mock.patch.dict(rah.PROOFS, {"300k": P}), unittest.mock.patch("sys.stdin", io.StringIO()), \
+                    unittest.mock.patch.object(rah, "gh_login", side_effect=rah.Fail("no gh")), \
+                    contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+                rah.cmd_setup(rah.Ctx(a), a)
+            return buf.getvalue()
+        with self.assertRaises(rah.Fail):
+            setup("0" * 40, tree)                                          # not a commit of that repo
+        self.assertFalse(folder.exists())
+        out = setup(pinned, tree)
+        self.assertIn(f"HEAD {pinned} ok, grh/ tree {tree} ok", out)
+        self.assertTrue((folder / "src/Lib/A.lean").exists()); self.assertFalse((folder / "README.md").exists())
+        self.assertEqual(json.loads((folder / rah.SOURCE_FILE).read_text())["commit"], pinned)
+        self.assertEqual((self.tmp / "lake-calls").read_text().split("\n")[0], "exe cache get", "`lake exe cache get` in grh/")
+        self.assertIn("300K build_id", out)
+        self.assertEqual(rah.Ctx(self.ns()).proof, "300k", "setup chose 300K: commands without --proof mean it")
+        self.assertEqual(list(folder.parent.iterdir()), [folder], "the clone's staging folder is gone")
+        again = setup(pinned, tree)
+        self.assertIn("proof folder already here at commit", again)
+
+    @unittest.skipUnless(subprocess.run(["git", "-C", str(Path.home() / "grh-lean"), "cat-file", "-e",
+                                         PINNED_300K + "^{commit}"], capture_output=True).returncode == 0,
+                         "no local clone of grh-lean with the pinned commit")
+    def test_pinned_commit_and_tree_are_real(self):
+        """Read-only check against a local clone: the pinned commit's grh/ is GRH_TREE and has the 803 modules."""
+        src = Path.home() / "grh-lean"
+        tree = subprocess.run(["git", "-C", str(src), "rev-parse", f"{rah.GRH_COMMIT}:grh"], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(tree, rah.GRH_TREE)
+        names = subprocess.run(["git", "-C", str(src), "ls-tree", "-r", "--name-only", rah.GRH_COMMIT, "grh/src"],
+                               capture_output=True, text=True).stdout.split()
+        mods = sorted((n[8:-5].replace("/", ".") for n in names if n.endswith(".lean")), key=lambda m: m.encode())
+        self.assertEqual(len(mods), 803)
+        self.assertEqual(hashlib.sha256(("\n".join(mods) + "\n").encode()).hexdigest(), rah.PROOFS["300k"]["modules_sha256"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
