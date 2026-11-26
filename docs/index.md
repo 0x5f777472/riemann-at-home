@@ -8,11 +8,11 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T12:10:35Z
+- Updated: 2026-11-26T12:25:09Z
 
 ## Totals
 
-- Builders: 28
+- Builders: 29
 - Modules built at least once: 175,187 of 175,187 (100.0%)
 - Modules built 3 or more times: 175,187
 - Whole proofs finished (17M): 15
@@ -53,11 +53,12 @@ Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules.
 
 ### Building now
 
-- lupine.sh: 124,206 of 175,187 17M modules (70.9%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
-- ptescher (github.com/ptescher): 549 of 803 300K modules (68.4%), Apple M4
-- ksdme (github.com/ksdme): 359 of 803 300K modules (44.7%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
-- tgragnato (github.com/tgragnato): 64,614 of 175,187 17M modules (36.9%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- apoland (github.com/apoland): 24,274 of 175,187 17M modules (13.9%), QEMU Virtual CPU version 2.5+
+- ptescher (github.com/ptescher): 612 of 803 300K modules (76.2%), Apple M4
+- lupine.sh: 129,791 of 175,187 17M modules (74.1%), Lupine CI (INTEL(R) XEON(R) PLATINUM 8562Y+)
+- ksdme (github.com/ksdme): 371 of 803 300K modules (46.2%), Intel(R) Core(TM) i5-10210U CPU @ 1.60GHz
+- tgragnato (github.com/tgragnato): 64,740 of 175,187 17M modules (37.0%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- jimjones: 251 of 803 300K modules (31.3%), Apple M2 Pro
+- apoland (github.com/apoland): 24,871 of 175,187 17M modules (14.2%), QEMU Virtual CPU version 2.5+
 - framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
 - talonius (github.com/talonius): 16,269 of 175,187 17M modules (9.3%), AMD Ryzen 9 9950X3D 16-Core Processor
 - Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
