@@ -2,49 +2,48 @@
 
 Every independent build of the AI proof of the Riemann Hypothesis.
 
-Levent Alpöge's Lean proof of the Riemann Hypothesis has 175,187 modules. Volunteers build it on their own computers with the official tools, and each computer reports its progress through a public GitHub pull request. A bot checks every report and publishes this page.
+Levent Alpöge's Lean proof of the Riemann Hypothesis (17M) has 175,187 modules. A second, much shorter proof (300K: the readable edition of grh-lean, about 300,000 lines) is built the same way. Volunteers build them on their own computers with the official tools, and each computer reports its progress through a public GitHub pull request. A bot checks every report and publishes this page.
 
 - Live page: https://riemann-at-home.github.io/riemann-at-home/
 - Code and instructions: https://github.com/riemann-at-home/riemann-at-home
 - Discuss on Hacker News: https://news.ycombinator.com/item?id=50594006
 - Raw data: https://riemann-at-home.github.io/riemann-at-home/data.json (format: CONTRACT.md in the repository)
-- Updated: 2026-11-26T01:26:39Z
+- Updated: 2026-11-26T01:41:19Z
 
 ## Totals
 
 - Builders: 18
 - Modules built at least once: 175,187 of 175,187 (100.0%)
 - Modules built 3 or more times: 175,187
-- Whole proofs finished: 11
+- Whole proofs finished (17M): 11
+- Whole proofs finished (300K): 0
 
 ## Leaderboard
 
-### Validated: built the whole proof and reproduced the export
+### 17M proof built
 
-1. derek-blanchette (github.com/derek-blanchette): all 175,187 modules, built in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor, export reproduced, signed the joint statement
-2. jasonhansel (github.com/jasonhansel): all 175,187 modules, built in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, export reproduced, signed the joint statement
-3. ericpruitt (github.com/ericpruitt): all 175,187 modules, built in 9.0 h, AMD Ryzen Threadripper PRO 9975WX 32-Cores, export reproduced, signed the joint statement
-4. Fornax96 (github.com/Fornax96): all 175,187 modules, built in 15.9 h, AMD Ryzen 9 7900X3D 12-Core Processor, export reproduced, signed the joint statement
-5. rib3ye (github.com/rib3ye): all 175,187 modules, built in 48.6 h, Apple M2 Max, export reproduced, signed the joint statement
-6. xangma (github.com/xangma): all 175,187 modules, built in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, export reproduced, signed the joint statement
-7. gebhardtr (github.com/gebhardtr): all 175,187 modules, built in 60.4 h, AMD RYZEN AI MAX+ 395 w/ Radeon 8060S, export reproduced, signed the joint statement
-8. Andrea Shepard: all 175,187 modules, built in 13.9 h, AMD Ryzen Threadripper PRO 3975WX 32-Cores, export reproduced, signed the joint statement
-
-### Whole proof built
-
-- titojankowski (github.com/titojankowski): all 175,187 modules, built in 64.3 h, Apple M5 Max, exporting now
-- Ununhexium: all 175,187 modules, built in 57.5 h, AMD Ryzen 7 5700G with Radeon Graphics
-- sanzgiri (github.com/sanzgiri): all 175,187 modules, built in 41.0 h, Apple M4 Max, exporting now
+1. derek-blanchette (github.com/derek-blanchette): 17M: all 175,187 modules in 18.7 h, AMD Ryzen 9 5950X 16-Core Processor, export reproduced, signed the joint statement
+2. jasonhansel (github.com/jasonhansel): 17M: all 175,187 modules in 11.4 h, Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz, export reproduced, signed the joint statement
+3. ericpruitt (github.com/ericpruitt): 17M: all 175,187 modules in 9.0 h, AMD Ryzen Threadripper PRO 9975WX 32-Cores, export reproduced, signed the joint statement
+4. Fornax96 (github.com/Fornax96): 17M: all 175,187 modules in 15.9 h, AMD Ryzen 9 7900X3D 12-Core Processor, export reproduced, signed the joint statement
+5. rib3ye (github.com/rib3ye): 17M: all 175,187 modules in 48.6 h, Apple M2 Max, export reproduced, signed the joint statement
+6. xangma (github.com/xangma): 17M: all 175,187 modules in 16.4 h, AMD Ryzen Threadripper PRO 3995WX 64-Cores, export reproduced, signed the joint statement
+7. gebhardtr (github.com/gebhardtr): 17M: all 175,187 modules in 60.4 h, AMD RYZEN AI MAX+ 395 w/ Radeon 8060S, export reproduced, signed the joint statement
+8. Andrea Shepard: 17M: all 175,187 modules in 13.9 h, AMD Ryzen Threadripper PRO 3975WX 32-Cores, export reproduced, signed the joint statement
+9. titojankowski (github.com/titojankowski): 17M: all 175,187 modules in 64.3 h, Apple M5 Max, exporting now
+10. Ununhexium: 17M: all 175,187 modules in 57.5 h, AMD Ryzen 7 5700G with Radeon Graphics
+11. sanzgiri (github.com/sanzgiri): 17M: all 175,187 modules in 41.0 h, Apple M4 Max, exporting now
 
 ### Building now
 
-- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 175,184 modules (100.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
-- Genbox (github.com/Genbox): 175,184 modules (100.0%), 12th Gen Intel(R) Core(TM) i7-12700K
-- milhouse1337 (github.com/milhouse1337): 155,592 modules (88.8%), Apple M3 Ultra
-- tgragnato (github.com/tgragnato): 55,168 modules (31.5%), Intel(R) Celeron(R) J6413 @ 1.80GHz
-- framiere (github.com/framiere): 21,921 modules (12.5%), Apple M4 Pro
-- Aerlinger (github.com/Aerlinger): 3,793 modules (2.2%), Apple M5 Pro
-- luvchurchill (github.com/luvchurchill): 1 modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
+- muellerdominikalexander-gif (github.com/muellerdominikalexander-gif): 175,184 of 175,187 17M modules (100.0%), Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz
+- Genbox (github.com/Genbox): 175,184 of 175,187 17M modules (100.0%), 12th Gen Intel(R) Core(TM) i7-12700K
+- milhouse1337 (github.com/milhouse1337): 155,927 of 175,187 17M modules (89.0%), Apple M3 Ultra
+- titojankowski (github.com/titojankowski): 572 of 803 300K modules (71.2%), Apple M5 Max
+- tgragnato (github.com/tgragnato): 55,319 of 175,187 17M modules (31.6%), Intel(R) Celeron(R) J6413 @ 1.80GHz
+- framiere (github.com/framiere): 21,921 of 175,187 17M modules (12.5%), Apple M4 Pro
+- Aerlinger (github.com/Aerlinger): 3,793 of 175,187 17M modules (2.2%), Apple M5 Pro
+- luvchurchill (github.com/luvchurchill): 1 of 175,187 17M modules (0.0%), Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz
 
 ## Also checked independently by
 
