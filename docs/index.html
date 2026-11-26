@@ -811,9 +811,9 @@ function terrain() {
   }
 }
 $("cap").textContent = "";
-// The replay queue: up to 300 of the recent modules, only from rows the map draws (a spike in a hidden row
+// The replay queue: up to 600 of the recent modules, only from rows the map draws (a spike in a hidden row
 // would be invisible and leave a silent gap). They start one lower and grow back during the replay.
-const QUEUE = RECENT.filter(i => rowShown(cell(i)[1])).slice(0, 300);
+const QUEUE = RECENT.filter(i => rowShown(cell(i)[1])).slice(0, 600);
 for (const i of QUEUE) heights[i]--;
 stars(); terrain();
 // Phones: library key under the map (name, size, how much is built); tapping a row highlights that library.
@@ -845,10 +845,10 @@ stars(); terrain();
 // ---------- replay of the last update: each module grows in white, then fades into its color ----------
 {
   const OV = ctx2d("overlay"), TG = $("terrain").getContext("2d");
-  // One spike at a time, about every 1.2 s (300 take 6 min), or slower when there are few, up to every 5 s.
+  // One spike at a time, about every 0.5 s (600 take 5 min), or slower when there are few, up to every 2.5 s.
   // Never more than one per frame and no catching up: when the tab was hidden (no frames), the replay picks up
   // where it was instead of firing everything it missed at once. Spacing is jittered so it doesn't tick.
-  const GAP = Math.min(5000, Math.max(1200, 360e3 / Math.max(1, QUEUE.length)));
+  const GAP = Math.min(2500, Math.max(500, 300e3 / Math.max(1, QUEUE.length)));
   const t0 = performance.now(), GROW = 700, FADE = 5000, live = [];
   let next = 0, nextAt = t0 + 800, lastNow = t0;
   const w = Math.max(1, sx * 0.85);
