@@ -34,6 +34,16 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# Renamed GitHub accounts: {"old-login": "new-login"}. GitHub moves a renamed account's PRs to the new login, but the
+# files stay under submissions/<old-login>/. With an entry here the old folder counts as the new login: one person,
+# one leaderboard row, and updates from the old PRs are still accepted. Added on the person's own request.
+RENAMED = {k.lower(): v for k, v in (json.loads((HERE / "renamed.json").read_text()) if (HERE / "renamed.json").exists() else {}).items()}
+
+
+def canon(login: str) -> str:
+    """A login as it is now (a renamed account's old login gives the new one)."""
+    return RENAMED.get((login or "").lower(), login)
+
 
 # ---- CONTRACT constants -------------------------------------------------------------------------------------
 FORMAT = "rah/build/1"
@@ -339,7 +349,7 @@ def check_record(rec, author: str, repo_path: str, prev, check_digest=False, now
     if not pm:
         rej.append(f"path {repo_path!r} is not submissions/<github-login>/<build_id>.json")
     else:
-        if pm.group(1).lower() != author.lower():
+        if canon(pm.group(1)).lower() != canon(author).lower():
             rej.append(f"path login {pm.group(1)!r} is not the PR author {author!r}")
         if pm.group(2) != rec["build_id"]:
             rej.append(f"path build_id {pm.group(2)!r} is not the record's build_id {rec['build_id']!r}")
@@ -477,7 +487,7 @@ def load_accepted(dirs, check_digest=False, now=None, log=print):
             if rej:
                 log(f"skip {f}: {'; '.join(rej)}", file=sys.stderr)
                 continue
-            key = (login, r["build_id"])
+            key = (canon(login), r["build_id"])
             if key not in out or r["recorded"] > out[key][1]["recorded"]:
                 out[key] = (rp, r, raw)
     return out
@@ -526,6 +536,15 @@ def build_data(dirs, now=None, signed_map=None, firsts=None, published=None) -> 
     inside a tier by who finished the tier's first proof first; partial builds by modules, then since."""
     signed_map = {} if signed_map is None else signed_map
     firsts = {} if firsts is None else firsts
+    for old in [k for k in list(firsts) + list(signed_map) if canon(k) != k]:   # renamed: fold into the new login
+        new = canon(old)
+        if old in firsts:
+            e, o = firsts.setdefault(new, {}), firsts.pop(old)
+            for k, t in o.items():
+                if k.startswith("hours"): e.setdefault(k, t)
+                else: e[k] = min(e.get(k) or t, t)
+        if old in signed_map:
+            t = signed_map.pop(old); signed_map[new] = min(signed_map.get(new) or t, t)
     signatures = []
     mods = modules()
     people = {}
@@ -1078,7 +1097,7 @@ def identity_problem(pr, repo: Path, open_builds: dict):
     m = PATH_RE.match(path)
     if not m:
         return f"{path} is not submissions/<github-login>/<build_id>.json", None
-    if m.group(1).lower() != pr["author"].lower():
+    if canon(m.group(1)).lower() != canon(pr["author"]).lower():
         return f"the file is under {m.group(1)!r} but the PR author is {pr['author']!r}", None
     if (repo / path).exists():                         # merged = whole or final; one PR per build for life
         return f"build {m.group(2)} is already merged (final); a new build needs a new build_id", None
